@@ -3,12 +3,9 @@
   "identifier": "default",
   "description": "Full permissions for SideX IDE",
   "windows": ["main", "*"],
-  "remote": {
-    "urls": ["http://127.0.0.1:*", "http://localhost:*"]
-  },
   "permissions": [
     "core:default",
-
+ 
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",

@@ -33,8 +33,7 @@
     "targets": "all",
     "resources": [
       "extension-host/*",
-      "shell-integration/*",
-      "../dist/**/*"
+      "shell-integration/*"
     ],
     "icon": [
       "icons/32x32.png",
