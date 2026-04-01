@@ -25,19 +25,7 @@
       }
     ],
     "security": {
-      "csp": null,
-      "dangerousRemoteDomainIpcAccess": [
-        {
-          "domain": "127.0.0.1",
-          "windows": ["main"],
-          "enableTauriAPI": true
-        },
-        {
-          "domain": "localhost",
-          "windows": ["main"],
-          "enableTauriAPI": true
-        }
-      ]
+      "csp": null
     }
   },
   "bundle": {
