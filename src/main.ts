@@ -80,7 +80,7 @@ async function boot() {
 			'telemetry.telemetryLevel': 'off',
 			'update.mode': 'none',
 			'extensions.autoUpdate': false,
-			'extensions.autoCheckUpdates': false,
+			'extensions.autoCheckUpdates': true,
 			'workbench.settings.enableNaturalLanguageSearch': false,
 		},
 	};
