@@ -3,15 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-fn validate_path(path: &str) -> Result<(), String> {
-    if path.is_empty() {
-        return Err("path must not be empty".to_string());
-    }
-    if path.contains('\0') {
-        return Err("path must not contain NUL bytes".to_string());
-    }
-    Ok(())
-}
+// SECURITY: Use centralized validation to prevent path traversal (CWE-22)
+use super::validation::validate_path;
 
 #[derive(Debug, Serialize)]
 pub struct DirEntry {

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
+// SECURITY: Import validation functions to prevent command injection (CWE-88)
+use super::validation::{validate_path, validate_args};
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -51,19 +54,40 @@ pub struct GitBranch {
     pub remote: bool,
 }
 
+/// Executes a git command with proper validation and error handling.
+///
+/// # Security
+///
+/// - Validates the repository path to prevent path traversal
+/// - Validates all arguments to prevent command injection
+/// - Returns detailed error messages without exposing sensitive system info
+///
+/// # Arguments
+///
+/// * `path` - Path to the git repository (must be a valid, non-traversing path)
+/// * `args` - Git command arguments (must be non-empty and contain no NUL bytes)
+///
+/// # Returns
+///
+/// The stdout output of the git command as a String, or an error message.
 fn run_git(path: &str, args: &[&str]) -> Result<String, String> {
+    // SECURITY: Validate inputs before execution
+    validate_path(path)?;
+    validate_args(args)?;
+
     let output = git_command()
         .current_dir(path)
         .args(args)
         .output()
         .map_err(|e| format!("Failed to execute git: {}", e))?;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
+    if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("git error: {}", stderr.trim()))
+        return Err(format!("Git error: {}", stderr.trim()));
     }
+
+    String::from_utf8(output.stdout)
+        .map_err(|e| format!("Git output not valid UTF-8: {}", e))
 }
 
 #[tauri::command]

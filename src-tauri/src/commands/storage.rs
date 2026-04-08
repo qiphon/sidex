@@ -2,6 +2,12 @@ use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 use tauri::State;
 
+// SECURITY: Define resource limits to prevent DoS via unbounded storage (CWE-400)
+/// Maximum key length: 256 bytes (sufficient for typical storage keys)
+const MAX_KEY_LENGTH: usize = 256;
+/// Maximum value length: 1 MB (prevents memory exhaustion while allowing reasonable data)
+const MAX_VALUE_LENGTH: usize = 1_048_576;
+
 pub struct StorageDb {
     conn: Mutex<Connection>,
 }
@@ -33,6 +39,22 @@ impl StorageDb {
     }
 
     pub fn set(&self, key: &str, value: &str) -> Result<(), String> {
+        // SECURITY: Enforce size limits to prevent resource exhaustion (CWE-400)
+        if key.len() > MAX_KEY_LENGTH {
+            return Err(format!(
+                "key length exceeds maximum of {} bytes (got {} bytes)",
+                MAX_KEY_LENGTH,
+                key.len()
+            ));
+        }
+        if value.len() > MAX_VALUE_LENGTH {
+            return Err(format!(
+                "value length exceeds maximum of {} bytes (got {} bytes)",
+                MAX_VALUE_LENGTH,
+                value.len()
+            ));
+        }
+
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT OR REPLACE INTO kv_store (key, value) VALUES (?1, ?2)",
@@ -64,6 +86,22 @@ pub fn storage_set(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    // SECURITY: Enforce size limits to prevent resource exhaustion (CWE-400)
+    if key.len() > MAX_KEY_LENGTH {
+        return Err(format!(
+            "key length exceeds maximum of {} bytes (got {} bytes)",
+            MAX_KEY_LENGTH,
+            key.len()
+        ));
+    }
+    if value.len() > MAX_VALUE_LENGTH {
+        return Err(format!(
+            "value length exceeds maximum of {} bytes (got {} bytes)",
+            MAX_VALUE_LENGTH,
+            value.len()
+        ));
+    }
+
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "INSERT OR REPLACE INTO kv_store (key, value) VALUES (?1, ?2)",

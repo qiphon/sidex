@@ -16,6 +16,7 @@ pub mod storage;
 pub mod tasks;
 pub mod terminal;
 pub mod text;
+pub mod validation; // NEW: Centralized security validation
 pub mod watch;
 pub mod window;
 
@@ -37,5 +38,6 @@ pub use storage::*;
 pub use tasks::*;
 pub use terminal::*;
 pub use text::*;
+// pub use validation::*; // Internal use only - not a public command
 pub use watch::*;
 pub use window::*;

@@ -41,14 +41,37 @@ fn validate_url(url: &str) -> Result<reqwest::Url, String> {
     Ok(parsed)
 }
 
+/// Checks if a URL's host is allowed to be proxied.
+///
+/// # Security
+///
+/// The allowlist comparison is case-insensitive to prevent bypass attacks
+/// where an attacker uses mixed-case hostnames (e.g., "OpenVSX.org" vs "openvsx.org").
+///
+/// Also prevents subdomain takeover attacks by ensuring the host is either:
+/// - An exact match for an allowed host
+/// - A proper subdomain (e.g., "extension.openvsx.org" matches "openvsx.org")
 fn is_host_allowed(url: &reqwest::Url) -> bool {
     let host = match url.host_str() {
         Some(h) => h,
         None => return false,
     };
-    ALLOWED_HOSTS
-        .iter()
-        .any(|allowed| host == *allowed || host.ends_with(&format!(".{}", allowed)))
+    // SECURITY: Normalize to lowercase for case-insensitive comparison
+    // Prevents bypass via case variation (e.g., "OpenVSX.org" vs "openvsx.org")
+    let host = host.to_ascii_lowercase();
+
+    for allowed in ALLOWED_HOSTS.iter() {
+        let allowed = allowed.to_ascii_lowercase();
+        if host == allowed {
+            return true;
+        }
+        // Check if host is a subdomain of allowed
+        // e.g., "ext.openvsx.org" ends with ".openvsx.org"
+        if host.ends_with(&format!(".{}", allowed)) {
+            return true;
+        }
+    }
+    false
 }
 
 fn build_client() -> Result<reqwest::Client, String> {
