@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 // SECURITY: Import validation functions to prevent command injection (CWE-88)
-use super::validation::{validate_path, validate_args};
+use super::validation::{validate_args, validate_path};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -86,8 +86,7 @@ fn run_git(path: &str, args: &[&str]) -> Result<String, String> {
         return Err(format!("Git error: {}", stderr.trim()));
     }
 
-    String::from_utf8(output.stdout)
-        .map_err(|e| format!("Git output not valid UTF-8: {}", e))
+    String::from_utf8(output.stdout).map_err(|e| format!("Git output not valid UTF-8: {}", e))
 }
 
 #[tauri::command]
