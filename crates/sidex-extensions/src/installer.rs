@@ -7,21 +7,16 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::manifest::{ExtensionManifest, parse_manifest};
+use crate::manifest::{parse_manifest, ExtensionManifest};
 use crate::marketplace::MarketplaceClient;
 
 /// Installs an extension from a local `.vsix` file.
 ///
 /// A `.vsix` is a ZIP archive whose `extension/` subtree contains the
 /// extension files and `extension/package.json` is the manifest.
-pub fn install_from_vsix(
-    vsix_path: &Path,
-    target_dir: &Path,
-) -> Result<ExtensionManifest> {
-    let file = std::fs::File::open(vsix_path)
-        .context("failed to open .vsix file")?;
-    let mut archive = zip::ZipArchive::new(file)
-        .context("failed to read .vsix as ZIP")?;
+pub fn install_from_vsix(vsix_path: &Path, target_dir: &Path) -> Result<ExtensionManifest> {
+    let file = std::fs::File::open(vsix_path).context("failed to open .vsix file")?;
+    let mut archive = zip::ZipArchive::new(file).context("failed to read .vsix as ZIP")?;
 
     let manifest_json = {
         let mut manifest_file = archive
@@ -66,10 +61,7 @@ pub fn install_from_vsix(
 }
 
 /// Downloads and installs an extension from the marketplace.
-pub async fn install_from_marketplace(
-    id: &str,
-    target_dir: &Path,
-) -> Result<ExtensionManifest> {
+pub async fn install_from_marketplace(id: &str, target_dir: &Path) -> Result<ExtensionManifest> {
     let client = MarketplaceClient::new();
     let ext = client
         .get_extension(id)
@@ -77,7 +69,7 @@ pub async fn install_from_marketplace(
         .context("failed to fetch extension metadata")?;
 
     let vsix_bytes = client
-        .download_vsix(id, &ext.version)
+        .download_vsix_bytes(id, &ext.version)
         .await
         .context("failed to download .vsix")?;
 
@@ -91,8 +83,7 @@ pub async fn install_from_marketplace(
 pub fn uninstall(id: &str, extensions_dir: &Path) -> Result<()> {
     let ext_dir = extensions_dir.join(id);
     if ext_dir.exists() {
-        std::fs::remove_dir_all(&ext_dir)
-            .context("failed to remove extension directory")?;
+        std::fs::remove_dir_all(&ext_dir).context("failed to remove extension directory")?;
     }
     Ok(())
 }
@@ -104,10 +95,7 @@ pub async fn update(id: &str, extensions_dir: &Path) -> Result<ExtensionManifest
 }
 
 /// Reads the manifest of an installed extension.
-pub fn read_installed_manifest(
-    id: &str,
-    extensions_dir: &Path,
-) -> Result<ExtensionManifest> {
+pub fn read_installed_manifest(id: &str, extensions_dir: &Path) -> Result<ExtensionManifest> {
     let pkg = extensions_dir.join(id).join("package.json");
     parse_manifest(&pkg)
 }

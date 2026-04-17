@@ -173,6 +173,7 @@ impl LruTracker {
 // ---------------------------------------------------------------------------
 
 const INITIAL_ATLAS_SIZE: u32 = 1024;
+const MAX_ATLAS_SIZE: u32 = 8192;
 
 struct AtlasSheet {
     texture: wgpu::Texture,
@@ -183,11 +184,25 @@ struct AtlasSheet {
     cursor_y: u32,
     row_height: u32,
     format: wgpu::TextureFormat,
+    /// Track per-shelf metadata for efficient packing.
+    shelves: Vec<Shelf>,
+}
+
+/// A single horizontal shelf in the atlas, used for shelf-based packing.
+#[allow(dead_code)]
+struct Shelf {
+    /// Y offset where this shelf starts.
+    y: u32,
+    /// Height of the tallest glyph in this shelf.
+    height: u32,
+    /// Current X cursor within the shelf.
+    cursor_x: u32,
 }
 
 impl AtlasSheet {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
-        let (texture, view) = Self::create_texture(device, INITIAL_ATLAS_SIZE, INITIAL_ATLAS_SIZE, format);
+        let (texture, view) =
+            Self::create_texture(device, INITIAL_ATLAS_SIZE, INITIAL_ATLAS_SIZE, format);
         Self {
             texture,
             view,
@@ -197,6 +212,7 @@ impl AtlasSheet {
             cursor_y: 0,
             row_height: 0,
             format,
+            shelves: Vec::new(),
         }
     }
 
@@ -224,13 +240,33 @@ impl AtlasSheet {
         w: u32,
         h: u32,
         data: &[u8],
-    ) -> (f32, f32, f32, f32) {
+    ) -> Option<(f32, f32, f32, f32)> {
+        // Try to fit in the current shelf
         if self.cursor_x + w > self.width {
+            // Move to the next shelf row
             self.cursor_x = 0;
             self.cursor_y += self.row_height;
+            if self.row_height > 0 {
+                self.shelves.push(Shelf {
+                    y: self.cursor_y - self.row_height,
+                    height: self.row_height,
+                    cursor_x: self.width,
+                });
+            }
             self.row_height = 0;
         }
         if self.cursor_y + h > self.height {
+            if self.width >= MAX_ATLAS_SIZE && self.height >= MAX_ATLAS_SIZE {
+                log::warn!(
+                    "Atlas {:?} at max size {}x{}, cannot fit {}x{} glyph",
+                    self.format,
+                    self.width,
+                    self.height,
+                    w,
+                    h
+                );
+                return None;
+            }
             self.grow(device, queue);
         }
 
@@ -262,18 +298,19 @@ impl AtlasSheet {
 
         let aw = self.width as f32;
         let ah = self.height as f32;
-        (
+        Some((
             gx as f32 / aw,
             gy as f32 / ah,
             (gx + w) as f32 / aw,
             (gy + h) as f32 / ah,
-        )
+        ))
     }
 
     fn reset_cursors(&mut self) {
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.row_height = 0;
+        self.shelves.clear();
     }
 
     #[allow(clippy::cast_precision_loss)]
@@ -287,7 +324,8 @@ impl AtlasSheet {
             self.height
         );
 
-        let (new_texture, new_view) = Self::create_texture(device, new_width, new_height, self.format);
+        let (new_texture, new_view) =
+            Self::create_texture(device, new_width, new_height, self.format);
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("atlas_grow_encoder"),
@@ -347,6 +385,210 @@ impl AtlasSheet {
 }
 
 // ---------------------------------------------------------------------------
+// GlyphKey — canonical glyph cache key with font + size + subpixel
+// ---------------------------------------------------------------------------
+
+/// A fully-qualified glyph cache key that distinguishes font id, glyph id,
+/// size (quantised via bit-exact comparison), and subpixel positioning bin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GlyphKey {
+    pub font_id: u32,
+    pub glyph_id: u32,
+    /// Font size stored as raw bits for exact hashing.
+    pub size_bits: u32,
+    pub subpixel_offset: SubpixelBin,
+}
+
+impl GlyphKey {
+    pub fn new(font_id: u32, glyph_id: u32, size: f32, subpixel_offset: SubpixelBin) -> Self {
+        Self {
+            font_id,
+            glyph_id,
+            size_bits: size.to_bits(),
+            subpixel_offset,
+        }
+    }
+
+    pub fn size(&self) -> f32 {
+        f32::from_bits(self.size_bits)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AtlasPage — a single page within a multi-page atlas
+// ---------------------------------------------------------------------------
+
+/// A single page within a multi-page glyph atlas. When the current page
+/// runs out of space a new page is allocated.
+pub struct AtlasPage {
+    sheet: AtlasSheet,
+    entries: HashMap<GlyphKey, GlyphInfo>,
+    /// Unique page index.
+    pub page_id: u32,
+}
+
+impl AtlasPage {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat, page_id: u32) -> Self {
+        Self {
+            sheet: AtlasSheet::new(device, format),
+            entries: HashMap::new(),
+            page_id,
+        }
+    }
+
+    pub fn glyph_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn view(&self) -> &wgpu::TextureView {
+        &self.sheet.view
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ligature cache
+// ---------------------------------------------------------------------------
+
+/// Key for a cached ligature sequence (e.g. `!=`, `=>`, `>=`, `<<=`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LigatureKey {
+    pub text: String,
+    pub font_id: u32,
+    pub size_bits: u32,
+}
+
+/// Cached result of a ligature lookup.
+#[derive(Debug, Clone)]
+pub struct LigatureEntry {
+    pub glyph_infos: Vec<GlyphInfo>,
+    pub total_advance: f32,
+}
+
+// ---------------------------------------------------------------------------
+// Multi-page atlas manager
+// ---------------------------------------------------------------------------
+
+/// Manages a pool of [`AtlasPage`]s for a single atlas kind (mask or color).
+/// When the current page fills up, a new one is allocated automatically.
+pub struct MultiPageAtlas {
+    pages: Vec<AtlasPage>,
+    format: wgpu::TextureFormat,
+    next_page_id: u32,
+}
+
+impl MultiPageAtlas {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let first_page = AtlasPage::new(device, format, 0);
+        Self {
+            pages: vec![first_page],
+            format,
+            next_page_id: 1,
+        }
+    }
+
+    /// Returns the current (most recently allocated) page.
+    fn current_page(&self) -> &AtlasPage {
+        self.pages.last().expect("atlas must have at least one page")
+    }
+
+    fn current_page_mut(&mut self) -> &mut AtlasPage {
+        self.pages.last_mut().expect("atlas must have at least one page")
+    }
+
+    /// Allocates space in the atlas, creating a new page if necessary.
+    #[allow(clippy::cast_precision_loss)]
+    fn allocate(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key: GlyphKey,
+        w: u32,
+        h: u32,
+        data: &[u8],
+        bearing_x: f32,
+        bearing_y: f32,
+        atlas_kind: AtlasKind,
+    ) -> Option<GlyphInfo> {
+        let page = self.current_page_mut();
+        if let Some(uvs) = page.sheet.allocate(device, queue, w, h, data) {
+            let info = GlyphInfo {
+                uv_left: uvs.0,
+                uv_top: uvs.1,
+                uv_right: uvs.2,
+                uv_bottom: uvs.3,
+                width: w,
+                height: h,
+                bearing_x,
+                bearing_y,
+                atlas_kind,
+            };
+            page.entries.insert(key, info);
+            return Some(info);
+        }
+
+        let format = self.format;
+        let old_page_id = self.current_page().page_id;
+        log::info!(
+            "Atlas page {} full for {:?}, allocating new page",
+            old_page_id,
+            format,
+        );
+        let new_page_id = self.next_page_id;
+        self.next_page_id += 1;
+        let mut new_page = AtlasPage::new(device, format, new_page_id);
+        let uvs = new_page.sheet.allocate(device, queue, w, h, data)?;
+        let info = GlyphInfo {
+            uv_left: uvs.0,
+            uv_top: uvs.1,
+            uv_right: uvs.2,
+            uv_bottom: uvs.3,
+            width: w,
+            height: h,
+            bearing_x,
+            bearing_y,
+            atlas_kind,
+        };
+        new_page.entries.insert(key, info);
+        self.pages.push(new_page);
+        Some(info)
+    }
+
+    /// Looks up a glyph in any page.
+    fn get(&self, key: &GlyphKey) -> Option<&GlyphInfo> {
+        for page in &self.pages {
+            if let Some(info) = page.entries.get(key) {
+                return Some(info);
+            }
+        }
+        None
+    }
+
+    /// Total glyph count across all pages.
+    fn glyph_count(&self) -> usize {
+        self.pages.iter().map(AtlasPage::glyph_count).sum()
+    }
+
+    /// Number of allocated pages.
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// View of the first (primary) page — used for bind groups when there is
+    /// only one page.
+    #[allow(dead_code)]
+    fn primary_view(&self) -> &wgpu::TextureView {
+        self.pages[0].view()
+    }
+
+    fn reset_all(&mut self) {
+        for page in &mut self.pages {
+            page.sheet.reset_cursors();
+            page.entries.clear();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // TextAtlas
 // ---------------------------------------------------------------------------
 
@@ -357,15 +599,26 @@ const DEFAULT_LRU_CAPACITY: usize = 8192;
 /// Two atlas sheets are maintained:
 /// - **Mask** (`R8Unorm`) for standard grayscale glyphs.
 /// - **Color** (`Rgba8Unorm`) for color emoji and subpixel-AA glyphs.
+///
+/// Additionally, multi-page atlas pools and a ligature cache are provided
+/// for advanced rendering scenarios.
 pub struct TextAtlas {
     mask_sheet: AtlasSheet,
     color_sheet: AtlasSheet,
+    /// Multi-page mask atlas for overflow.
+    pub mask_pages: MultiPageAtlas,
+    /// Multi-page color atlas for overflow.
+    pub color_pages: MultiPageAtlas,
     /// Sampler shared by both atlas textures.
     pub sampler: wgpu::Sampler,
     /// Primary cache mapping `CacheKey` → `GlyphInfo` (legacy compat).
     glyphs: HashMap<CacheKey, GlyphInfo>,
     /// Extended cache with variant + subpixel keys.
     extended_glyphs: HashMap<ExtendedCacheKey, GlyphInfo>,
+    /// Canonical `GlyphKey`-based cache for the multi-page atlas path.
+    keyed_glyphs: HashMap<GlyphKey, GlyphInfo>,
+    /// Ligature cache.
+    ligature_cache: HashMap<LigatureKey, LigatureEntry>,
     lru: LruTracker,
     swash_cache: SwashCache,
     /// Whether a compaction is needed on the next eviction.
@@ -385,9 +638,13 @@ impl TextAtlas {
         Self {
             mask_sheet: AtlasSheet::new(device, wgpu::TextureFormat::R8Unorm),
             color_sheet: AtlasSheet::new(device, wgpu::TextureFormat::Rgba8Unorm),
+            mask_pages: MultiPageAtlas::new(device, wgpu::TextureFormat::R8Unorm),
+            color_pages: MultiPageAtlas::new(device, wgpu::TextureFormat::Rgba8Unorm),
             sampler,
             glyphs: HashMap::new(),
             extended_glyphs: HashMap::new(),
+            keyed_glyphs: HashMap::new(),
+            ligature_cache: HashMap::new(),
             lru: LruTracker::new(DEFAULT_LRU_CAPACITY),
             swash_cache: SwashCache::new(),
             needs_compaction: false,
@@ -399,7 +656,11 @@ impl TextAtlas {
     }
 
     pub fn glyph_count(&self) -> usize {
-        self.glyphs.len() + self.extended_glyphs.len()
+        self.glyphs.len()
+            + self.extended_glyphs.len()
+            + self.keyed_glyphs.len()
+            + self.mask_pages.glyph_count()
+            + self.color_pages.glyph_count()
     }
 
     /// Returns a reference to the mask atlas texture view.
@@ -437,15 +698,23 @@ impl TextAtlas {
             return Some(*info);
         }
 
-        let image = self.swash_cache.get_image_uncached(font_system, cache_key)?;
+        let image = self
+            .swash_cache
+            .get_image_uncached(font_system, cache_key)?;
 
         let (glyph_w, glyph_h, atlas_kind, data) = match image.content {
-            SwashContent::Mask => {
-                (image.placement.width, image.placement.height, AtlasKind::Mask, image.data.clone())
-            }
-            SwashContent::Color | SwashContent::SubpixelMask => {
-                (image.placement.width, image.placement.height, AtlasKind::Color, image.data.clone())
-            }
+            SwashContent::Mask => (
+                image.placement.width,
+                image.placement.height,
+                AtlasKind::Mask,
+                image.data.clone(),
+            ),
+            SwashContent::Color | SwashContent::SubpixelMask => (
+                image.placement.width,
+                image.placement.height,
+                AtlasKind::Color,
+                image.data.clone(),
+            ),
         };
 
         if glyph_w == 0 || glyph_h == 0 {
@@ -471,7 +740,8 @@ impl TextAtlas {
             AtlasKind::Color => &mut self.color_sheet,
         };
 
-        let (uv_left, uv_top, uv_right, uv_bottom) = sheet.allocate(device, queue, glyph_w, glyph_h, &data);
+        let (uv_left, uv_top, uv_right, uv_bottom) =
+            sheet.allocate(device, queue, glyph_w, glyph_h, &data)?;
 
         let info = GlyphInfo {
             uv_left,
@@ -520,15 +790,23 @@ impl TextAtlas {
             return Some(*info);
         }
 
-        let image = self.swash_cache.get_image_uncached(font_system, key.inner)?;
+        let image = self
+            .swash_cache
+            .get_image_uncached(font_system, key.inner)?;
 
         let (glyph_w, glyph_h, atlas_kind, data) = match image.content {
-            SwashContent::Mask => {
-                (image.placement.width, image.placement.height, AtlasKind::Mask, image.data.clone())
-            }
-            SwashContent::Color | SwashContent::SubpixelMask => {
-                (image.placement.width, image.placement.height, AtlasKind::Color, image.data.clone())
-            }
+            SwashContent::Mask => (
+                image.placement.width,
+                image.placement.height,
+                AtlasKind::Mask,
+                image.data.clone(),
+            ),
+            SwashContent::Color | SwashContent::SubpixelMask => (
+                image.placement.width,
+                image.placement.height,
+                AtlasKind::Color,
+                image.data.clone(),
+            ),
         };
 
         if glyph_w == 0 || glyph_h == 0 {
@@ -555,7 +833,8 @@ impl TextAtlas {
             AtlasKind::Color => &mut self.color_sheet,
         };
 
-        let (uv_left, uv_top, uv_right, uv_bottom) = sheet.allocate(device, queue, glyph_w, glyph_h, &data);
+        let (uv_left, uv_top, uv_right, uv_bottom) =
+            sheet.allocate(device, queue, glyph_w, glyph_h, &data)?;
 
         let info = GlyphInfo {
             uv_left,
@@ -632,6 +911,94 @@ impl TextAtlas {
     }
 
     // -----------------------------------------------------------------------
+    // Keyed glyph API — GlyphKey-based (multi-page aware)
+    // -----------------------------------------------------------------------
+
+    /// Looks up a glyph by [`GlyphKey`] across all atlas pages.
+    pub fn get_keyed_glyph(&self, key: &GlyphKey) -> Option<&GlyphInfo> {
+        self.keyed_glyphs.get(key)
+            .or_else(|| self.mask_pages.get(key))
+            .or_else(|| self.color_pages.get(key))
+    }
+
+    /// Rasterizes and caches a glyph addressed by [`GlyphKey`], using the
+    /// multi-page atlas path.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn rasterize_keyed_glyph(
+        &mut self,
+        font_system: &mut FontSystem,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key: GlyphKey,
+        cache_key: CacheKey,
+    ) -> Option<GlyphInfo> {
+        if let Some(info) = self.keyed_glyphs.get(&key) {
+            return Some(*info);
+        }
+
+        let image = self.swash_cache.get_image_uncached(font_system, cache_key)?;
+        let (glyph_w, glyph_h, atlas_kind, data) = match image.content {
+            SwashContent::Mask => (
+                image.placement.width, image.placement.height,
+                AtlasKind::Mask, image.data.clone(),
+            ),
+            SwashContent::Color | SwashContent::SubpixelMask => (
+                image.placement.width, image.placement.height,
+                AtlasKind::Color, image.data.clone(),
+            ),
+        };
+
+        if glyph_w == 0 || glyph_h == 0 {
+            let info = GlyphInfo {
+                uv_left: 0.0, uv_top: 0.0, uv_right: 0.0, uv_bottom: 0.0,
+                width: 0, height: 0,
+                bearing_x: image.placement.left as f32,
+                bearing_y: image.placement.top as f32,
+                atlas_kind,
+            };
+            self.keyed_glyphs.insert(key, info);
+            return Some(info);
+        }
+
+        let pages = match atlas_kind {
+            AtlasKind::Mask => &mut self.mask_pages,
+            AtlasKind::Color => &mut self.color_pages,
+        };
+
+        let info = pages.allocate(
+            device, queue, key, glyph_w, glyph_h, &data,
+            image.placement.left as f32, image.placement.top as f32,
+            atlas_kind,
+        )?;
+        self.keyed_glyphs.insert(key, info);
+        Some(info)
+    }
+
+    // -----------------------------------------------------------------------
+    // Ligature cache
+    // -----------------------------------------------------------------------
+
+    /// Looks up a cached ligature entry.
+    pub fn get_ligature(&self, key: &LigatureKey) -> Option<&LigatureEntry> {
+        self.ligature_cache.get(key)
+    }
+
+    /// Inserts a ligature cache entry.
+    pub fn insert_ligature(&mut self, key: LigatureKey, entry: LigatureEntry) {
+        self.ligature_cache.insert(key, entry);
+    }
+
+    /// Clears the entire ligature cache.
+    pub fn clear_ligature_cache(&mut self) {
+        self.ligature_cache.clear();
+    }
+
+    /// Returns the number of cached ligatures.
+    pub fn ligature_count(&self) -> usize {
+        self.ligature_cache.len()
+    }
+
+    // -----------------------------------------------------------------------
     // Eviction + compaction
     // -----------------------------------------------------------------------
 
@@ -667,6 +1034,10 @@ impl TextAtlas {
         self.color_sheet.reset_cursors();
         self.glyphs.clear();
         self.extended_glyphs.clear();
+        self.keyed_glyphs.clear();
+        self.mask_pages.reset_all();
+        self.color_pages.reset_all();
+        self.ligature_cache.clear();
         self.needs_compaction = false;
     }
 }

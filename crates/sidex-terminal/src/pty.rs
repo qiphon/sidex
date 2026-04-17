@@ -308,7 +308,10 @@ fn login_args_for_shell(shell_path: &str) -> Vec<String> {
 pub fn kill_process_tree(pid: u32) -> PtyResult<()> {
     use std::process::Command;
 
-    if let Ok(output) = Command::new("pgrep").args(["-P", &pid.to_string()]).output() {
+    if let Ok(output) = Command::new("pgrep")
+        .args(["-P", &pid.to_string()])
+        .output()
+    {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
             if let Ok(child_pid) = line.trim().parse::<u32>() {
@@ -391,6 +394,13 @@ pub struct PtySpawnConfig {
     pub size: TerminalSize,
 }
 
+impl PtySpawnConfig {
+    /// Sets an environment variable to be passed to the spawned process.
+    pub fn set_env(&mut self, key: &str, value: &str) {
+        self.env.insert(key.to_string(), value.to_string());
+    }
+}
+
 /// A managed pseudo-terminal process with ring-buffer output and
 /// event channel.
 pub struct PtyProcess {
@@ -406,6 +416,7 @@ pub struct PtyProcess {
     cwd: PathBuf,
     cols: u16,
     rows: u16,
+    title: Arc<Mutex<Option<String>>>,
 }
 
 impl PtyProcess {
@@ -491,6 +502,7 @@ impl PtyProcess {
             cwd: work_dir,
             cols: config.size.cols,
             rows: config.size.rows,
+            title: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -703,13 +715,65 @@ impl PtyProcess {
         Ok(())
     }
 
+    /// Sets an environment variable by writing an `export` command to the shell.
+    pub fn set_env(&self, key: &str, value: &str) -> PtyResult<()> {
+        let cmd = if cfg!(target_os = "windows") {
+            format!("set {}={}\n", key, value)
+        } else {
+            format!("export {}='{}'\n", key, value.replace('\'', "'\"'\"'"))
+        };
+        self.write_str(&cmd)
+    }
+
+    /// Attempts to read the current working directory of the shell process
+    /// via `/proc/<pid>/cwd` on Linux or `lsof` on macOS.
+    pub fn get_cwd(&self) -> Option<PathBuf> {
+        let pid = self.pid()?;
+
+        #[cfg(target_os = "linux")]
+        {
+            let link = format!("/proc/{pid}/cwd");
+            if let Ok(path) = std::fs::read_link(&link) {
+                return Some(path);
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(output) = std::process::Command::new("lsof")
+                .args(["-p", &pid.to_string(), "-Fn"])
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    if let Some(dir) = line.strip_prefix('n') {
+                        let p = PathBuf::from(dir);
+                        if p.is_dir() {
+                            return Some(p);
+                        }
+                    }
+                }
+            }
+        }
+
+        Some(self.cwd.clone())
+    }
+
+    /// Returns the terminal title (set via OSC escape sequences).
+    pub fn get_title(&self) -> Option<String> {
+        self.title.lock().ok()?.clone()
+    }
+
+    /// Sets the terminal title (called by the emulator when OSC 0/2 is received).
+    pub fn set_title(&self, title: &str) {
+        if let Ok(mut t) = self.title.lock() {
+            *t = Some(title.to_string());
+        }
+    }
+
     /// Returns a `TermInfo` snapshot of this terminal.
     pub fn info(&self, handle: TermHandle) -> TermInfo {
-        let total = self
-            .output
-            .lock()
-            .map(|b| b.total_count())
-            .unwrap_or(0);
+        let total = self.output.lock().map(|b| b.total_count()).unwrap_or(0);
         TermInfo {
             handle,
             shell: self.shell.clone(),

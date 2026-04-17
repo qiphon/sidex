@@ -5,7 +5,6 @@
 
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import {
-	DynamicSpeechAccessibilityConfiguration,
 	registerAccessibilityConfiguration
 } from './accessibilityConfiguration.js';
 import {
@@ -21,7 +20,6 @@ import { AccessibilityStatus } from './accessibilityStatus.js';
 import { EditorAccessibilityHelpContribution } from './editorAccessibilityHelp.js';
 import { SaveAccessibilitySignalContribution } from '../../accessibilitySignals/browser/saveAccessibilitySignal.js';
 import { DiffEditorActiveAnnouncementContribution } from '../../accessibilitySignals/browser/openDiffEditorAnnouncement.js';
-import { SpeechAccessibilitySignalContribution } from '../../speech/browser/speechAccessibilitySignal.js';
 import {
 	AccessibleViewInformationService,
 	IAccessibleViewInformationService
@@ -54,17 +52,7 @@ registerWorkbenchContribution2(
 	WorkbenchPhase.AfterRestored
 );
 registerWorkbenchContribution2(
-	SpeechAccessibilitySignalContribution.ID,
-	SpeechAccessibilitySignalContribution,
-	WorkbenchPhase.AfterRestored
-);
-registerWorkbenchContribution2(
 	DiffEditorActiveAnnouncementContribution.ID,
 	DiffEditorActiveAnnouncementContribution,
-	WorkbenchPhase.AfterRestored
-);
-registerWorkbenchContribution2(
-	DynamicSpeechAccessibilityConfiguration.ID,
-	DynamicSpeechAccessibilityConfiguration,
 	WorkbenchPhase.AfterRestored
 );

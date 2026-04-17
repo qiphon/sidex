@@ -45,6 +45,37 @@ async function boot() {
 		}
 	}
 
+	// SideX Rust bridge initialization — make services available before workbench creation
+	if ((globalThis as any).__SIDEX_TAURI__) {
+		const {
+			SideXEditorBridge,
+			SideXSyntaxService,
+			SideXGitService,
+			SideXSearchService,
+			SideXTerminalService,
+			SideXSettingsService,
+			SideXThemeService,
+			SideXExtensionService,
+			SideXKeymapService,
+			SideXFileSystemProvider,
+		} = await import('./vs/platform/sidex/common/sidexServices.js');
+
+		(globalThis as any).__SIDEX_SERVICES__ = {
+			editor: SideXEditorBridge.getInstance(),
+			syntax: new SideXSyntaxService(),
+			git: new SideXGitService(),
+			search: new SideXSearchService(),
+			terminal: new SideXTerminalService(),
+			settings: new SideXSettingsService(),
+			theme: new SideXThemeService(),
+			extensions: new SideXExtensionService(),
+			keymap: new SideXKeymapService(),
+			fileSystem: new SideXFileSystemProvider(),
+		};
+
+		console.log('[SideX] Rust bridge services initialized');
+	}
+
 	const { create } = await import('./vs/workbench/browser/web.factory.js');
 	const { URI } = await import('./vs/base/common/uri.js');
 

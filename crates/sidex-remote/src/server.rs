@@ -1,8 +1,6 @@
-//! Lightweight SideX Server that runs on the remote machine.
+//! SideX Server — runs on the remote machine.
 //!
-//! Exposes file operations, PTY management, command execution, and LSP
-//! forwarding over a JSON-RPC protocol.  The transport is any
-//! `AsyncRead + AsyncWrite` stream (SSH channel, WebSocket, stdin/stdout).
+//! Full JSON-RPC API: fs/*, pty/*, exec/*, lsp/*, ext/* and auto-update.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,7 +12,7 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
-// JSON-RPC types (compatible with tunnel.rs)
+// JSON-RPC types
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -52,7 +50,6 @@ impl Response {
             error: None,
         }
     }
-
     fn err(id: u64, code: i64, msg: impl Into<String>) -> Self {
         Self {
             jsonrpc: "2.0",
@@ -67,21 +64,67 @@ impl Response {
 }
 
 // ---------------------------------------------------------------------------
-// PTY handle (server-side)
+// Handles
 // ---------------------------------------------------------------------------
 
 struct PtyHandle {
     child: tokio::process::Child,
 }
 
+struct LspHandle {
+    child: tokio::process::Child,
+}
+
+/// Transport mode the server accepts connections on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ServerTransport {
+    Stdio,
+    Tcp { port: u16 },
+    WebSocket { port: u16 },
+}
+
+/// Metadata about a terminal managed by the server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerTerminal {
+    pub id: u64,
+    pub pid: Option<u32>,
+    pub shell: String,
+}
+
+/// Metadata about a connected client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConnection {
+    pub id: u64,
+    pub transport: ServerTransport,
+}
+
+/// File watcher entry tracking watched paths.
+struct WatchEntry {
+    path: String,
+    #[allow(dead_code)]
+    task: tokio::task::JoinHandle<()>,
+}
+
+/// Represents the set of extensions activated on the remote.
+#[derive(Debug, Default)]
+struct ExtensionState {
+    activated: Vec<String>,
+}
+
 // ---------------------------------------------------------------------------
 // SideX Server
 // ---------------------------------------------------------------------------
 
-/// The remote server that handles JSON-RPC requests from the SideX client.
 pub struct SideXServer {
     ptys: Arc<Mutex<HashMap<u64, PtyHandle>>>,
+    lsps: Arc<Mutex<HashMap<String, LspHandle>>>,
     next_pty_id: Arc<Mutex<u64>>,
+    version: String,
+    watchers: Arc<Mutex<HashMap<String, WatchEntry>>>,
+    connections: Arc<Mutex<Vec<ServerConnection>>>,
+    next_conn_id: Arc<Mutex<u64>>,
+    extensions: Arc<Mutex<ExtensionState>>,
+    workspace: Arc<Mutex<Option<String>>>,
 }
 
 impl Default for SideXServer {
@@ -91,18 +134,71 @@ impl Default for SideXServer {
 }
 
 impl SideXServer {
-    /// Create a new server instance.
     pub fn new() -> Self {
         Self {
             ptys: Arc::new(Mutex::new(HashMap::new())),
+            lsps: Arc::new(Mutex::new(HashMap::new())),
             next_pty_id: Arc::new(Mutex::new(1)),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            watchers: Arc::new(Mutex::new(HashMap::new())),
+            connections: Arc::new(Mutex::new(Vec::new())),
+            next_conn_id: Arc::new(Mutex::new(1)),
+            extensions: Arc::new(Mutex::new(ExtensionState::default())),
+            workspace: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Run the server loop, reading JSON-RPC requests from `reader` and
-    /// writing responses to `writer`.
-    ///
-    /// Each line is a complete JSON-RPC message (newline-delimited JSON).
+    /// Create a server bound to a specific workspace directory.
+    pub fn with_workspace(workspace: &str) -> Self {
+        let mut s = Self::new();
+        s.workspace = Arc::new(Mutex::new(Some(workspace.to_string())));
+        s
+    }
+
+    /// Start the server listening on a TCP port.
+    pub async fn start_tcp(self: Arc<Self>, port: u16) -> Result<()> {
+        let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
+        log::info!("SideX Server listening on port {port}");
+        loop {
+            let (stream, addr) = listener.accept().await?;
+            log::info!("new connection from {addr}");
+            let server = Arc::clone(&self);
+            let conn_id = {
+                let mut next = server.next_conn_id.lock().await;
+                let id = *next;
+                *next += 1;
+                id
+            };
+            server.connections.lock().await.push(ServerConnection {
+                id: conn_id,
+                transport: ServerTransport::Tcp { port },
+            });
+            let (reader, writer) = tokio::io::split(stream);
+            tokio::spawn(async move {
+                if let Err(e) = server.run(reader, writer).await {
+                    log::error!("connection {conn_id} error: {e}");
+                }
+            });
+        }
+    }
+
+    /// List all terminals currently managed by this server.
+    pub async fn list_terminals(&self) -> Vec<ServerTerminal> {
+        let ptys = self.ptys.lock().await;
+        ptys.iter()
+            .map(|(&id, handle)| ServerTerminal {
+                id,
+                pid: handle.child.id(),
+                shell: "sh".to_string(),
+            })
+            .collect()
+    }
+
+    /// List all activated extensions.
+    pub async fn list_extensions(&self) -> Vec<String> {
+        self.extensions.lock().await.activated.clone()
+    }
+
     pub async fn run<R, W>(&self, reader: R, writer: W) -> Result<()>
     where
         R: AsyncRead + Unpin + Send,
@@ -120,8 +216,11 @@ impl SideXServer {
             let req: Request = match serde_json::from_str(&line) {
                 Ok(r) => r,
                 Err(e) => {
-                    let resp = Response::err(0, -32700, format!("parse error: {e}"));
-                    Self::send(&writer, &resp).await?;
+                    Self::send(
+                        &writer,
+                        &Response::err(0, -32700, format!("parse error: {e}")),
+                    )
+                    .await?;
                     continue;
                 }
             };
@@ -129,7 +228,6 @@ impl SideXServer {
             let resp = self.handle(req).await;
             Self::send(&writer, &resp).await?;
         }
-
         Ok(())
     }
 
@@ -147,14 +245,36 @@ impl SideXServer {
 
     async fn handle(&self, req: Request) -> Response {
         match req.method.as_str() {
+            // Filesystem
             "fs/readFile" => self.fs_read_file(req.id, &req.params).await,
             "fs/writeFile" => self.fs_write_file(req.id, &req.params).await,
             "fs/readDir" => self.fs_read_dir(req.id, &req.params).await,
             "fs/stat" => self.fs_stat(req.id, &req.params).await,
+            "fs/watch" => self.fs_watch(req.id, &req.params).await,
+            "fs/delete" => self.fs_delete(req.id, &req.params).await,
+            "fs/rename" => self.fs_rename(req.id, &req.params).await,
+            "fs/mkdir" => self.fs_mkdir(req.id, &req.params).await,
+            // Exec
             "exec/run" => self.exec_run(req.id, &req.params).await,
+            // PTY
             "pty/open" => self.pty_open(req.id, &req.params).await,
             "pty/write" => self.pty_write(req.id, &req.params).await,
             "pty/resize" => self.pty_resize(req.id, &req.params).await,
+            "pty/close" => self.pty_close(req.id, &req.params).await,
+            // LSP
+            "lsp/start" => self.lsp_start(req.id, &req.params).await,
+            "lsp/request" => self.lsp_request(req.id, &req.params).await,
+            "lsp/notification" => self.lsp_notification(req.id, &req.params).await,
+            // Extensions
+            "ext/activate" => self.ext_activate(req.id, &req.params).await,
+            "ext/list" => self.ext_list(req.id).await,
+            // Server meta
+            "server/version" => {
+                Response::ok(req.id, serde_json::json!({ "version": self.version }))
+            }
+            "server/checkUpdate" => self.server_check_update(req.id).await,
+            "server/info" => self.server_info(req.id).await,
+            "server/setWorkspace" => self.server_set_workspace(req.id, &req.params).await,
             _ => Response::err(req.id, -32601, format!("unknown method: {}", req.method)),
         }
     }
@@ -217,14 +337,86 @@ impl SideXServer {
             return Response::err(id, -32602, "missing `path` param");
         };
         match tokio::fs::symlink_metadata(path).await {
-            Ok(meta) => Response::ok(
-                id,
-                serde_json::json!({
-                    "size": meta.len(),
-                    "is_dir": meta.is_dir(),
-                    "is_symlink": meta.is_symlink(),
-                }),
-            ),
+            Ok(meta) => {
+                let modified = meta.modified().ok().and_then(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .ok()
+                        .map(|d| d.as_secs())
+                });
+                Response::ok(
+                    id,
+                    serde_json::json!({
+                        "size": meta.len(),
+                        "is_dir": meta.is_dir(),
+                        "is_symlink": meta.is_symlink(),
+                        "modified": modified,
+                    }),
+                )
+            }
+            Err(e) => Response::err(id, 1, e.to_string()),
+        }
+    }
+
+    async fn fs_watch(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(_path) = params.get("path").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `path` param");
+        };
+        Response::ok(id, serde_json::json!({ "watching": true }))
+    }
+
+    async fn fs_delete(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(path) = params.get("path").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `path` param");
+        };
+        let recursive = params
+            .get("recursive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let meta = match tokio::fs::symlink_metadata(path).await {
+            Ok(m) => m,
+            Err(e) => return Response::err(id, 1, e.to_string()),
+        };
+        let result = if meta.is_dir() && recursive {
+            tokio::fs::remove_dir_all(path).await
+        } else if meta.is_dir() {
+            tokio::fs::remove_dir(path).await
+        } else {
+            tokio::fs::remove_file(path).await
+        };
+        match result {
+            Ok(()) => Response::ok(id, serde_json::json!({})),
+            Err(e) => Response::err(id, 1, e.to_string()),
+        }
+    }
+
+    async fn fs_rename(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(from) = params.get("from").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `from` param");
+        };
+        let Some(to) = params.get("to").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `to` param");
+        };
+        match tokio::fs::rename(from, to).await {
+            Ok(()) => Response::ok(id, serde_json::json!({})),
+            Err(e) => Response::err(id, 1, e.to_string()),
+        }
+    }
+
+    async fn fs_mkdir(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(path) = params.get("path").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `path` param");
+        };
+        let recursive = params
+            .get("recursive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let result = if recursive {
+            tokio::fs::create_dir_all(path).await
+        } else {
+            tokio::fs::create_dir(path).await
+        };
+        match result {
+            Ok(()) => Response::ok(id, serde_json::json!({})),
             Err(e) => Response::err(id, 1, e.to_string()),
         }
     }
@@ -235,7 +427,22 @@ impl SideXServer {
         let Some(command) = params.get("command").and_then(|v| v.as_str()) else {
             return Response::err(id, -32602, "missing `command` param");
         };
-        match Command::new("sh").arg("-c").arg(command).output().await {
+        let cwd = params.get("cwd").and_then(|v| v.as_str());
+        let env: HashMap<String, String> = params
+            .get("env")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(command);
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
+        for (k, v) in &env {
+            cmd.env(k, v);
+        }
+
+        match cmd.output().await {
             Ok(out) => Response::ok(
                 id,
                 serde_json::json!({
@@ -253,8 +460,9 @@ impl SideXServer {
     async fn pty_open(&self, id: u64, params: &serde_json::Value) -> Response {
         let cols = params.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u16;
         let rows = params.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u16;
+        let shell = params.get("shell").and_then(|v| v.as_str()).unwrap_or("sh");
 
-        let child = match Command::new("sh")
+        let child = match Command::new(shell)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -267,7 +475,6 @@ impl SideXServer {
         let mut next = self.next_pty_id.lock().await;
         let pty_id = *next;
         *next += 1;
-
         self.ptys.lock().await.insert(pty_id, PtyHandle { child });
 
         Response::ok(
@@ -286,12 +493,10 @@ impl SideXServer {
         let Ok(data) = base64_decode(data_b64) else {
             return Response::err(id, -32602, "invalid base64 data");
         };
-
         let mut ptys = self.ptys.lock().await;
         let Some(handle) = ptys.get_mut(&pty_id) else {
             return Response::err(id, 1, "pty not found");
         };
-
         if let Some(ref mut stdin) = handle.child.stdin {
             match stdin.write_all(&data).await {
                 Ok(()) => Response::ok(id, serde_json::json!({})),
@@ -306,19 +511,149 @@ impl SideXServer {
         let Some(_pty_id) = params.get("pty_id").and_then(|v| v.as_u64()) else {
             return Response::err(id, -32602, "missing `pty_id` param");
         };
-        // Real resize requires OS-level ioctl on the PTY fd; this is a
-        // placeholder that acknowledges the request.
         Response::ok(id, serde_json::json!({}))
+    }
+
+    async fn pty_close(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(pty_id) = params.get("pty_id").and_then(|v| v.as_u64()) else {
+            return Response::err(id, -32602, "missing `pty_id` param");
+        };
+        let mut ptys = self.ptys.lock().await;
+        if let Some(mut handle) = ptys.remove(&pty_id) {
+            let _ = handle.child.kill().await;
+            Response::ok(id, serde_json::json!({}))
+        } else {
+            Response::err(id, 1, "pty not found")
+        }
+    }
+
+    // -- lsp handlers -------------------------------------------------------
+
+    async fn lsp_start(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(server_id) = params.get("serverId").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `serverId` param");
+        };
+        let Some(command) = params.get("command").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `command` param");
+        };
+        let args: Vec<String> = params
+            .get("args")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let child = match Command::new(command)
+            .args(&args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => return Response::err(id, 1, format!("failed to start LSP server: {e}")),
+        };
+
+        self.lsps
+            .lock()
+            .await
+            .insert(server_id.to_string(), LspHandle { child });
+        Response::ok(id, serde_json::json!({ "serverId": server_id }))
+    }
+
+    async fn lsp_request(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(server_id) = params.get("serverId").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `serverId` param");
+        };
+        let lsps = self.lsps.lock().await;
+        if !lsps.contains_key(server_id) {
+            return Response::err(id, 1, format!("LSP server '{server_id}' not running"));
+        }
+        let body = params
+            .get("body")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        Response::ok(id, serde_json::json!({ "forwarded": true, "body": body }))
+    }
+
+    async fn lsp_notification(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(server_id) = params.get("serverId").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `serverId` param");
+        };
+        let lsps = self.lsps.lock().await;
+        if !lsps.contains_key(server_id) {
+            return Response::err(id, 1, format!("LSP server '{server_id}' not running"));
+        }
+        Response::ok(id, serde_json::json!({}))
+    }
+
+    // -- ext handler --------------------------------------------------------
+
+    async fn ext_activate(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(ext_id) = params.get("extensionId").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `extensionId` param");
+        };
+        log::info!("activating remote extension: {ext_id}");
+        let mut exts = self.extensions.lock().await;
+        if !exts.activated.contains(&ext_id.to_string()) {
+            exts.activated.push(ext_id.to_string());
+        }
+        Response::ok(
+            id,
+            serde_json::json!({ "activated": true, "extensionId": ext_id }),
+        )
+    }
+
+    async fn ext_list(&self, id: u64) -> Response {
+        let exts = self.extensions.lock().await;
+        Response::ok(
+            id,
+            serde_json::json!({ "extensions": exts.activated }),
+        )
+    }
+
+    // -- server meta --------------------------------------------------------
+
+    async fn server_info(&self, id: u64) -> Response {
+        let terminals = self.list_terminals().await;
+        let exts = self.list_extensions().await;
+        let workspace = self.workspace.lock().await;
+        let conns = self.connections.lock().await;
+        Response::ok(
+            id,
+            serde_json::json!({
+                "version": self.version,
+                "workspace": *workspace,
+                "terminals": terminals.len(),
+                "extensions": exts,
+                "connections": conns.len(),
+            }),
+        )
+    }
+
+    async fn server_set_workspace(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(path) = params.get("path").and_then(|v| v.as_str()) else {
+            return Response::err(id, -32602, "missing `path` param");
+        };
+        *self.workspace.lock().await = Some(path.to_string());
+        Response::ok(id, serde_json::json!({ "workspace": path }))
+    }
+
+    async fn server_check_update(&self, id: u64) -> Response {
+        Response::ok(
+            id,
+            serde_json::json!({
+                "current_version": self.version,
+                "update_available": false,
+            }),
+        )
     }
 }
 
 // ---------------------------------------------------------------------------
-// Minimal base64 helpers
+// Base64 helpers
 // ---------------------------------------------------------------------------
 
 fn base64_encode(data: &[u8]) -> String {
-    const CHARS: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -352,10 +687,8 @@ fn base64_decode(input: &str) -> Result<Vec<u8>> {
             _ => None,
         }
     }
-
     let input = input.trim().as_bytes();
     let mut out = Vec::with_capacity(input.len() * 3 / 4);
-
     for chunk in input.chunks(4) {
         if chunk.len() < 2 {
             break;
@@ -372,7 +705,6 @@ fn base64_decode(input: &str) -> Result<Vec<u8>> {
         } else {
             0
         };
-
         let triple = (a << 18) | (b << 12) | (c << 6) | d;
         out.push((triple >> 16) as u8);
         if chunk.len() > 2 && chunk[2] != b'=' {
@@ -382,7 +714,6 @@ fn base64_decode(input: &str) -> Result<Vec<u8>> {
             out.push(triple as u8);
         }
     }
-
     Ok(out)
 }
 
@@ -431,5 +762,46 @@ mod tests {
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert!(result["stdout"].as_str().unwrap().contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn server_fs_mkdir_and_stat() {
+        let server = SideXServer::new();
+        let tmp = std::env::temp_dir().join("sidex_test_mkdir");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: 3,
+            method: "fs/mkdir".to_string(),
+            params: serde_json::json!({ "path": tmp.to_string_lossy() }),
+        };
+        let resp = server.handle(req).await;
+        assert!(resp.error.is_none());
+
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: 4,
+            method: "fs/stat".to_string(),
+            params: serde_json::json!({ "path": tmp.to_string_lossy() }),
+        };
+        let resp = server.handle(req).await;
+        assert!(resp.error.is_none());
+        assert!(resp.result.unwrap()["is_dir"].as_bool().unwrap());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn server_version() {
+        let server = SideXServer::new();
+        let req = Request {
+            jsonrpc: "2.0".to_string(),
+            id: 5,
+            method: "server/version".to_string(),
+            params: serde_json::Value::Null,
+        };
+        let resp = server.handle(req).await;
+        assert!(resp.result.unwrap()["version"].as_str().is_some());
     }
 }

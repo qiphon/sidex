@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -350,10 +350,7 @@ impl DebugApi {
                 Ok(Value::Bool(true))
             }
             "removeBreakpoints" => {
-                let uri = params
-                    .get("uri")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
                 self.remove_breakpoints(uri);
                 Ok(Value::Bool(true))
             }
@@ -362,23 +359,15 @@ impl DebugApi {
                 Ok(serde_json::to_value(ids)?)
             }
             "registerDebugAdapterDescriptorFactory" => {
-                let debug_type = params
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let debug_type = params.get("type").and_then(Value::as_str).unwrap_or("");
                 let id = self.register_debug_adapter_descriptor_factory(
                     debug_type,
-                    Arc::new(|_config| {
-                        Ok(DebugAdapterDescriptor::Inline)
-                    }),
+                    Arc::new(|_config| Ok(DebugAdapterDescriptor::Inline)),
                 );
                 Ok(serde_json::to_value(id)?)
             }
             "registerDebugConfigurationProvider" => {
-                let debug_type = params
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let debug_type = params.get("type").and_then(Value::as_str).unwrap_or("");
                 let id = self.register_debug_configuration_provider(
                     debug_type,
                     Arc::new(|_folder, _token| Ok(Vec::new())),
@@ -473,10 +462,7 @@ impl DebugApi {
 
     /// Stops a debug session.
     pub fn stop_debugging(&self, id: DebugSessionId) -> Result<()> {
-        let mut sessions = self
-            .sessions
-            .write()
-            .expect("debug sessions lock poisoned");
+        let mut sessions = self.sessions.write().expect("debug sessions lock poisoned");
 
         if let Some(session) = sessions.get_mut(&id) {
             session.running = false;
@@ -492,12 +478,7 @@ impl DebugApi {
         }
 
         let val = serde_json::to_value(id).unwrap_or(Value::Null);
-        for listener in self
-            .on_did_terminate
-            .read()
-            .expect("lock poisoned")
-            .iter()
-        {
+        for listener in self.on_did_terminate.read().expect("lock poisoned").iter() {
             let _ = listener(val.clone());
         }
 
@@ -515,16 +496,9 @@ impl DebugApi {
 
     /// Adds a breakpoint. Applies to all active sessions.
     pub fn add_breakpoint(&self, location: &BreakpointLocation) -> Result<()> {
-        log::debug!(
-            "[ext] breakpoint at {}:{}",
-            location.uri,
-            location.line,
-        );
+        log::debug!("[ext] breakpoint at {}:{}", location.uri, location.line,);
 
-        let mut sessions = self
-            .sessions
-            .write()
-            .expect("debug sessions lock poisoned");
+        let mut sessions = self.sessions.write().expect("debug sessions lock poisoned");
 
         for session in sessions.values_mut() {
             session.breakpoints.push(location.clone());
@@ -536,10 +510,7 @@ impl DebugApi {
     /// Adds a function breakpoint.
     pub fn add_function_breakpoint(&self, bp: &FunctionBreakpoint) -> Result<()> {
         log::debug!("[ext] function breakpoint: {}", bp.name);
-        let mut sessions = self
-            .sessions
-            .write()
-            .expect("debug sessions lock poisoned");
+        let mut sessions = self.sessions.write().expect("debug sessions lock poisoned");
         for session in sessions.values_mut() {
             session.function_breakpoints.push(bp.clone());
         }
@@ -549,10 +520,7 @@ impl DebugApi {
     /// Adds a data breakpoint.
     pub fn add_data_breakpoint(&self, bp: &DataBreakpoint) -> Result<()> {
         log::debug!("[ext] data breakpoint: {}", bp.data_id);
-        let mut sessions = self
-            .sessions
-            .write()
-            .expect("debug sessions lock poisoned");
+        let mut sessions = self.sessions.write().expect("debug sessions lock poisoned");
         for session in sessions.values_mut() {
             session.data_breakpoints.push(bp.clone());
         }
@@ -561,10 +529,7 @@ impl DebugApi {
 
     /// Removes all breakpoints in the given file URI.
     pub fn remove_breakpoints(&self, uri: &str) {
-        let mut sessions = self
-            .sessions
-            .write()
-            .expect("debug sessions lock poisoned");
+        let mut sessions = self.sessions.write().expect("debug sessions lock poisoned");
 
         for session in sessions.values_mut() {
             session.breakpoints.retain(|bp| bp.uri != uri);
@@ -598,9 +563,7 @@ impl DebugApi {
     ) -> DebugAdapterFactoryId {
         let raw = self.next_factory.fetch_add(1, Ordering::Relaxed);
         let id = DebugAdapterFactoryId(raw);
-        log::debug!(
-            "[ext] registerDebugAdapterDescriptorFactory({debug_type}) -> {raw}"
-        );
+        log::debug!("[ext] registerDebugAdapterDescriptorFactory({debug_type}) -> {raw}");
         self.adapter_factories
             .write()
             .expect("adapter factories lock poisoned")
@@ -643,9 +606,7 @@ impl DebugApi {
     ) -> DebugConfigProviderId {
         let raw = self.next_config_provider.fetch_add(1, Ordering::Relaxed);
         let id = DebugConfigProviderId(raw);
-        log::debug!(
-            "[ext] registerDebugConfigurationProvider({debug_type}) -> {raw}"
-        );
+        log::debug!("[ext] registerDebugConfigurationProvider({debug_type}) -> {raw}");
         self.config_providers
             .write()
             .expect("config providers lock poisoned")
@@ -686,10 +647,7 @@ impl DebugApi {
         session_id: DebugSessionId,
         request: &DapRequest,
     ) -> Result<DapResponse> {
-        let sessions = self
-            .sessions
-            .read()
-            .expect("debug sessions lock poisoned");
+        let sessions = self.sessions.read().expect("debug sessions lock poisoned");
         let session = sessions
             .get(&session_id)
             .ok_or_else(|| anyhow::anyhow!("debug session {} not found", session_id.0))?;
@@ -742,10 +700,7 @@ impl DebugApi {
     }
 
     /// Subscribes to custom debug session events.
-    pub fn on_did_receive_debug_session_custom_event(
-        &self,
-        listener: DebugEventListener,
-    ) {
+    pub fn on_did_receive_debug_session_custom_event(&self, listener: DebugEventListener) {
         self.on_did_receive_custom_event
             .write()
             .expect("lock poisoned")

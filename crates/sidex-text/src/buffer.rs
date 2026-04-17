@@ -13,6 +13,7 @@ use ropey::Rope;
 use serde::{Deserialize, Serialize};
 
 use crate::edit::{ChangeEvent, EditOperation};
+use crate::line_ending::{detect_line_ending, normalize_line_endings, LineEnding};
 use crate::utf16::{
     char_col_to_utf16_col, lsp_position_to_position, position_to_lsp_position,
     utf16_col_to_char_col, Utf16Position,
@@ -61,6 +62,30 @@ pub struct IndentInfo {
     pub use_tabs: bool,
     /// The detected indentation size (in spaces, or 1 for tabs).
     pub tab_size: u32,
+}
+
+/// Information about an active indent guide for a line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndentGuide {
+    /// The column (0-based) where the guide is drawn.
+    pub column: u32,
+    /// The indent level (0-based) this guide represents.
+    pub indent_level: u32,
+    /// The first line of the indented block this guide belongs to.
+    pub start_line: u32,
+    /// The last line of the indented block this guide belongs to.
+    pub end_line: u32,
+}
+
+/// The result of applying a single edit, including the inverse edit for undo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditResult {
+    /// The range in the buffer after the edit was applied.
+    pub range: crate::Range,
+    /// The text that was inserted.
+    pub text: String,
+    /// An edit that, when applied, undoes this edit.
+    pub inverse_edit: EditOperation,
 }
 
 /// An immutable, cheaply-clonable snapshot of a [`Buffer`] at a point in time.
@@ -145,21 +170,28 @@ impl BufferSnapshot {
 #[derive(Debug, Clone)]
 pub struct Buffer {
     rope: Rope,
+    /// The line ending style for this buffer.
+    eol: LineEnding,
 }
 
 impl Buffer {
     /// Creates a new, empty buffer.
     #[must_use]
     pub fn new() -> Self {
-        Self { rope: Rope::new() }
+        Self {
+            rope: Rope::new(),
+            eol: LineEnding::Lf,
+        }
     }
 
     /// Creates a buffer from the given string.
     #[must_use]
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
+        let eol = detect_line_ending(s);
         Self {
             rope: Rope::from_str(s),
+            eol,
         }
     }
 
@@ -169,9 +201,10 @@ impl Buffer {
     ///
     /// Returns an I/O error if the reader fails.
     pub fn from_reader(reader: impl Read) -> std::io::Result<Self> {
-        Ok(Self {
-            rope: Rope::from_reader(reader)?,
-        })
+        let rope = Rope::from_reader(reader)?;
+        let sample: String = rope.slice(..rope.len_chars().min(10_000)).into();
+        let eol = detect_line_ending(&sample);
+        Ok(Self { rope, eol })
     }
 
     /// Returns the total number of characters (Unicode scalar values) in the buffer.
@@ -888,7 +921,9 @@ impl Buffer {
             .position(|c| !c.is_whitespace())
             .unwrap_or(content.chars().count());
         #[allow(clippy::cast_possible_truncation)]
-        { pos as u32 }
+        {
+            pos as u32
+        }
     }
 
     /// Returns the 0-based column *after* the last non-whitespace character
@@ -926,6 +961,180 @@ impl Buffer {
         };
         let clamped = candidate.min(max);
         self.offset_to_position(clamped)
+    }
+
+    // ── Line ending management ────────────────────────────────────
+
+    /// Returns the document's line ending style.
+    #[must_use]
+    pub fn get_eol(&self) -> LineEnding {
+        self.eol
+    }
+
+    /// Sets the document's line ending style and normalizes all existing
+    /// line endings in the buffer to match.
+    pub fn set_eol(&mut self, eol: LineEnding) {
+        if eol == self.eol {
+            return;
+        }
+        self.eol = eol;
+        let text = String::from(&self.rope);
+        let normalized = normalize_line_endings(&text, eol);
+        self.rope = Rope::from_str(&normalized);
+    }
+
+    // ── Range-based text retrieval ──────────────────────────────────
+
+    /// Returns the text within a [`Range`], joining lines with the specified
+    /// line ending.
+    ///
+    /// Mirrors VS Code's `TextModel.getValueInRange`.
+    #[must_use]
+    pub fn get_value_in_range(&self, range: crate::Range, eol: LineEnding) -> String {
+        let range = self.validate_range(range);
+        let start_offset = self.position_to_offset(range.start);
+        let end_offset = self.position_to_offset(range.end);
+        if start_offset >= end_offset {
+            return String::new();
+        }
+        let raw = self.slice(start_offset..end_offset);
+        normalize_line_endings(&raw, eol)
+    }
+
+    /// Returns the number of characters in a [`Range`] without allocating
+    /// the string content.
+    ///
+    /// Mirrors VS Code's `TextModel.getValueLengthInRange`.
+    #[must_use]
+    pub fn get_value_length_in_range(&self, range: crate::Range) -> usize {
+        let range = self.validate_range(range);
+        let start_offset = self.position_to_offset(range.start);
+        let end_offset = self.position_to_offset(range.end);
+        end_offset.saturating_sub(start_offset)
+    }
+
+    // ── Line column queries ────────────────────────────────────────
+
+    /// Returns the maximum column on the given line (i.e. the length of
+    /// the line content, excluding trailing newline).
+    ///
+    /// Mirrors VS Code's `TextModel.getLineMaxColumn` (but 0-based).
+    #[must_use]
+    pub fn get_line_max_column(&self, line: usize) -> u32 {
+        if line >= self.len_lines() {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            self.line_content_len(line) as u32
+        }
+    }
+
+    /// Returns the first non-whitespace column on the given line, or 0 if
+    /// the line is blank. Alias for `line_first_non_whitespace_column`.
+    ///
+    /// Mirrors VS Code's `TextModel.getLineMinColumn` (but 0-based and
+    /// returns first non-WS, matching practical usage).
+    #[must_use]
+    pub fn get_line_min_column(&self, line: usize) -> u32 {
+        if line >= self.len_lines() {
+            return 0;
+        }
+        self.line_first_non_whitespace_column(line)
+    }
+
+    // ── Bracket pair finding ────────────────────────────────────────
+
+    /// Finds the matching bracket pair enclosing a position.
+    ///
+    /// Searches outward from `pos` for the nearest bracket pair from the
+    /// standard set `()`, `[]`, `{}`. Returns both the open-bracket range
+    /// and close-bracket range.
+    #[must_use]
+    pub fn find_bracket_pair(&self, pos: Position) -> Option<(crate::Range, crate::Range)> {
+        let (open_pos, close_pos) = self.surrounding_pairs(pos)?;
+        let open_range = crate::Range::new(
+            open_pos,
+            Position::new(open_pos.line, open_pos.column + 1),
+        );
+        let close_range = crate::Range::new(
+            close_pos,
+            Position::new(close_pos.line, close_pos.column + 1),
+        );
+        Some((open_range, close_range))
+    }
+
+    // ── Active indent guide ─────────────────────────────────────────
+
+    /// Returns the "active" indent guide for a given line.
+    ///
+    /// The active guide is the deepest indent guide that covers the current
+    /// line. This mirrors VS Code's indent-guide highlighting behavior.
+    #[must_use]
+    pub fn get_active_indent_guide(&self, line: usize) -> Option<IndentGuide> {
+        if line >= self.len_lines() {
+            return None;
+        }
+        let info = self.detect_indentation();
+        let tab_size = if info.tab_size == 0 { 4 } else { info.tab_size };
+
+        let current_indent = if self.line_is_empty(line) {
+            let mut above = 0u32;
+            if line > 0 {
+                for l in (0..line).rev() {
+                    if !self.line_is_empty(l) {
+                        above = self.indent_level(l);
+                        break;
+                    }
+                }
+            }
+            let mut below = 0u32;
+            for l in (line + 1)..self.len_lines() {
+                if !self.line_is_empty(l) {
+                    below = self.indent_level(l);
+                    break;
+                }
+            }
+            above.max(below)
+        } else {
+            self.indent_level(line)
+        };
+
+        if current_indent == 0 {
+            return None;
+        }
+
+        let guide_indent = current_indent;
+
+        let mut start_line = 0;
+        for l in (0..line).rev() {
+            if !self.line_is_empty(l) && self.indent_level(l) < guide_indent {
+                start_line = l + 1;
+                break;
+            }
+        }
+
+        let mut end_line = self.len_lines() - 1;
+        for l in (line + 1)..self.len_lines() {
+            if !self.line_is_empty(l) && self.indent_level(l) < guide_indent {
+                end_line = l - 1;
+                break;
+            }
+        }
+
+        let column = if info.use_tabs {
+            guide_indent - 1
+        } else {
+            (guide_indent - 1) * tab_size
+        };
+
+        #[allow(clippy::cast_possible_truncation)]
+        Some(IndentGuide {
+            column,
+            indent_level: guide_indent,
+            start_line: start_line as u32,
+            end_line: end_line as u32,
+        })
     }
 
     // ── Word at position ────────────────────────────────────────────
@@ -982,6 +1191,192 @@ impl Buffer {
                 end_column: pos.column,
             },
         }
+    }
+
+    // ── Batch edit with undo ─────────────────────────────────────────
+
+    /// Applies multiple [`EditOperation`]s and returns an [`EditResult`] for
+    /// each, including the inverse edit needed for undo.
+    ///
+    /// Edits are sorted in reverse document order and applied bottom-to-top
+    /// so earlier offsets stay valid. The returned results are in the same
+    /// order as the input edits.
+    pub fn apply_edits_with_undo(&mut self, edits: &[EditOperation]) -> Vec<EditResult> {
+        let mut indexed: Vec<(usize, &EditOperation)> = edits.iter().enumerate().collect();
+        indexed.sort_by(|a, b| b.1.range.start.cmp(&a.1.range.start));
+
+        let mut results: Vec<(usize, EditResult)> = Vec::with_capacity(edits.len());
+
+        for (original_idx, edit) in &indexed {
+            let start_offset = self.position_to_offset(edit.range.start);
+            let end_offset = self.position_to_offset(edit.range.end);
+            let old_text = if start_offset < end_offset {
+                self.slice(start_offset..end_offset)
+            } else {
+                String::new()
+            };
+
+            let event = self.apply_edit(edit);
+
+            let new_end_offset = start_offset + edit.text.chars().count();
+            let new_end_pos = if new_end_offset <= self.len_chars() {
+                self.offset_to_position(new_end_offset)
+            } else {
+                self.offset_to_position(self.len_chars())
+            };
+
+            let inverse_edit = EditOperation::replace(
+                crate::Range::new(edit.range.start, new_end_pos),
+                old_text,
+            );
+
+            results.push((*original_idx, EditResult {
+                range: crate::Range::new(event.range.start, new_end_pos),
+                text: event.text,
+                inverse_edit,
+            }));
+        }
+
+        results.sort_by_key(|(idx, _)| *idx);
+        results.into_iter().map(|(_, r)| r).collect()
+    }
+
+    // ── Convenience line accessors ───────────────────────────────────
+
+    /// Returns the content of a line by its 0-based number (without trailing
+    /// newline). Returns `""` for out-of-bounds lines.
+    #[must_use]
+    pub fn get_line_content(&self, line: u32) -> String {
+        let idx = line as usize;
+        if idx >= self.len_lines() {
+            return String::new();
+        }
+        self.line_content(idx)
+    }
+
+    /// Returns the number of content characters on a line (excluding trailing
+    /// newline). Returns `0` for out-of-bounds lines.
+    #[must_use]
+    pub fn get_line_length(&self, line: u32) -> u32 {
+        let idx = line as usize;
+        if idx >= self.len_lines() {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        { self.line_content_len(idx) as u32 }
+    }
+
+    /// Returns the total number of lines as `u32`.
+    #[must_use]
+    pub fn get_line_count(&self) -> u32 {
+        #[allow(clippy::cast_possible_truncation)]
+        { self.len_lines() as u32 }
+    }
+
+    /// Returns the column of the first non-whitespace character on a line,
+    /// or `None` if the line is blank.
+    #[must_use]
+    pub fn get_line_first_non_whitespace(&self, line: u32) -> Option<u32> {
+        let idx = line as usize;
+        if idx >= self.len_lines() {
+            return None;
+        }
+        let content = self.line_content(idx);
+        content
+            .chars()
+            .position(|c| !c.is_whitespace())
+            .map(|p| {
+                #[allow(clippy::cast_possible_truncation)]
+                { p as u32 }
+            })
+    }
+
+    /// Returns the column *after* the last non-whitespace character on a
+    /// line, or `None` if the line is blank.
+    #[must_use]
+    pub fn get_line_last_non_whitespace(&self, line: u32) -> Option<u32> {
+        let idx = line as usize;
+        if idx >= self.len_lines() {
+            return None;
+        }
+        let content = self.line_content(idx);
+        let chars: Vec<char> = content.chars().collect();
+        for i in (0..chars.len()).rev() {
+            if !chars[i].is_whitespace() {
+                #[allow(clippy::cast_possible_truncation)]
+                return Some((i + 1) as u32);
+            }
+        }
+        None
+    }
+
+    // ── Bracket finding (position-only) ─────────────────────────────
+
+    /// Finds the position of the matching bracket for the bracket at `pos`,
+    /// using the standard bracket pairs `()`, `[]`, `{}`.
+    #[must_use]
+    pub fn find_matching_bracket_default(&self, pos: Position) -> Option<Position> {
+        let pairs = [('(', ')'), ('[', ']'), ('{', '}')];
+        self.find_matching_bracket(pos, &pairs)
+    }
+
+    /// Finds the positions of the innermost enclosing brackets around
+    /// `pos`. Alias for [`surrounding_pairs`](Buffer::surrounding_pairs).
+    #[must_use]
+    pub fn find_enclosing_brackets(&self, pos: Position) -> Option<(Position, Position)> {
+        self.surrounding_pairs(pos)
+    }
+
+    // ── Indentation by tab_size ─────────────────────────────────────
+
+    /// Returns the leading whitespace of a line.
+    #[must_use]
+    pub fn get_line_indent(&self, line: u32) -> String {
+        let idx = line as usize;
+        if idx >= self.len_lines() {
+            return String::new();
+        }
+        self.indent_string(idx)
+    }
+
+    /// Returns the indentation level of a line given a specific `tab_size`.
+    #[must_use]
+    pub fn get_line_indent_level(&self, line: u32, tab_size: u32) -> u32 {
+        let idx = line as usize;
+        if idx >= self.len_lines() || tab_size == 0 {
+            return 0;
+        }
+        let content = self.line_content(idx);
+        let mut visual_col: u32 = 0;
+        for c in content.chars() {
+            match c {
+                ' ' => visual_col += 1,
+                '\t' => visual_col += tab_size - (visual_col % tab_size),
+                _ => break,
+            }
+        }
+        visual_col / tab_size
+    }
+
+    // ── Simple text retrieval by Range ───────────────────────────────
+
+    /// Returns the text within a [`Range`] using the buffer's own line
+    /// ending style.
+    #[must_use]
+    pub fn get_text_in_range(&self, range: crate::Range) -> String {
+        self.get_value_in_range(range, self.eol)
+    }
+
+    // ── Search convenience ──────────────────────────────────────────
+
+    /// Counts all non-overlapping occurrences of `needle` in the buffer.
+    #[must_use]
+    pub fn count_occurrences(&self, needle: &str) -> usize {
+        if needle.is_empty() {
+            return 0;
+        }
+        let text = self.text();
+        text.matches(needle).count()
     }
 
     // ── Snapshot ─────────────────────────────────────────────────────
@@ -1995,5 +2390,243 @@ mod tests {
         let brackets = [('(', ')')];
         let m = buf.find_matching_bracket_smart(pos(0, 6), &brackets);
         assert_eq!(m, Some(pos(0, 0)));
+    }
+
+    // ── get_eol / set_eol ──────────────────────────────────────────
+
+    #[test]
+    fn get_eol_default_lf() {
+        let buf = Buffer::from_str("hello\nworld");
+        assert_eq!(buf.get_eol(), crate::LineEnding::Lf);
+    }
+
+    #[test]
+    fn get_eol_crlf() {
+        let buf = Buffer::from_str("hello\r\nworld\r\n");
+        assert_eq!(buf.get_eol(), crate::LineEnding::CrLf);
+    }
+
+    #[test]
+    fn set_eol_normalizes() {
+        let mut buf = Buffer::from_str("hello\nworld\n");
+        buf.set_eol(crate::LineEnding::CrLf);
+        assert_eq!(buf.get_eol(), crate::LineEnding::CrLf);
+        assert!(buf.text().contains("\r\n"));
+        assert!(!buf.text().contains("\r\n\r\n")); // no doubled line endings
+    }
+
+    // ── get_value_in_range ─────────────────────────────────────────
+
+    #[test]
+    fn get_value_in_range_single_line() {
+        let buf = Buffer::from_str("hello world");
+        let r = Range::new(pos(0, 0), pos(0, 5));
+        assert_eq!(buf.get_value_in_range(r, crate::LineEnding::Lf), "hello");
+    }
+
+    #[test]
+    fn get_value_in_range_multiline() {
+        let buf = Buffer::from_str("abc\ndef\nghi");
+        let r = Range::new(pos(0, 0), pos(2, 3));
+        let val = buf.get_value_in_range(r, crate::LineEnding::CrLf);
+        assert_eq!(val, "abc\r\ndef\r\nghi");
+    }
+
+    // ── get_value_length_in_range ──────────────────────────────────
+
+    #[test]
+    fn get_value_length_in_range_basic() {
+        let buf = Buffer::from_str("hello world");
+        let r = Range::new(pos(0, 0), pos(0, 5));
+        assert_eq!(buf.get_value_length_in_range(r), 5);
+    }
+
+    #[test]
+    fn get_value_length_in_range_multiline() {
+        let buf = Buffer::from_str("abc\ndef");
+        let r = Range::new(pos(0, 0), pos(1, 3));
+        assert_eq!(buf.get_value_length_in_range(r), 7); // "abc\ndef"
+    }
+
+    // ── get_line_max_column / get_line_min_column ──────────────────
+
+    #[test]
+    fn get_line_max_column_basic() {
+        let buf = Buffer::from_str("hello\nworld");
+        assert_eq!(buf.get_line_max_column(0), 5);
+        assert_eq!(buf.get_line_max_column(1), 5);
+    }
+
+    #[test]
+    fn get_line_min_column_basic() {
+        let buf = Buffer::from_str("    hello\nworld");
+        assert_eq!(buf.get_line_min_column(0), 4);
+        assert_eq!(buf.get_line_min_column(1), 0);
+    }
+
+    // ── find_bracket_pair ──────────────────────────────────────────
+
+    #[test]
+    fn find_bracket_pair_basic() {
+        let buf = Buffer::from_str("(hello)");
+        let pair = buf.find_bracket_pair(pos(0, 3));
+        assert!(pair.is_some());
+        let (open, close) = pair.unwrap();
+        assert_eq!(open.start, pos(0, 0));
+        assert_eq!(close.start, pos(0, 6));
+    }
+
+    // ── get_active_indent_guide ────────────────────────────────────
+
+    #[test]
+    fn active_indent_guide_none_for_unindented() {
+        let buf = Buffer::from_str("hello\nworld");
+        assert!(buf.get_active_indent_guide(0).is_none());
+    }
+
+    #[test]
+    fn active_indent_guide_returns_guide() {
+        let src = "if (true) {\n  a;\n    b;\n  c;\n}";
+        let buf = Buffer::from_str(src);
+        let guide = buf.get_active_indent_guide(1);
+        assert!(guide.is_some());
+        let g = guide.unwrap();
+        assert!(g.indent_level > 0);
+    }
+
+    // ── apply_edits_with_undo ────────────────────────────────────────
+
+    #[test]
+    fn apply_edits_with_undo_produces_inverse() {
+        let mut buf = Buffer::from_str("hello world");
+        let edits = vec![EditOperation::replace(
+            Range::new(pos(0, 6), pos(0, 11)),
+            "rust".into(),
+        )];
+        let results = buf.apply_edits_with_undo(&edits);
+        assert_eq!(buf.text(), "hello rust");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].inverse_edit.text, "world");
+
+        buf.apply_edit(&results[0].inverse_edit);
+        assert_eq!(buf.text(), "hello world");
+    }
+
+    #[test]
+    fn apply_edits_with_undo_insert() {
+        let mut buf = Buffer::from_str("ab");
+        let edits = vec![EditOperation::insert(pos(0, 1), "X".into())];
+        let results = buf.apply_edits_with_undo(&edits);
+        assert_eq!(buf.text(), "aXb");
+        buf.apply_edit(&results[0].inverse_edit);
+        assert_eq!(buf.text(), "ab");
+    }
+
+    // ── get_line_content ────────────────────────────────────────────
+
+    #[test]
+    fn get_line_content_basic() {
+        let buf = Buffer::from_str("hello\nworld");
+        assert_eq!(buf.get_line_content(0), "hello");
+        assert_eq!(buf.get_line_content(1), "world");
+    }
+
+    #[test]
+    fn get_line_content_out_of_bounds() {
+        let buf = Buffer::from_str("hello");
+        assert_eq!(buf.get_line_content(99), "");
+    }
+
+    // ── get_line_length ─────────────────────────────────────────────
+
+    #[test]
+    fn get_line_length_basic() {
+        let buf = Buffer::from_str("hello\nhi");
+        assert_eq!(buf.get_line_length(0), 5);
+        assert_eq!(buf.get_line_length(1), 2);
+    }
+
+    // ── get_line_count ──────────────────────────────────────────────
+
+    #[test]
+    fn get_line_count_basic() {
+        let buf = Buffer::from_str("a\nb\nc");
+        assert_eq!(buf.get_line_count(), 3);
+    }
+
+    // ── get_line_first_non_whitespace / last ────────────────────────
+
+    #[test]
+    fn first_nonws_some() {
+        let buf = Buffer::from_str("   hello");
+        assert_eq!(buf.get_line_first_non_whitespace(0), Some(3));
+    }
+
+    #[test]
+    fn first_nonws_blank() {
+        let buf = Buffer::from_str("   \nhello");
+        assert_eq!(buf.get_line_first_non_whitespace(0), None);
+    }
+
+    #[test]
+    fn last_nonws_some() {
+        let buf = Buffer::from_str("hello   ");
+        assert_eq!(buf.get_line_last_non_whitespace(0), Some(5));
+    }
+
+    #[test]
+    fn last_nonws_blank() {
+        let buf = Buffer::from_str("   \nhello");
+        assert_eq!(buf.get_line_last_non_whitespace(0), None);
+    }
+
+    // ── find_matching_bracket_default ───────────────────────────────
+
+    #[test]
+    fn matching_bracket_default() {
+        let buf = Buffer::from_str("{hello}");
+        assert_eq!(buf.find_matching_bracket_default(pos(0, 0)), Some(pos(0, 6)));
+    }
+
+    // ── find_enclosing_brackets ────────────────────────────────────
+
+    #[test]
+    fn enclosing_brackets_found() {
+        let buf = Buffer::from_str("[hello]");
+        assert_eq!(buf.find_enclosing_brackets(pos(0, 3)), Some((pos(0, 0), pos(0, 6))));
+    }
+
+    // ── get_line_indent / indent_level ─────────────────────────────
+
+    #[test]
+    fn get_line_indent_basic() {
+        let buf = Buffer::from_str("    hello");
+        assert_eq!(buf.get_line_indent(0), "    ");
+    }
+
+    #[test]
+    fn get_line_indent_level_spaces() {
+        let buf = Buffer::from_str("        code");
+        assert_eq!(buf.get_line_indent_level(0, 4), 2);
+    }
+
+    #[test]
+    fn get_line_indent_level_tabs() {
+        let buf = Buffer::from_str("\t\tcode");
+        assert_eq!(buf.get_line_indent_level(0, 4), 2);
+    }
+
+    // ── count_occurrences ───────────────────────────────────────────
+
+    #[test]
+    fn count_occurrences_basic() {
+        let buf = Buffer::from_str("aaa bbb aaa ccc aaa");
+        assert_eq!(buf.count_occurrences("aaa"), 3);
+    }
+
+    #[test]
+    fn count_occurrences_empty_needle() {
+        let buf = Buffer::from_str("hello");
+        assert_eq!(buf.count_occurrences(""), 0);
     }
 }

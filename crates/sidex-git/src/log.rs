@@ -36,13 +36,32 @@ pub struct GraphCommit {
     pub deletions: Option<u32>,
 }
 
+/// A ref decoration attached to a commit.
+#[derive(Debug, Clone, Serialize)]
+pub enum GitRef {
+    Branch(String),
+    RemoteBranch(String),
+    Tag(String),
+    Head,
+}
+
+/// A commit entry with graph visualization data.
+#[derive(Debug, Clone, Serialize)]
+pub struct GitGraphEntry {
+    pub commit: String,
+    pub short_hash: String,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+    pub refs: Vec<GitRef>,
+    pub parents: Vec<String>,
+    pub graph_line: String,
+}
+
 /// Fetch the last `count` commits from the repository.
 pub fn get_log(repo_root: &Path, count: usize) -> GitResult<Vec<Commit>> {
     let limit = format!("-{count}");
-    let output = run_git(
-        repo_root,
-        &["log", "--format=%H%n%h%n%an%n%aI%n%s", &limit],
-    )?;
+    let output = run_git(repo_root, &["log", "--format=%H%n%h%n%an%n%aI%n%s", &limit])?;
     Ok(parse_log_output(&output))
 }
 
@@ -52,7 +71,13 @@ pub fn get_file_log(repo_root: &Path, path: &Path, count: usize) -> GitResult<Ve
     let path_str = path.to_string_lossy();
     let output = run_git(
         repo_root,
-        &["log", "--format=%H%n%h%n%an%n%aI%n%s", &limit, "--", &path_str],
+        &[
+            "log",
+            "--format=%H%n%h%n%an%n%aI%n%s",
+            &limit,
+            "--",
+            &path_str,
+        ],
     )?;
     Ok(parse_log_output(&output))
 }
@@ -129,6 +154,102 @@ pub fn get_log_graph(repo_root: &Path, count: usize) -> GitResult<Vec<GraphCommi
     }
 
     Ok(entries)
+}
+
+/// Fetch a visual graph log with ref decorations.
+pub fn log_graph(repo_root: &Path, max: usize) -> GitResult<Vec<GitGraphEntry>> {
+    let limit = format!("-{max}");
+    let output = run_git(
+        repo_root,
+        &[
+            "log",
+            "--graph",
+            "--format=%H%n%h%n%P%n%an%n%aI%n%s%n%D",
+            "--decorate=full",
+            &limit,
+        ],
+    )?;
+
+    let mut entries = Vec::new();
+    let mut lines = output.lines().peekable();
+
+    while lines.peek().is_some() {
+        let raw_graph_line = match lines.next() {
+            Some(l) => l,
+            None => break,
+        };
+
+        let (graph_prefix, hash) = split_graph_prefix(raw_graph_line);
+        if hash.is_empty() {
+            continue;
+        }
+
+        let short_hash = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
+        let parents_line = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
+        let author = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
+        let date = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
+        let message = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
+        let decorations = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
+
+        let parents: Vec<String> = parents_line
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+
+        let refs = parse_decorations(&decorations);
+
+        entries.push(GitGraphEntry {
+            commit: hash,
+            short_hash,
+            author,
+            date,
+            message,
+            refs,
+            parents,
+            graph_line: graph_prefix,
+        });
+    }
+
+    Ok(entries)
+}
+
+fn split_graph_prefix(line: &str) -> (String, String) {
+    let trimmed = line.trim_start_matches(|c: char| c == '*' || c == '|' || c == '/' || c == '\\' || c == ' ' || c == '_');
+    let prefix_len = line.len() - trimmed.len();
+    let prefix = line[..prefix_len].to_string();
+    (prefix, trimmed.to_string())
+}
+
+fn strip_graph(line: &str) -> String {
+    line.trim_start_matches(|c: char| c == '*' || c == '|' || c == '/' || c == '\\' || c == ' ' || c == '_')
+        .to_string()
+}
+
+fn parse_decorations(decorations: &str) -> Vec<GitRef> {
+    if decorations.is_empty() {
+        return Vec::new();
+    }
+
+    decorations
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let s = s
+                .trim_start_matches("refs/")
+                .trim_start_matches("heads/")
+                .trim_start_matches("tags/");
+            if s == "HEAD" {
+                GitRef::Head
+            } else if s.starts_with("remotes/") {
+                GitRef::RemoteBranch(s.trim_start_matches("remotes/").to_string())
+            } else if s.contains("tag:") {
+                GitRef::Tag(s.trim_start_matches("tag:").trim().to_string())
+            } else {
+                GitRef::Branch(s.to_string())
+            }
+        })
+        .collect()
 }
 
 fn parse_log_output(output: &str) -> Vec<Commit> {

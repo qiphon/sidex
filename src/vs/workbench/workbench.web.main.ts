@@ -116,8 +116,8 @@ import './contrib/logs/browser/logs.contribution.js';
 // Localization
 import './contrib/localization/browser/localization.contribution.js';
 
-// Performance
-import './contrib/performance/browser/performance.web.contribution.js';
+// Performance — removed: SideX has its own performance monitoring
+// import './contrib/performance/browser/performance.web.contribution.js';
 
 // Preferences
 import './contrib/preferences/browser/keyboardLayoutPicker.js';
@@ -144,11 +144,11 @@ import './contrib/tasks/browser/taskService.js';
 // Tags
 import './contrib/tags/browser/workspaceTagsService.js';
 
-// Issues
-import './contrib/issue/browser/issue.contribution.js';
+// Issues — removed: SideX has its own issue reporter
+// import './contrib/issue/browser/issue.contribution.js';
 
-// Splash
-import './contrib/splash/browser/splash.contribution.js';
+// Splash — removed: SideX has its own splash screen
+// import './contrib/splash/browser/splash.contribution.js';
 
 // Process Explorer
 import './contrib/processExplorer/browser/processExplorer.web.contribution.js';

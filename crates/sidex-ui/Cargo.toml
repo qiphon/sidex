@@ -12,6 +12,7 @@ sidex-theme = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+regex = { workspace = true }
 thiserror = "2"
 log = "0.4"
 

@@ -357,3 +357,239 @@ pub fn search_text(
 
     Ok(results)
 }
+
+// ---------------------------------------------------------------------------
+// New commands backed by sidex-workspace::SearchEngine
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct WorkspaceSearchOptions {
+    pub case_sensitive: Option<bool>,
+    pub is_regex: Option<bool>,
+    pub whole_word: Option<bool>,
+    pub max_results: Option<usize>,
+    pub max_file_size: Option<u64>,
+    pub include_patterns: Option<Vec<String>>,
+    pub exclude_patterns: Option<Vec<String>>,
+    pub context_lines: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WsSearchMatch {
+    pub path: String,
+    pub line_number: usize,
+    pub line_text: String,
+    pub match_start: usize,
+    pub match_end: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WsContextLine {
+    pub line_number: usize,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WsMatchWithContext {
+    pub line_number: usize,
+    pub line_text: String,
+    pub match_start: usize,
+    pub match_end: usize,
+    pub before_context: Vec<WsContextLine>,
+    pub after_context: Vec<WsContextLine>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WsSearchGroup {
+    pub file_path: String,
+    pub matches: Vec<WsMatchWithContext>,
+    pub line_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WsReplacementEdit {
+    pub line_number: usize,
+    pub match_start: usize,
+    pub match_end: usize,
+    pub original: String,
+    pub replacement: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WsFileReplacement {
+    pub path: String,
+    pub edits: Vec<WsReplacementEdit>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WsReplaceReport {
+    pub files_modified: u32,
+    pub replacements_made: u32,
+    pub errors: Vec<(String, String)>,
+}
+
+fn build_ws_query(query: &str, options: &Option<WorkspaceSearchOptions>) -> sidex_workspace::SearchQuery {
+    sidex_workspace::SearchQuery {
+        pattern: query.to_string(),
+        is_regex: options.as_ref().and_then(|o| o.is_regex).unwrap_or(false),
+        case_sensitive: options.as_ref().and_then(|o| o.case_sensitive).unwrap_or(false),
+        whole_word: options.as_ref().and_then(|o| o.whole_word).unwrap_or(false),
+        max_results: options.as_ref().and_then(|o| o.max_results),
+    }
+}
+
+fn build_ws_options(options: &Option<WorkspaceSearchOptions>) -> sidex_workspace::SearchOptions {
+    sidex_workspace::SearchOptions {
+        include_patterns: options
+            .as_ref()
+            .and_then(|o| o.include_patterns.clone())
+            .unwrap_or_default(),
+        exclude_patterns: options
+            .as_ref()
+            .and_then(|o| o.exclude_patterns.clone())
+            .unwrap_or_default(),
+        max_results: options.as_ref().and_then(|o| o.max_results),
+        max_file_size: options.as_ref().and_then(|o| o.max_file_size),
+        context_lines: options.as_ref().and_then(|o| o.context_lines),
+    }
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+pub fn search_workspace(
+    root: String,
+    query: String,
+    options: Option<WorkspaceSearchOptions>,
+) -> Result<Vec<WsSearchMatch>, String> {
+    let ws_query = build_ws_query(&query, &options);
+    let ws_opts = build_ws_options(&options);
+    let root_path = std::path::Path::new(&root);
+
+    let results = sidex_workspace::SearchEngine::search_with_options(root_path, &ws_query, &ws_opts)
+        .map_err(|e| e.to_string())?;
+
+    Ok(results
+        .into_iter()
+        .map(|r| WsSearchMatch {
+            path: r.path.to_string_lossy().into_owned(),
+            line_number: r.line_number,
+            line_text: r.line_text,
+            match_start: r.match_start,
+            match_end: r.match_end,
+        })
+        .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+pub fn search_workspace_grouped(
+    root: String,
+    query: String,
+    options: Option<WorkspaceSearchOptions>,
+) -> Result<Vec<WsSearchGroup>, String> {
+    let ws_query = build_ws_query(&query, &options);
+    let ws_opts = build_ws_options(&options);
+    let root_path = std::path::Path::new(&root);
+
+    let groups = sidex_workspace::SearchEngine::search_grouped(root_path, &ws_query, &ws_opts)
+        .map_err(|e| e.to_string())?;
+
+    Ok(groups
+        .into_iter()
+        .map(|g| WsSearchGroup {
+            file_path: g.file_path.to_string_lossy().into_owned(),
+            line_count: g.line_count,
+            matches: g
+                .matches
+                .into_iter()
+                .map(|m| WsMatchWithContext {
+                    line_number: m.line_number,
+                    line_text: m.line_text,
+                    match_start: m.match_start,
+                    match_end: m.match_end,
+                    before_context: m
+                        .before_context
+                        .into_iter()
+                        .map(|c| WsContextLine {
+                            line_number: c.line_number,
+                            text: c.text,
+                        })
+                        .collect(),
+                    after_context: m
+                        .after_context
+                        .into_iter()
+                        .map(|c| WsContextLine {
+                            line_number: c.line_number,
+                            text: c.text,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+pub fn search_workspace_replace_preview(
+    root: String,
+    query: String,
+    replacement: String,
+    options: Option<WorkspaceSearchOptions>,
+) -> Result<Vec<WsFileReplacement>, String> {
+    let ws_query = build_ws_query(&query, &options);
+    let root_path = std::path::Path::new(&root);
+
+    let replacements =
+        sidex_workspace::SearchEngine::replace_in_files(root_path, &ws_query, &replacement)
+            .map_err(|e| e.to_string())?;
+
+    Ok(replacements
+        .into_iter()
+        .map(|fr| WsFileReplacement {
+            path: fr.path.to_string_lossy().into_owned(),
+            edits: fr
+                .edits
+                .into_iter()
+                .map(|e| WsReplacementEdit {
+                    line_number: e.line_number,
+                    match_start: e.match_start,
+                    match_end: e.match_end,
+                    original: e.original,
+                    replacement: e.replacement,
+                })
+                .collect(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+pub fn search_workspace_replace_apply(
+    root: String,
+    query: String,
+    replacement: String,
+) -> Result<WsReplaceReport, String> {
+    let ws_query = sidex_workspace::SearchQuery {
+        pattern: query,
+        is_regex: false,
+        case_sensitive: true,
+        whole_word: false,
+        max_results: None,
+    };
+    let root_path = std::path::Path::new(&root);
+
+    let report =
+        sidex_workspace::SearchEngine::replace_in_files_with_report(root_path, &ws_query, &replacement)
+            .map_err(|e| e.to_string())?;
+
+    Ok(WsReplaceReport {
+        files_modified: report.files_modified,
+        replacements_made: report.replacements_made,
+        errors: report
+            .errors
+            .into_iter()
+            .map(|(p, e)| (p.to_string_lossy().into_owned(), e))
+            .collect(),
+    })
+}

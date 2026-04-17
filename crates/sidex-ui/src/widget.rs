@@ -36,7 +36,11 @@ impl Modifiers {
     /// Returns `true` if the platform command key is held (Ctrl on
     /// Linux/Windows, Meta on macOS).
     pub fn command(self) -> bool {
-        if cfg!(target_os = "macos") { self.meta } else { self.ctrl }
+        if cfg!(target_os = "macos") {
+            self.meta
+        } else {
+            self.ctrl
+        }
     }
 }
 
@@ -65,28 +69,12 @@ pub enum Key {
 /// Events that widgets can receive.
 #[derive(Clone, Debug)]
 pub enum UiEvent {
-    MouseDown {
-        x: f32,
-        y: f32,
-        button: MouseButton,
-    },
-    MouseUp {
-        x: f32,
-        y: f32,
-        button: MouseButton,
-    },
-    MouseMove {
-        x: f32,
-        y: f32,
-    },
-    MouseScroll {
-        dx: f32,
-        dy: f32,
-    },
-    KeyPress {
-        key: Key,
-        modifiers: Modifiers,
-    },
+    MouseDown { x: f32, y: f32, button: MouseButton },
+    MouseUp { x: f32, y: f32, button: MouseButton },
+    MouseMove { x: f32, y: f32 },
+    MouseScroll { dx: f32, dy: f32 },
+    DoubleClick { x: f32, y: f32 },
+    KeyPress { key: Key, modifiers: Modifiers },
     Focus,
     Blur,
 }

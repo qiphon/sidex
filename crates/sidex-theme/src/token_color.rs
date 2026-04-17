@@ -87,9 +87,7 @@ fn deserialize_scope<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Strin
     }
 
     match ScopeValue::deserialize(d)? {
-        ScopeValue::Single(s) => {
-            Ok(s.split(',').map(|part| part.trim().to_owned()).collect())
-        }
+        ScopeValue::Single(s) => Ok(s.split(',').map(|part| part.trim().to_owned()).collect()),
         ScopeValue::Multiple(v) => Ok(v),
     }
 }
@@ -223,7 +221,10 @@ mod tests {
 
     #[test]
     fn font_style_parsing() {
-        assert_eq!(parse_font_style("bold italic"), FontStyle::BOLD | FontStyle::ITALIC);
+        assert_eq!(
+            parse_font_style("bold italic"),
+            FontStyle::BOLD | FontStyle::ITALIC
+        );
         assert_eq!(parse_font_style("underline"), FontStyle::UNDERLINE);
         assert!(parse_font_style("").is_empty());
     }

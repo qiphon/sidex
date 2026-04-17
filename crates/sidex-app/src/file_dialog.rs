@@ -5,9 +5,7 @@ use std::path::PathBuf;
 /// Shows a native "Open File" dialog. Returns the selected path, or `None`
 /// if the user cancelled.
 pub fn open_file_dialog() -> Option<PathBuf> {
-    rfd::FileDialog::new()
-        .set_title("Open File")
-        .pick_file()
+    rfd::FileDialog::new().set_title("Open File").pick_file()
 }
 
 /// Shows a native "Save As" dialog with an optional suggested filename.

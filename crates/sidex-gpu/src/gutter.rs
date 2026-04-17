@@ -192,7 +192,14 @@ impl GutterRenderer {
 
         // -- Gutter background -----------------------------------------------
         let gutter_height = visible_count as f32 * line_height;
-        rects.draw_rect(0.0, 0.0, cfg.width, gutter_height, cfg.background_color, 0.0);
+        rects.draw_rect(
+            0.0,
+            0.0,
+            cfg.width,
+            gutter_height,
+            cfg.background_color,
+            0.0,
+        );
 
         let bp_x = cfg.padding_left;
         let fold_x = bp_x + cfg.breakpoint_column_width;
@@ -211,18 +218,8 @@ impl GutterRenderer {
             };
 
             self.line_num_buf.clear();
-            let _ = std::fmt::Write::write_fmt(
-                &mut self.line_num_buf,
-                format_args!("{line}"),
-            );
-            text.draw_line(
-                &self.line_num_buf,
-                number_x,
-                y,
-                color,
-                cfg.font_size,
-                ctx,
-            );
+            let _ = std::fmt::Write::write_fmt(&mut self.line_num_buf, format_args!("{line}"));
+            text.draw_line(&self.line_num_buf, number_x, y, color, cfg.font_size, ctx);
 
             // -- Breakpoints ------------------------------------------------
             if let Some(bp) = breakpoints.iter().find(|b| b.line == line) {
@@ -252,11 +249,25 @@ impl GutterRenderer {
                 match fm.state {
                     FoldState::Expanded => {
                         // Draw downward chevron as a small triangle approximation
-                        rects.draw_rect(ix, iy, icon_size, icon_size * 0.5, cfg.fold_icon_color, 1.0);
+                        rects.draw_rect(
+                            ix,
+                            iy,
+                            icon_size,
+                            icon_size * 0.5,
+                            cfg.fold_icon_color,
+                            1.0,
+                        );
                     }
                     FoldState::Collapsed => {
                         // Draw rightward chevron as a small rect approximation
-                        rects.draw_rect(ix, iy, icon_size * 0.5, icon_size, cfg.fold_icon_color, 1.0);
+                        rects.draw_rect(
+                            ix,
+                            iy,
+                            icon_size * 0.5,
+                            icon_size,
+                            cfg.fold_icon_color,
+                            1.0,
+                        );
                     }
                 }
             }

@@ -21,10 +21,7 @@ import {
 	ConfigurationMigration
 } from '../../../common/configuration.js';
 import { AccessibilitySignal } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
-import { AccessibilityVoiceSettingId, ISpeechService, SPEECH_LANGUAGES } from '../../speech/common/speechService.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
-import { Event } from '../../../../base/common/event.js';
 import { isDefined } from '../../../../base/common/types.js';
 
 export const accessibilityHelpIsShown = new RawContextKey<boolean>('accessibilityHelpIsShown', false, true);
@@ -1310,93 +1307,11 @@ export function registerAccessibilityConfiguration() {
 	});
 }
 
-export { AccessibilityVoiceSettingId };
-
-export const SpeechTimeoutDefault = 0;
-
-export class DynamicSpeechAccessibilityConfiguration extends Disposable implements IWorkbenchContribution {
-	static readonly ID = 'workbench.contrib.dynamicSpeechAccessibilityConfiguration';
-
-	constructor(@ISpeechService private readonly speechService: ISpeechService) {
-		super();
-
-		this._register(Event.runAndSubscribe(speechService.onDidChangeHasSpeechProvider, () => this.updateConfiguration()));
-	}
-
-	private updateConfiguration(): void {
-		if (!this.speechService.hasSpeechProvider) {
-			return; // these settings require a speech provider
-		}
-
-		const languages = this.getLanguages();
-		const languagesSorted = Object.keys(languages).sort((langA, langB) => {
-			return languages[langA].name.localeCompare(languages[langB].name);
-		});
-
-		const registry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
-		registry.registerConfiguration({
-			...accessibilityConfigurationNodeBase,
-			properties: {
-				[AccessibilityVoiceSettingId.SpeechTimeout]: {
-					markdownDescription: localize(
-						'voice.speechTimeout',
-						'The duration in milliseconds that voice speech recognition remains active after you stop speaking. For example in a chat session, the transcribed text is submitted automatically after the timeout is met. Set to `0` to disable this feature.'
-					),
-					type: 'number',
-					default: SpeechTimeoutDefault,
-					minimum: 0,
-					tags: ['accessibility']
-				},
-				[AccessibilityVoiceSettingId.IgnoreCodeBlocks]: {
-					markdownDescription: localize(
-						'voice.ignoreCodeBlocks',
-						'Whether to ignore code snippets in text-to-speech synthesis.'
-					),
-					type: 'boolean',
-					default: false,
-					tags: ['accessibility']
-				},
-				[AccessibilityVoiceSettingId.SpeechLanguage]: {
-					markdownDescription: localize(
-						'voice.speechLanguage',
-						'The language that text-to-speech and speech-to-text should use. Select `auto` to use the configured display language if possible. Note that not all display languages maybe supported by speech recognition and synthesizers.'
-					),
-					type: 'string',
-					enum: languagesSorted,
-					default: 'auto',
-					tags: ['accessibility'],
-					enumDescriptions: languagesSorted.map(key => languages[key].name),
-					enumItemLabels: languagesSorted.map(key => languages[key].name)
-				},
-				[AccessibilityVoiceSettingId.AutoSynthesize]: {
-					type: 'string',
-					enum: ['on', 'off'],
-					enumDescriptions: [
-						localize(
-							'accessibility.voice.autoSynthesize.on',
-							'Enable the feature. When a screen reader is enabled, note that this will disable aria updates.'
-						),
-						localize('accessibility.voice.autoSynthesize.off', 'Disable the feature.')
-					],
-					markdownDescription: localize(
-						'autoSynthesize',
-						'Whether a textual response should automatically be read out aloud when speech was used as input. For example in a chat session, a response is automatically synthesized when voice was used as chat request.'
-					),
-					default: 'off',
-					tags: ['accessibility']
-				}
-			}
-		});
-	}
-
-	private getLanguages(): { [locale: string]: { name: string } } {
-		return {
-			['auto']: {
-				name: localize('speechLanguage.auto', 'Auto (Use Display Language)')
-			},
-			...SPEECH_LANGUAGES
-		};
-	}
+export const enum AccessibilityVoiceSettingId {
+	SpeechTimeout = 'accessibility.voice.speechTimeout',
+	AutoSynthesize = 'accessibility.voice.autoSynthesize',
+	SpeechLanguage = 'accessibility.voice.speechLanguage',
+	IgnoreCodeBlocks = 'accessibility.voice.ignoreCodeBlocks'
 }
 
 Registry.as<IConfigurationMigrationRegistry>(

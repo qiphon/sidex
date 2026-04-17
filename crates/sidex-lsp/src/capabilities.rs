@@ -91,6 +91,59 @@ impl ServerCaps {
     pub fn supports_implementation(&self) -> bool {
         self.inner.implementation_provider.is_some()
     }
+
+    /// Whether the server supports `textDocument/prepareCallHierarchy`.
+    pub fn supports_call_hierarchy(&self) -> bool {
+        self.inner.call_hierarchy_provider.is_some()
+    }
+
+    /// Whether the server supports type hierarchy (via experimental or
+    /// call-hierarchy-style registration).
+    pub fn supports_type_hierarchy(&self) -> bool {
+        self.inner
+            .experimental
+            .as_ref()
+            .and_then(|v| v.get("typeHierarchyProvider"))
+            .is_some()
+    }
+
+    /// Whether the server supports `textDocument/documentLink`.
+    pub fn supports_document_link(&self) -> bool {
+        self.inner.document_link_provider.is_some()
+    }
+
+    /// Whether the server supports `textDocument/foldingRange`.
+    pub fn supports_folding_range(&self) -> bool {
+        self.inner.folding_range_provider.is_some()
+    }
+
+    /// Whether the server supports `textDocument/selectionRange`.
+    pub fn supports_selection_range(&self) -> bool {
+        self.inner.selection_range_provider.is_some()
+    }
+
+    /// Whether the server supports `textDocument/documentColor`.
+    pub fn supports_document_color(&self) -> bool {
+        self.inner.color_provider.is_some()
+    }
+
+    /// Whether the server supports `textDocument/rangeFormatting`.
+    pub fn supports_range_formatting(&self) -> bool {
+        self.inner.document_range_formatting_provider.is_some()
+    }
+
+    /// Whether the server supports `textDocument/onTypeFormatting`.
+    pub fn supports_on_type_formatting(&self) -> bool {
+        self.inner.document_on_type_formatting_provider.is_some()
+    }
+
+    /// Whether the server supports `textDocument/prepareRename`.
+    pub fn supports_prepare_rename(&self) -> bool {
+        match &self.inner.rename_provider {
+            Some(lsp_types::OneOf::Right(opts)) => opts.prepare_provider == Some(true),
+            _ => false,
+        }
+    }
 }
 
 impl From<ServerCapabilities> for ServerCaps {

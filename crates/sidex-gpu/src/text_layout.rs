@@ -15,8 +15,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, Weight,
-    Wrap,
+    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, Weight, Wrap,
 };
 use linked_hash_map::LinkedHashMap;
 
@@ -402,11 +401,7 @@ impl TextLayoutSystem {
     /// Results are cached — repeated calls with the same parameters
     /// return a cached `Arc<LineLayout>`.
     #[allow(clippy::cast_precision_loss)]
-    pub fn layout_line(
-        &mut self,
-        text: &str,
-        config: &TextLayoutConfig,
-    ) -> Arc<LineLayout> {
+    pub fn layout_line(&mut self, text: &str, config: &TextLayoutConfig) -> Arc<LineLayout> {
         let key = LayoutCacheKey {
             text: text.to_string(),
             font_family: config.font.family.clone(),
@@ -490,9 +485,10 @@ impl TextLayoutSystem {
                     advance,
                     byte_index: glyph.start,
                     is_emoji: glyph.color_opt.is_some(),
-                    is_whitespace: full_text.as_bytes().get(glyph.start).is_some_and(
-                        |&b| b == b' ' || b == b'\t',
-                    ),
+                    is_whitespace: full_text
+                        .as_bytes()
+                        .get(glyph.start)
+                        .is_some_and(|&b| b == b' ' || b == b'\t'),
                 });
                 let end_x = glyph.x + advance;
                 if end_x > total_width {
@@ -525,11 +521,7 @@ impl TextLayoutSystem {
 
     /// Internal shaping for a plain-text line.
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-    fn shape_line(
-        &mut self,
-        text: &str,
-        config: &TextLayoutConfig,
-    ) -> LineLayout {
+    fn shape_line(&mut self, text: &str, config: &TextLayoutConfig) -> LineLayout {
         let line_height = config.line_height.resolve(config.font.size);
         let metrics = Metrics::new(config.font.size, line_height);
         let mut buffer = Buffer::new(&mut self.font_system, metrics);
@@ -566,9 +558,10 @@ impl TextLayoutSystem {
                     advance,
                     byte_index: glyph.start,
                     is_emoji: glyph.color_opt.is_some(),
-                    is_whitespace: text.as_bytes().get(glyph.start).is_some_and(
-                        |&b| b == b' ' || b == b'\t',
-                    ),
+                    is_whitespace: text
+                        .as_bytes()
+                        .get(glyph.start)
+                        .is_some_and(|&b| b == b' ' || b == b'\t'),
                 });
                 let end_x = glyph.x + advance;
                 if end_x > total_width {

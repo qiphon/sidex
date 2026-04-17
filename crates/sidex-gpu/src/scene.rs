@@ -337,20 +337,20 @@ impl Scene {
     /// Returns the current draw order (from the layer stack, or an
     /// auto-incrementing counter if no layer is active).
     fn current_order(&mut self) -> DrawOrder {
-        self.layer_stack
-            .last()
-            .copied()
-            .unwrap_or_else(|| {
-                let o = self.next_order;
-                self.next_order += 1;
-                o
-            })
+        self.layer_stack.last().copied().unwrap_or_else(|| {
+            let o = self.next_order;
+            self.next_order += 1;
+            o
+        })
     }
 
     // -- Primitive insertion ------------------------------------------------
 
     pub fn insert_quad(&mut self, mut quad: Quad) {
-        if quad.content_mask.clips(quad.x, quad.y, quad.width, quad.height) {
+        if quad
+            .content_mask
+            .clips(quad.x, quad.y, quad.width, quad.height)
+        {
             return;
         }
         quad.order = self.current_order();
@@ -372,10 +372,12 @@ impl Scene {
     }
 
     pub fn insert_underline(&mut self, mut underline: Underline) {
-        if underline
-            .content_mask
-            .clips(underline.x, underline.y, underline.width, underline.thickness)
-        {
+        if underline.content_mask.clips(
+            underline.x,
+            underline.y,
+            underline.width,
+            underline.thickness,
+        ) {
             return;
         }
         underline.order = self.current_order();
@@ -582,9 +584,7 @@ impl<'a> Iterator for BatchIterator<'a> {
                     .position(|s| s.order != min_order)
                     .map_or(self.subpixel.len(), |p| start + p);
                 self.subpixel_start = end;
-                Some(PrimitiveBatch::SubpixelSprites(
-                    &self.subpixel[start..end],
-                ))
+                Some(PrimitiveBatch::SubpixelSprites(&self.subpixel[start..end]))
             }
             PrimitiveKind::PolychromeSprite => {
                 let start = self.polychrome_start;

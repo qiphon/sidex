@@ -1,5 +1,6 @@
 mod commands;
 
+use commands::db_state::SidexDbState;
 use commands::debug::DebugAdapterStore;
 use commands::ext_host::ExtensionPlatformSupervisor;
 use commands::extension_diagnostics::ExtensionDiagnosticsStore;
@@ -7,6 +8,7 @@ use commands::extension_wasm::WasmExtensionRuntime;
 use commands::index::IndexStore;
 use commands::logging::LoggerStore;
 use commands::process::ProcessStore;
+use commands::settings::SettingsStore;
 use commands::storage::StorageDb;
 use commands::tasks::TaskProcessStore;
 use commands::terminal::TerminalStore;
@@ -378,6 +380,8 @@ pub fn run() {
         .manage(Arc::new(LoggerStore::new()))
         .manage(ExtensionPlatformSupervisor::new())
         .manage(ExtensionDiagnosticsStore::new())
+        .manage(Arc::new(SettingsStore::new()))
+        .manage(Arc::new(sidex_extension_api::CommandRegistry::new()))
         .manage(Arc::new(
             WasmExtensionRuntime::new().expect("failed to initialize WASM runtime"),
         ))
@@ -394,6 +398,11 @@ pub fn run() {
             restore_and_show(app, &db);
 
             app.manage(Arc::new(db));
+
+            let sidex_db_path = app_data.join("sidex_state.db");
+            let sidex_db = sidex_db::Database::open(&sidex_db_path)
+                .expect("failed to initialize sidex-db state database");
+            app.manage(Arc::new(SidexDbState::new(sidex_db)));
 
             let process_store = app.state::<Arc<ProcessStore>>();
             process_store.set_app_handle(app.handle().clone());
@@ -454,7 +463,7 @@ pub fn run() {
             // Text processing
             commands::count_lines,
             commands::file_summary,
-            commands::normalize_line_endings,
+            commands::normalize_line_endings_cmd,
             commands::to_crlf,
             commands::trim_trailing_whitespace,
             commands::ensure_final_newline,
@@ -506,8 +515,16 @@ pub fn run() {
             commands::get_available_shells,
             commands::get_shell_integration_dir,
             commands::setup_zsh_dotdir,
+            // sidex-terminal crate features
+            commands::terminal_detect_shell,
+            commands::terminal_get_profiles,
+            commands::terminal_find_in_buffer,
             commands::search_files,
             commands::search_text,
+            commands::search_workspace,
+            commands::search_workspace_grouped,
+            commands::search_workspace_replace_preview,
+            commands::search_workspace_replace_apply,
             commands::create_window,
             commands::close_window,
             commands::set_window_title,
@@ -520,6 +537,17 @@ pub fn run() {
             commands::storage_get,
             commands::storage_set,
             commands::storage_delete,
+            // sidex-db state persistence
+            commands::db_get_recent_files,
+            commands::db_get_recent_workspaces,
+            commands::db_save_workspace_state,
+            commands::db_get_workspace_state,
+            // Layered settings
+            commands::settings_get,
+            commands::settings_update,
+            commands::settings_load,
+            commands::settings_parse_jsonc,
+            commands::settings_modify_jsonc,
             commands::git_status,
             commands::git_diff,
             commands::git_log,
@@ -559,9 +587,13 @@ pub fn run() {
             commands::debug_send,
             commands::debug_kill,
             commands::debug_list_adapters,
+            commands::dap_get_launch_configs,
+            commands::dap_get_adapter_registry,
             commands::task_spawn,
             commands::task_kill,
             commands::task_list,
+            commands::tasks_detect,
+            commands::tasks_parse_config,
             // File watching
             commands::watch_start,
             commands::watch_stop,
@@ -574,6 +606,9 @@ pub fn run() {
             commands::uninstall_extension,
             commands::list_installed_extensions,
             commands::list_available_extensions,
+            // Marketplace & contributions (sidex-extensions)
+            commands::extension_search_marketplace,
+            commands::extension_get_contributions,
             // WASM extensions
             commands::wasm_load_extension,
             commands::wasm_unload_extension,
@@ -645,6 +680,33 @@ pub fn run() {
             commands::index_update,
             commands::index_stats,
             commands::index_clear,
+            // LSP management
+            commands::lsp_get_server_registry,
+            commands::lsp_get_supported_languages,
+            // Syntax / language info
+            commands::syntax_get_languages,
+            commands::syntax_detect_language,
+            commands::syntax_get_language_config,
+            // Theme management
+            commands::theme_list,
+            commands::theme_get,
+            commands::theme_get_default_dark,
+            commands::theme_get_default_light,
+            // Keymap
+            commands::keymap_get_defaults,
+            commands::keymap_resolve,
+            commands::keymap_get_all,
+            // Editor intelligence
+            commands::editor_detect_colors,
+            commands::editor_compute_bracket_pairs,
+            commands::editor_compute_folding_ranges,
+            // Remote development
+            commands::remote_list_ssh_hosts,
+            commands::remote_list_wsl_distros,
+            commands::remote_list_containers,
+            // Extension API introspection
+            commands::ext_api_get_namespaces,
+            commands::ext_api_get_commands,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

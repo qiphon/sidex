@@ -89,6 +89,26 @@ wasmtime = { version = "43", default-features = false, features = [
 wasmtime-wasi = "43"
 toml = "0.8"
 anyhow = "1"
+sidex-db = { path = "../crates/sidex-db" }
+sidex-dap = { path = "../crates/sidex-dap" }
+sidex-remote = { path = "../crates/sidex-remote" }
+sidex-settings = { path = "../crates/sidex-settings" }
+sidex-theme = { path = "../crates/sidex-theme" }
+
+# SideX crates
+sidex-git = { path = "../crates/sidex-git" }
+sidex-workspace = { path = "../crates/sidex-workspace" }
+
+# Internal crates
+sidex-text = { path = "../crates/sidex-text" }
+sidex-syntax = { path = "../crates/sidex-syntax" }
+sidex-tasks = { path = "../crates/sidex-tasks" }
+sidex-extensions = { path = "../crates/sidex-extensions" }
+sidex-terminal = { path = "../crates/sidex-terminal" }
+sidex-lsp = { path = "../crates/sidex-lsp" }
+sidex-keymap = { path = "../crates/sidex-keymap" }
+sidex-editor = { path = "../crates/sidex-editor" }
+sidex-extension-api = { path = "../crates/sidex-extension-api" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

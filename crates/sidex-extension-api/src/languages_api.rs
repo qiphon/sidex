@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -203,9 +203,7 @@ impl LanguagesApi {
             "registerCompletionProvider" => {
                 self.register_from_params(ProviderKind::Completion, params)
             }
-            "registerHoverProvider" => {
-                self.register_from_params(ProviderKind::Hover, params)
-            }
+            "registerHoverProvider" => self.register_from_params(ProviderKind::Hover, params),
             "registerDefinitionProvider" => {
                 self.register_from_params(ProviderKind::Definition, params)
             }
@@ -224,18 +222,14 @@ impl LanguagesApi {
             "registerCodeActionProvider" => {
                 self.register_from_params(ProviderKind::CodeAction, params)
             }
-            "registerCodeLensProvider" => {
-                self.register_from_params(ProviderKind::CodeLens, params)
-            }
+            "registerCodeLensProvider" => self.register_from_params(ProviderKind::CodeLens, params),
             "registerDocumentFormattingProvider" => {
                 self.register_from_params(ProviderKind::DocumentFormatting, params)
             }
             "registerDocumentRangeFormattingProvider" => {
                 self.register_from_params(ProviderKind::RangeFormatting, params)
             }
-            "registerRenameProvider" => {
-                self.register_from_params(ProviderKind::Rename, params)
-            }
+            "registerRenameProvider" => self.register_from_params(ProviderKind::Rename, params),
             "registerSignatureHelpProvider" => {
                 self.register_from_params(ProviderKind::SignatureHelp, params)
             }
@@ -248,15 +242,11 @@ impl LanguagesApi {
             "registerDocumentLinkProvider" => {
                 self.register_from_params(ProviderKind::DocumentLink, params)
             }
-            "registerColorProvider" => {
-                self.register_from_params(ProviderKind::Color, params)
-            }
+            "registerColorProvider" => self.register_from_params(ProviderKind::Color, params),
             "registerSelectionRangeProvider" => {
                 self.register_from_params(ProviderKind::SelectionRange, params)
             }
-            "registerSemanticTokensProvider" => {
-                self.register_semantic_tokens_from_params(params)
-            }
+            "registerSemanticTokensProvider" => self.register_semantic_tokens_from_params(params),
             "registerTypeDefinitionProvider" => {
                 self.register_from_params(ProviderKind::TypeDefinition, params)
             }
@@ -284,21 +274,13 @@ impl LanguagesApi {
             "provideHover" => self.invoke(ProviderKind::Hover, params),
             "provideDefinition" => self.invoke(ProviderKind::Definition, params),
             "provideReferences" => self.invoke(ProviderKind::References, params),
-            "provideDocumentHighlight" => {
-                self.invoke(ProviderKind::DocumentHighlight, params)
-            }
+            "provideDocumentHighlight" => self.invoke(ProviderKind::DocumentHighlight, params),
             "provideDocumentSymbol" => self.invoke(ProviderKind::DocumentSymbol, params),
-            "provideWorkspaceSymbol" => {
-                self.invoke(ProviderKind::WorkspaceSymbol, params)
-            }
+            "provideWorkspaceSymbol" => self.invoke(ProviderKind::WorkspaceSymbol, params),
             "provideCodeAction" => self.invoke(ProviderKind::CodeAction, params),
             "provideCodeLens" => self.invoke(ProviderKind::CodeLens, params),
-            "provideDocumentFormatting" => {
-                self.invoke(ProviderKind::DocumentFormatting, params)
-            }
-            "provideDocumentRangeFormatting" => {
-                self.invoke(ProviderKind::RangeFormatting, params)
-            }
+            "provideDocumentFormatting" => self.invoke(ProviderKind::DocumentFormatting, params),
+            "provideDocumentRangeFormatting" => self.invoke(ProviderKind::RangeFormatting, params),
             "provideRename" => self.invoke(ProviderKind::Rename, params),
             "provideSignatureHelp" => self.invoke(ProviderKind::SignatureHelp, params),
             "provideFoldingRange" => self.invoke(ProviderKind::FoldingRange, params),
@@ -306,15 +288,9 @@ impl LanguagesApi {
             "provideDocumentLink" => self.invoke(ProviderKind::DocumentLink, params),
             "provideColor" => self.invoke(ProviderKind::Color, params),
             "provideSelectionRange" => self.invoke(ProviderKind::SelectionRange, params),
-            "provideSemanticTokens" => {
-                self.invoke(ProviderKind::SemanticTokensFull, params)
-            }
-            "provideTypeDefinition" => {
-                self.invoke(ProviderKind::TypeDefinition, params)
-            }
-            "provideImplementation" => {
-                self.invoke(ProviderKind::Implementation, params)
-            }
+            "provideSemanticTokens" => self.invoke(ProviderKind::SemanticTokensFull, params),
+            "provideTypeDefinition" => self.invoke(ProviderKind::TypeDefinition, params),
+            "provideImplementation" => self.invoke(ProviderKind::Implementation, params),
             "provideDeclaration" => self.invoke(ProviderKind::Declaration, params),
 
             _ => bail!("unknown languages action: {action}"),
@@ -358,11 +334,7 @@ impl LanguagesApi {
     }
 
     /// Sets the language configuration for a language id.
-    pub fn set_language_configuration(
-        &self,
-        language_id: &str,
-        config: LanguageConfiguration,
-    ) {
+    pub fn set_language_configuration(&self, language_id: &str, config: LanguageConfiguration) {
         log::debug!("[ext] setLanguageConfiguration({language_id})");
         self.language_configs
             .write()
@@ -371,10 +343,7 @@ impl LanguagesApi {
     }
 
     /// Returns the language configuration for a language id, if set.
-    pub fn get_language_configuration(
-        &self,
-        language_id: &str,
-    ) -> Option<LanguageConfiguration> {
+    pub fn get_language_configuration(&self, language_id: &str) -> Option<LanguageConfiguration> {
         self.language_configs
             .read()
             .expect("language configs lock poisoned")
@@ -393,10 +362,7 @@ impl LanguagesApi {
             .and_then(Value::as_str)
             .unwrap_or("");
 
-        let providers = self
-            .providers
-            .read()
-            .expect("languages lock poisoned");
+        let providers = self.providers.read().expect("languages lock poisoned");
 
         let entries = providers.get(&kind);
         let handler = entries.and_then(|entries| {

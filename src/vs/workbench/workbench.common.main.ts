@@ -171,22 +171,19 @@ registerSingleton(IWebWorkerService, WebWorkerService, InstantiationType.Delayed
 // Default Account (null stub)
 import './services/accounts/browser/nullDefaultAccount.js';
 
-// Telemetry
-import './contrib/telemetry/browser/telemetry.contribution.js';
+// Telemetry — removed: SideX has its own telemetry
+// import './contrib/telemetry/browser/telemetry.contribution.js';
 
 // Preferences
 import './contrib/preferences/browser/preferences.contribution.js';
 import './contrib/preferences/browser/keybindingsEditorContribution.js';
 import './contrib/preferences/browser/preferencesSearch.js';
 
-// Performance
-import './contrib/performance/browser/performance.contribution.js';
+// Performance — removed: SideX has its own performance monitoring
+// import './contrib/performance/browser/performance.contribution.js';
 
 // Notebook
 import './contrib/notebook/browser/notebook.contribution.js';
-
-// Speech
-import './contrib/speech/browser/speech.contribution.js';
 
 // Interactive
 import './contrib/interactive/browser/interactive.contribution.js';
@@ -283,8 +280,8 @@ import './contrib/terminal/terminal.all.js';
 // External terminal
 import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
 
-// Relauncher
-import './contrib/relauncher/browser/relauncher.contribution.js';
+// Relauncher — removed: Electron-specific, not needed in Tauri
+// import './contrib/relauncher/browser/relauncher.contribution.js';
 
 // Tasks
 import './contrib/tasks/browser/task.contribution.js';
@@ -319,16 +316,16 @@ import './contrib/inlayHints/browser/inlayHintsAccessibilty.js';
 // Themes
 import './contrib/themes/browser/themes.contribution.js';
 
-// Update
-import './contrib/update/browser/update.contribution.js';
+// Update — removed: SideX uses Tauri updater
+// import './contrib/update/browser/update.contribution.js';
 
-// Surveys
-import './contrib/surveys/browser/nps.contribution.js';
-import './contrib/surveys/browser/languageSurveys.contribution.js';
+// Surveys — removed: VS Code telemetry surveys not needed
+// import './contrib/surveys/browser/nps.contribution.js';
+// import './contrib/surveys/browser/languageSurveys.contribution.js';
 
-// Welcome
-import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
-import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
+// Welcome — removed: SideX has its own welcome experience
+// import './contrib/welcomeGettingStarted/browser/gettingStarted.contribution.js';
+// import './contrib/welcomeWalkthrough/browser/walkThrough.contribution.js';
 import './contrib/welcomeViews/common/viewsWelcome.contribution.js';
 import './contrib/welcomeViews/common/newFile.contribution.js';
 
@@ -392,9 +389,6 @@ import './contrib/scrollLocking/browser/scrollLocking.contribution.js';
 
 // Drop or paste into
 import './contrib/dropOrPasteInto/browser/dropOrPasteInto.contribution.js';
-
-// Edit Telemetry
-import './contrib/editTelemetry/browser/editTelemetry.contribution.js';
 
 // Opener
 import './contrib/opener/browser/opener.contribution.js';

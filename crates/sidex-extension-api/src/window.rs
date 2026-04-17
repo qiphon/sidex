@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::RwLock;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -292,10 +292,7 @@ impl WindowApi {
                 Ok(serde_json::to_value(id)?)
             }
             "showTextDocument" => {
-                let uri = params
-                    .get("uri")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
                 self.show_text_document(uri, params)
             }
             "createTerminal" => {
@@ -327,21 +324,12 @@ impl WindowApi {
 
             // -- tree views --
             "registerTreeDataProvider" => {
-                let view_id = params
-                    .get("viewId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                self.register_tree_data_provider(
-                    view_id,
-                    std::sync::Arc::new(|_| Ok(Value::Null)),
-                );
+                let view_id = params.get("viewId").and_then(Value::as_str).unwrap_or("");
+                self.register_tree_data_provider(view_id, std::sync::Arc::new(|_| Ok(Value::Null)));
                 Ok(Value::Bool(true))
             }
             "createTreeView" => {
-                let view_id = params
-                    .get("viewId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let view_id = params.get("viewId").and_then(Value::as_str).unwrap_or("");
                 let options: TreeViewOptions = params
                     .get("options")
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -387,13 +375,8 @@ impl WindowApi {
                 Ok(serde_json::to_value(id)?)
             }
             "setStatusBarMessage" => {
-                let text = params
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let timeout = params
-                    .get("timeout")
-                    .and_then(Value::as_u64);
+                let text = params.get("text").and_then(Value::as_str).unwrap_or("");
+                let timeout = params.get("timeout").and_then(Value::as_u64);
                 self.set_status_bar_message(text, timeout)
             }
 
@@ -409,10 +392,7 @@ impl WindowApi {
 
             // -- webview view provider --
             "registerWebviewViewProvider" => {
-                let view_id = params
-                    .get("viewId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let view_id = params.get("viewId").and_then(Value::as_str).unwrap_or("");
                 self.register_webview_view_provider(
                     view_id,
                     std::sync::Arc::new(|_| Ok(Value::Null)),
@@ -429,33 +409,27 @@ impl WindowApi {
     // -----------------------------------------------------------------------
 
     /// Shows an information-level message and returns the selected item.
-    pub fn show_information_message(
-        &self,
-        message: &str,
-        items: &[String],
-    ) -> Result<Value> {
+    pub fn show_information_message(&self, message: &str, items: &[String]) -> Result<Value> {
         log::info!("[ext] info: {message}");
-        Ok(items.first().map_or(Value::Null, |s| Value::String(s.clone())))
+        Ok(items
+            .first()
+            .map_or(Value::Null, |s| Value::String(s.clone())))
     }
 
     /// Shows a warning-level message and returns the selected item.
-    pub fn show_warning_message(
-        &self,
-        message: &str,
-        items: &[String],
-    ) -> Result<Value> {
+    pub fn show_warning_message(&self, message: &str, items: &[String]) -> Result<Value> {
         log::warn!("[ext] warning: {message}");
-        Ok(items.first().map_or(Value::Null, |s| Value::String(s.clone())))
+        Ok(items
+            .first()
+            .map_or(Value::Null, |s| Value::String(s.clone())))
     }
 
     /// Shows an error-level message and returns the selected item.
-    pub fn show_error_message(
-        &self,
-        message: &str,
-        items: &[String],
-    ) -> Result<Value> {
+    pub fn show_error_message(&self, message: &str, items: &[String]) -> Result<Value> {
         log::error!("[ext] error: {message}");
-        Ok(items.first().map_or(Value::Null, |s| Value::String(s.clone())))
+        Ok(items
+            .first()
+            .map_or(Value::Null, |s| Value::String(s.clone())))
     }
 
     // -----------------------------------------------------------------------
@@ -515,9 +489,7 @@ impl WindowApi {
     ) -> WebviewPanelId {
         let raw = self.next_webview_panel.fetch_add(1, Ordering::Relaxed);
         let id = WebviewPanelId(raw);
-        log::debug!(
-            "[ext] createWebviewPanel({view_type}, {title}) -> {raw}"
-        );
+        log::debug!("[ext] createWebviewPanel({view_type}, {title}) -> {raw}");
         self.webview_panels
             .write()
             .expect("webview panels lock poisoned")
@@ -561,11 +533,7 @@ impl WindowApi {
     // -----------------------------------------------------------------------
 
     /// Registers a tree data provider for a view id.
-    pub fn register_tree_data_provider(
-        &self,
-        view_id: &str,
-        provider: TreeDataProvider,
-    ) {
+    pub fn register_tree_data_provider(&self, view_id: &str, provider: TreeDataProvider) {
         log::debug!("[ext] registerTreeDataProvider({view_id})");
         self.tree_data_providers
             .write()
@@ -574,11 +542,7 @@ impl WindowApi {
     }
 
     /// Creates a tree view with options (drag-drop, multi-select, etc.).
-    pub fn create_tree_view(
-        &self,
-        view_id: &str,
-        options: TreeViewOptions,
-    ) -> TreeViewId {
+    pub fn create_tree_view(&self, view_id: &str, options: TreeViewOptions) -> TreeViewId {
         let raw = self.next_tree_view.fetch_add(1, Ordering::Relaxed);
         let id = TreeViewId(raw);
         log::debug!("[ext] createTreeView({view_id}) -> {raw}");
@@ -603,18 +567,12 @@ impl WindowApi {
     /// Registers a handler for custom URI scheme opens.
     pub fn register_uri_handler(&self, handler: UriHandler) {
         log::debug!("[ext] registerUriHandler");
-        *self
-            .uri_handler
-            .write()
-            .expect("uri handler lock poisoned") = Some(handler);
+        *self.uri_handler.write().expect("uri handler lock poisoned") = Some(handler);
     }
 
     /// Invokes the registered URI handler.
     pub fn handle_uri(&self, uri: &str) -> Result<()> {
-        let guard = self
-            .uri_handler
-            .read()
-            .expect("uri handler lock poisoned");
+        let guard = self.uri_handler.read().expect("uri handler lock poisoned");
         if let Some(ref handler) = *guard {
             handler(uri)?;
         }
@@ -627,19 +585,13 @@ impl WindowApi {
 
     /// Shows a file-open dialog and returns selected URIs.
     pub fn show_open_dialog(&self, options: &OpenDialogOptions) -> Result<Value> {
-        log::debug!(
-            "[ext] showOpenDialog (label={:?})",
-            options.open_label
-        );
+        log::debug!("[ext] showOpenDialog (label={:?})", options.open_label);
         Ok(Value::Null)
     }
 
     /// Shows a file-save dialog and returns the chosen URI.
     pub fn show_save_dialog(&self, options: &SaveDialogOptions) -> Result<Value> {
-        log::debug!(
-            "[ext] showSaveDialog (label={:?})",
-            options.save_label
-        );
+        log::debug!("[ext] showSaveDialog (label={:?})", options.save_label);
         Ok(Value::Null)
     }
 
@@ -655,9 +607,7 @@ impl WindowApi {
     ) -> StatusBarItemId {
         let raw = self.next_status_bar_item.fetch_add(1, Ordering::Relaxed);
         let id = StatusBarItemId(raw);
-        log::debug!(
-            "[ext] createStatusBarItem({alignment:?}, priority={priority}) -> {raw}"
-        );
+        log::debug!("[ext] createStatusBarItem({alignment:?}, priority={priority}) -> {raw}");
         self.status_bar_items
             .write()
             .expect("status bar items lock poisoned")
@@ -729,14 +679,8 @@ impl WindowApi {
     }
 
     /// Temporarily shows a message in the status bar.
-    pub fn set_status_bar_message(
-        &self,
-        text: &str,
-        timeout: Option<u64>,
-    ) -> Result<Value> {
-        log::debug!(
-            "[ext] setStatusBarMessage({text}, timeout={timeout:?})"
-        );
+    pub fn set_status_bar_message(&self, text: &str, timeout: Option<u64>) -> Result<Value> {
+        log::debug!("[ext] setStatusBarMessage({text}, timeout={timeout:?})");
         Ok(Value::Bool(true))
     }
 
@@ -756,12 +700,7 @@ impl WindowApi {
     }
 
     /// Reports progress for a given progress handle.
-    pub fn report_progress(
-        &self,
-        id: ProgressId,
-        increment: Option<f64>,
-        message: Option<&str>,
-    ) {
+    pub fn report_progress(&self, id: ProgressId, increment: Option<f64>, message: Option<&str>) {
         log::debug!(
             "[ext] reportProgress({}, inc={increment:?}, msg={message:?})",
             id.0,
@@ -773,11 +712,7 @@ impl WindowApi {
     // -----------------------------------------------------------------------
 
     /// Registers a webview view provider for a sidebar view id.
-    pub fn register_webview_view_provider(
-        &self,
-        view_id: &str,
-        provider: WebviewViewProvider,
-    ) {
+    pub fn register_webview_view_provider(&self, view_id: &str, provider: WebviewViewProvider) {
         log::debug!("[ext] registerWebviewViewProvider({view_id})");
         self.webview_view_providers
             .write()

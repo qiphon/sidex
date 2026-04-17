@@ -197,11 +197,7 @@ impl SelectionRenderer {
     }
 
     /// Draws bracket pair highlight boxes.
-    pub fn draw_bracket_highlights(
-        &self,
-        rects: &mut RectRenderer,
-        brackets: &[BracketHighlight],
-    ) {
+    pub fn draw_bracket_highlights(&self, rects: &mut RectRenderer, brackets: &[BracketHighlight]) {
         for b in brackets {
             rects.draw_border(
                 b.x,

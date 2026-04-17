@@ -92,7 +92,14 @@ impl<F: FnMut(usize)> Widget for Breadcrumbs<F> {
 
             if i + 1 < seg_rects.len() {
                 let sep_x = sr.right() + (self.separator_width - 1.0) / 2.0;
-                rr.draw_rect(sep_x, sr.y + 4.0, 1.0, sr.height - 8.0, self.separator_color, 0.0);
+                rr.draw_rect(
+                    sep_x,
+                    sr.y + 4.0,
+                    1.0,
+                    sr.height - 8.0,
+                    self.separator_color,
+                    0.0,
+                );
             }
         }
         let _ = renderer;

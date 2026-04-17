@@ -157,6 +157,15 @@ impl SnippetSession {
         self.select_current(document);
     }
 
+    /// Returns the tabstop number that is currently active.
+    #[must_use]
+    pub fn current_tabstop_number(&self) -> u32 {
+        self.tabstop_order
+            .get(self.current_idx)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Exits snippet mode, placing the cursor at tabstop `$0` if defined,
     /// otherwise at the end of the inserted text.
     pub fn finish(&mut self, document: &mut Document) {

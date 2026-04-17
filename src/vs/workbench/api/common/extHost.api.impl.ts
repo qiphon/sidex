@@ -88,7 +88,6 @@ import { ExtHostSCM } from './extHostSCM.js';
 import { IExtHostSearch } from './extHostSearch.js';
 import { IExtHostSecretState } from './extHostSecretState.js';
 import { ExtHostShare } from './extHostShare.js';
-import { ExtHostSpeech } from './extHostSpeech.js';
 import { ExtHostBrowsers } from './extHostBrowsers.js';
 import { ExtHostStatusBar } from './extHostStatusBar.js';
 import { IExtHostStorage } from './extHostStorage.js';
@@ -364,7 +363,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 		ExtHostContext.ExtHostStatusBar,
 		new ExtHostStatusBar(rpcProtocol, extHostCommands.converter)
 	);
-	const extHostSpeech = rpcProtocol.set(ExtHostContext.ExtHostSpeech, new ExtHostSpeech(rpcProtocol));
 	const extHostBrowsers = rpcProtocol.set(ExtHostContext.ExtHostBrowsers, new ExtHostBrowsers(rpcProtocol));
 
 	// Check that no named customers are missing
@@ -2264,14 +2262,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			}
 		};
 
-		// namespace: speech
-		const speech: typeof vscode.speech = {
-			registerSpeechProvider(id: string, provider: vscode.SpeechProvider) {
-				checkProposedApiEnabled(extension, 'speech');
-				return extHostSpeech.registerProvider(extension.identifier, id, provider);
-			}
-		};
-
 		// eslint-disable-next-line local/code-no-dangerous-type-assertions
 		return <typeof vscode>{
 			version: initData.version,
@@ -2286,7 +2276,6 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 			languages,
 			notebooks,
 			scm,
-			speech,
 			tasks,
 			tests,
 			window,

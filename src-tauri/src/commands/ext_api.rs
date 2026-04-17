@@ -1,5 +1,42 @@
 use serde::Serialize;
+use sidex_extension_api::CommandRegistry;
 use std::env;
+use std::sync::Arc;
+use tauri::State;
+
+#[derive(Serialize)]
+pub struct ExtCommandInfo {
+    pub id: String,
+}
+
+#[tauri::command]
+pub fn ext_api_get_namespaces() -> Vec<String> {
+    [
+        "window",
+        "workspace",
+        "commands",
+        "languages",
+        "debug",
+        "tasks",
+        "scm",
+        "tests",
+        "env",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+#[tauri::command]
+pub fn ext_api_get_commands(
+    registry: State<'_, Arc<CommandRegistry>>,
+) -> Vec<ExtCommandInfo> {
+    registry
+        .get_commands()
+        .into_iter()
+        .map(|id| ExtCommandInfo { id })
+        .collect()
+}
 
 #[tauri::command]
 pub fn clipboard_read_text() -> Result<String, String> {

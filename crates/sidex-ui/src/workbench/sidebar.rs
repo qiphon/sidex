@@ -124,12 +124,26 @@ impl<F: FnMut(usize)> Widget for Sidebar<F> {
         }
         let mut rr = sidex_gpu::RectRenderer::new();
 
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
 
         let headers = self.header_rects(rect);
         for (i, hr) in headers.iter().enumerate() {
             rr.draw_rect(hr.x, hr.y, hr.width, hr.height, self.header_bg, 0.0);
-            rr.draw_rect(hr.x, hr.y + hr.height - 1.0, hr.width, 1.0, self.border_color, 0.0);
+            rr.draw_rect(
+                hr.x,
+                hr.y + hr.height - 1.0,
+                hr.width,
+                1.0,
+                self.border_color,
+                0.0,
+            );
 
             if self.hovered_header == Some(i) {
                 let hover_bg = Color::from_hex("#2a2d2e").unwrap_or(Color::BLACK);

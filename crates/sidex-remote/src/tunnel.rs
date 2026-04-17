@@ -5,11 +5,12 @@
 //! paired.  Communication happens via JSON-RPC messages over a TLS WebSocket.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::tungstenite::Message;
 
 // ---------------------------------------------------------------------------
@@ -156,8 +157,8 @@ impl TunnelServer {
                 .ok_or_else(|| anyhow::anyhow!("tunnel read channel closed"))?;
 
             if let Message::Text(text) = msg {
-                let req: RpcRequest = serde_json::from_str(&text)
-                    .context("parsing JSON-RPC request")?;
+                let req: RpcRequest =
+                    serde_json::from_str(&text).context("parsing JSON-RPC request")?;
                 return Ok(req);
             }
         }
@@ -181,14 +182,8 @@ pub struct TunnelClient {
 
 impl TunnelClient {
     /// Connect to the relay and pair with the specified tunnel.
-    pub async fn connect(
-        relay_url: &str,
-        tunnel_id: &str,
-        auth_token: &str,
-    ) -> Result<Self> {
-        let url = format!(
-            "{relay_url}?role=client&tunnel={tunnel_id}&token={auth_token}"
-        );
+    pub async fn connect(relay_url: &str, tunnel_id: &str, auth_token: &str) -> Result<Self> {
+        let url = format!("{relay_url}?role=client&tunnel={tunnel_id}&token={auth_token}");
         let (ws, _resp) = tokio_tungstenite::connect_async(&url)
             .await
             .with_context(|| format!("connecting to relay at {relay_url}"))?;
@@ -227,11 +222,7 @@ impl TunnelClient {
     }
 
     /// Send a JSON-RPC request and wait for the matching response.
-    pub async fn call(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value> {
+    pub async fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
         let id = {
             let mut next = self.next_id.lock().await;
             let id = *next;
@@ -254,8 +245,8 @@ impl TunnelClient {
                 .ok_or_else(|| anyhow::anyhow!("tunnel read channel closed"))?;
 
             if let Message::Text(text) = msg {
-                let resp: RpcResponse = serde_json::from_str(&text)
-                    .context("parsing JSON-RPC response")?;
+                let resp: RpcResponse =
+                    serde_json::from_str(&text).context("parsing JSON-RPC response")?;
                 if resp.id == id {
                     if let Some(err) = resp.error {
                         bail!("RPC error {}: {}", err.code, err.message);
@@ -279,5 +270,102 @@ impl TunnelClient {
             .await
             .map_err(|_| anyhow::anyhow!("tunnel write channel closed"))?;
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tunnel state & high-level connection
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TunnelState {
+    Disconnected,
+    Connecting,
+    Connected { url: String },
+    Error(String),
+}
+
+/// High-level tunnel connection with auto-reconnect and named access.
+pub struct TunnelConnection {
+    pub tunnel_id: String,
+    pub state: TunnelState,
+    pub name: String,
+    pub access_token: Option<String>,
+    server: Option<TunnelServer>,
+}
+
+impl TunnelConnection {
+    /// Start a named tunnel server that accepts connections from remote clients.
+    pub async fn start_tunnel(
+        name: &str,
+        relay_url: &str,
+        auth_token: &str,
+    ) -> Result<Self> {
+        let server = TunnelServer::start(relay_url, auth_token).await?;
+        let url = format!("{relay_url}/tunnel/{name}");
+        Ok(Self {
+            tunnel_id: name.to_string(),
+            state: TunnelState::Connected { url: url.clone() },
+            name: name.to_string(),
+            access_token: Some(auth_token.to_string()),
+            server: Some(server),
+        })
+    }
+
+    /// Stop the tunnel and mark it disconnected.
+    pub async fn stop(&mut self) -> Result<()> {
+        self.server = None;
+        self.state = TunnelState::Disconnected;
+        log::info!("tunnel '{}' stopped", self.name);
+        Ok(())
+    }
+
+    /// Get the public URL for this tunnel.
+    pub fn get_url(&self) -> Option<&str> {
+        match &self.state {
+            TunnelState::Connected { url } => Some(url.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Attempt to reconnect with exponential backoff.
+    pub async fn reconnect(&mut self, relay_url: &str, max_attempts: u32) -> Result<()> {
+        let token = self
+            .access_token
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("no access token for reconnect"))?
+            .to_string();
+
+        for attempt in 1..=max_attempts {
+            self.state = TunnelState::Connecting;
+            let delay = Duration::from_millis(500 * 2u64.pow(attempt.min(6)));
+            tokio::time::sleep(delay).await;
+
+            log::info!(
+                "tunnel reconnect attempt {attempt}/{max_attempts} for '{}'",
+                self.name
+            );
+
+            match TunnelServer::start(relay_url, &token).await {
+                Ok(server) => {
+                    let url = format!("{relay_url}/tunnel/{}", self.name);
+                    self.server = Some(server);
+                    self.state = TunnelState::Connected { url };
+                    return Ok(());
+                }
+                Err(e) if attempt == max_attempts => {
+                    self.state = TunnelState::Error(e.to_string());
+                    return Err(e);
+                }
+                Err(e) => {
+                    log::warn!("tunnel reconnect failed: {e}");
+                }
+            }
+        }
+        bail!("tunnel reconnection exhausted")
+    }
+
+    pub fn server(&self) -> Option<&TunnelServer> {
+        self.server.as_ref()
     }
 }

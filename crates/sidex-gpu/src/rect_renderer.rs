@@ -71,7 +71,14 @@ impl RectRenderer {
         // Bottom edge
         self.draw_rect(x, y + height - thickness, width, thickness, color, 0.0);
         // Left edge
-        self.draw_rect(x, y + thickness, thickness, height - 2.0 * thickness, color, 0.0);
+        self.draw_rect(
+            x,
+            y + thickness,
+            thickness,
+            height - 2.0 * thickness,
+            color,
+            0.0,
+        );
         // Right edge
         self.draw_rect(
             x + width - thickness,
@@ -81,6 +88,11 @@ impl RectRenderer {
             color,
             0.0,
         );
+    }
+
+    /// Returns `true` if there is queued geometry to flush.
+    pub fn has_data(&self) -> bool {
+        !self.indices.is_empty()
     }
 
     /// Submits all batched rectangles to the given render pass.

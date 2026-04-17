@@ -234,7 +234,14 @@ impl ScrollbarRenderer {
         }
 
         // Track
-        rects.draw_rect(area_x, 0.0, cfg.vertical_width, viewport_height, cfg.track_color, 0.0);
+        rects.draw_rect(
+            area_x,
+            0.0,
+            cfg.vertical_width,
+            viewport_height,
+            cfg.track_color,
+            0.0,
+        );
 
         // Thumb
         let ratio = viewport_height / content_height;
@@ -251,7 +258,14 @@ impl ScrollbarRenderer {
         } else {
             cfg.thumb_color
         };
-        rects.draw_rect(area_x + 2.0, thumb_y, cfg.vertical_width - 4.0, thumb_h, color, 4.0);
+        rects.draw_rect(
+            area_x + 2.0,
+            thumb_y,
+            cfg.vertical_width - 4.0,
+            thumb_h,
+            color,
+            4.0,
+        );
     }
 
     /// Renders the horizontal scrollbar.
@@ -271,7 +285,14 @@ impl ScrollbarRenderer {
             return;
         }
 
-        rects.draw_rect(0.0, area_y, viewport_width, cfg.horizontal_height, cfg.track_color, 0.0);
+        rects.draw_rect(
+            0.0,
+            area_y,
+            viewport_width,
+            cfg.horizontal_height,
+            cfg.track_color,
+            0.0,
+        );
 
         let ratio = viewport_width / content_width;
         let thumb_w = (viewport_width * ratio).max(cfg.min_thumb_size);
@@ -287,7 +308,14 @@ impl ScrollbarRenderer {
         } else {
             cfg.thumb_color
         };
-        rects.draw_rect(thumb_x, area_y + 2.0, thumb_w, cfg.horizontal_height - 4.0, color, 4.0);
+        rects.draw_rect(
+            thumb_x,
+            area_y + 2.0,
+            thumb_w,
+            cfg.horizontal_height - 4.0,
+            color,
+            4.0,
+        );
     }
 
     /// Renders overview ruler marks on the vertical scrollbar track.
@@ -337,7 +365,14 @@ impl ScrollbarRenderer {
                 a: color.a * (1.0 - t),
                 ..color
             };
-            rects.draw_rect(0.0, t * cfg.shadow_height, editor_width, step_h, step_color, 0.0);
+            rects.draw_rect(
+                0.0,
+                t * cfg.shadow_height,
+                editor_width,
+                step_h,
+                step_color,
+                0.0,
+            );
         }
     }
 }

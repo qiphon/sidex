@@ -3,10 +3,19 @@
 //!
 //! Semantic tokens provide richer type information from the language server
 //! that overrides the coarser tree-sitter/TextMate tokens where they exist.
+//!
+//! This module provides:
+//! - Decoding and encoding of delta-encoded LSP semantic token data.
+//! - A [`SemanticTokensManager`] for per-file token storage and legend management.
+//! - Merging semantic tokens with syntax highlight tokens, with semantic priority.
+//! - Delta updates via [`apply_semantic_token_delta`].
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::highlight::HighlightEvent;
+use crate::highlight::{HighlightEvent, HighlightToken, TokenModifiers, TokenScope};
 
 /// A single semantic token as received from an LSP server (absolute coordinates).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,6 +240,225 @@ pub struct SemanticTokenEdit {
     pub data: Vec<u32>,
 }
 
+/// Delta update message containing a result ID and a list of edits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemanticTokensDelta {
+    pub result_id: Option<String>,
+    pub edits: Vec<SemanticTokenEdit>,
+}
+
+// ---------------------------------------------------------------------------
+// Standard legend
+// ---------------------------------------------------------------------------
+
+/// Standard LSP semantic token type names.
+pub const STANDARD_TOKEN_TYPES: &[&str] = &[
+    "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
+    "parameter", "variable", "property", "enumMember", "event", "function",
+    "method", "macro", "keyword", "modifier", "comment", "string", "number",
+    "regexp", "operator", "decorator",
+];
+
+/// Standard LSP semantic token modifier names.
+pub const STANDARD_TOKEN_MODIFIERS: &[&str] = &[
+    "declaration", "definition", "readonly", "static", "deprecated",
+    "abstract", "async", "modification", "documentation", "defaultLibrary",
+];
+
+/// Creates a [`SemanticTokenLegend`] with the standard LSP types and modifiers.
+#[must_use]
+pub fn standard_semantic_token_legend() -> SemanticTokenLegend {
+    SemanticTokenLegend::new(
+        STANDARD_TOKEN_TYPES.iter().map(|s| (*s).into()).collect(),
+        STANDARD_TOKEN_MODIFIERS.iter().map(|s| (*s).into()).collect(),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// SemanticTokensManager
+// ---------------------------------------------------------------------------
+
+/// Manages per-file semantic tokens and the shared legend.
+#[derive(Debug, Clone, Default)]
+pub struct SemanticTokensManager {
+    pub tokens: HashMap<PathBuf, Vec<SemanticToken>>,
+    pub legend: SemanticTokenLegend,
+}
+
+impl SemanticTokensManager {
+    /// Creates a new manager with the standard LSP legend.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            tokens: HashMap::new(),
+            legend: standard_semantic_token_legend(),
+        }
+    }
+
+    /// Creates a manager with a custom legend.
+    #[must_use]
+    pub fn with_legend(legend: SemanticTokenLegend) -> Self {
+        Self {
+            tokens: HashMap::new(),
+            legend,
+        }
+    }
+
+    /// Stores decoded tokens for a file (replaces any existing tokens).
+    pub fn set_tokens(&mut self, path: &Path, tokens: Vec<SemanticToken>) {
+        self.tokens.insert(path.to_path_buf(), tokens);
+    }
+
+    /// Stores tokens from delta-encoded LSP data for a file.
+    pub fn set_tokens_from_data(&mut self, path: &Path, data: &[u32]) {
+        let tokens = decode_semantic_tokens(data);
+        self.set_tokens(path, tokens);
+    }
+
+    /// Returns the tokens for a file, if any.
+    #[must_use]
+    pub fn get_tokens(&self, path: &Path) -> Option<&[SemanticToken]> {
+        self.tokens.get(path).map(Vec::as_slice)
+    }
+
+    /// Applies a delta update to existing tokens for a file.
+    pub fn apply_delta(&mut self, path: &Path, delta: &SemanticTokensDelta) {
+        let entry = self.tokens.entry(path.to_path_buf()).or_default();
+        let mut data = encode_semantic_tokens(entry);
+        apply_semantic_token_edits(&mut data, &delta.edits);
+        *entry = decode_semantic_tokens(&data);
+    }
+
+    /// Removes tokens for a file.
+    pub fn remove(&mut self, path: &Path) {
+        self.tokens.remove(path);
+    }
+
+    /// Clears all stored tokens.
+    pub fn clear(&mut self) {
+        self.tokens.clear();
+    }
+
+    /// Number of files with stored tokens.
+    #[must_use]
+    pub fn file_count(&self) -> usize {
+        self.tokens.len()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Merging semantic tokens with syntax highlight tokens
+// ---------------------------------------------------------------------------
+
+/// Maps an LSP semantic token type name to a [`TokenScope`].
+#[must_use]
+pub fn semantic_type_to_scope(type_name: &str) -> Option<TokenScope> {
+    match type_name {
+        "namespace" => Some(TokenScope::Namespace),
+        "type" => Some(TokenScope::Type),
+        "class" => Some(TokenScope::Class),
+        "enum" => Some(TokenScope::Enum),
+        "interface" => Some(TokenScope::Interface),
+        "struct" => Some(TokenScope::Struct),
+        "typeParameter" => Some(TokenScope::TypeParameter),
+        "parameter" => Some(TokenScope::VariableParameter),
+        "variable" => Some(TokenScope::Variable),
+        "property" => Some(TokenScope::Property),
+        "enumMember" => Some(TokenScope::EnumMember),
+        "event" => Some(TokenScope::Property),
+        "function" => Some(TokenScope::Function),
+        "method" => Some(TokenScope::Method),
+        "macro" => Some(TokenScope::Macro),
+        "keyword" => Some(TokenScope::Keyword),
+        "modifier" => Some(TokenScope::KeywordModifier),
+        "comment" => Some(TokenScope::Comment),
+        "string" => Some(TokenScope::String),
+        "number" => Some(TokenScope::Number),
+        "regexp" => Some(TokenScope::StringRegex),
+        "operator" => Some(TokenScope::Operator),
+        "decorator" => Some(TokenScope::Decorator),
+        _ => None,
+    }
+}
+
+/// Maps an LSP modifier bitmask to [`TokenModifiers`] using the given legend.
+#[must_use]
+pub fn semantic_modifiers_to_flags(mask: u32, legend: &SemanticTokenLegend) -> TokenModifiers {
+    let names: Vec<&str> = legend.modifier_names(mask);
+    TokenModifiers::from_names(&names)
+}
+
+/// Merges syntax [`HighlightToken`]s with LSP [`SemanticToken`]s. Where a
+/// semantic token overlaps a syntax token, the semantic information wins.
+///
+/// Both inputs should cover the same line. `source` is the full document text
+/// (needed for line/column to byte conversion).
+pub fn merge_highlights(
+    syntax: &[HighlightToken],
+    semantic: &[SemanticToken],
+    legend: &SemanticTokenLegend,
+    line: u32,
+) -> Vec<HighlightToken> {
+    let sem_on_line: Vec<&SemanticToken> = semantic
+        .iter()
+        .filter(|t| t.line == line)
+        .collect();
+
+    if sem_on_line.is_empty() {
+        return syntax.to_vec();
+    }
+
+    let mut sem_ranges: Vec<(u32, u32, TokenScope, TokenModifiers)> = sem_on_line
+        .iter()
+        .filter_map(|tok| {
+            let scope = legend
+                .type_name(tok.token_type)
+                .and_then(semantic_type_to_scope)?;
+            let mods = semantic_modifiers_to_flags(tok.modifiers, legend);
+            Some((tok.start, tok.start + tok.length, scope, mods))
+        })
+        .collect();
+    sem_ranges.sort_by_key(|r| r.0);
+
+    let mut result = Vec::new();
+
+    for syn_tok in syntax {
+        let syn_start = syn_tok.start;
+        let syn_end = syn_tok.end();
+        let mut pos = syn_start;
+
+        for &(sem_start, sem_end, scope, mods) in &sem_ranges {
+            if sem_start >= syn_end || sem_end <= syn_start {
+                continue;
+            }
+            let overlap_start = sem_start.max(syn_start);
+            let overlap_end = sem_end.min(syn_end);
+
+            if pos < overlap_start {
+                result.push(HighlightToken::new(pos, overlap_start - pos, syn_tok.scope));
+            }
+            result.push(HighlightToken::new(overlap_start, overlap_end - overlap_start, scope).with_modifiers(mods));
+            pos = overlap_end;
+        }
+        if pos < syn_end {
+            result.push(HighlightToken::new(pos, syn_end - pos, syn_tok.scope));
+        }
+    }
+
+    result
+}
+
+/// Applies a [`SemanticTokensDelta`] to an existing token list, returning
+/// the updated list.
+pub fn apply_semantic_token_delta(
+    tokens: &mut Vec<SemanticToken>,
+    delta: &SemanticTokensDelta,
+) {
+    let mut data = encode_semantic_tokens(tokens);
+    apply_semantic_token_edits(&mut data, &delta.edits);
+    *tokens = decode_semantic_tokens(&data);
+}
+
 fn line_col_to_byte(source: &str, line: u32, col: u32) -> Option<usize> {
     let mut byte_offset = 0usize;
 
@@ -380,5 +608,107 @@ mod tests {
         assert_eq!(line_col_to_byte(source, 0, 3), Some(3));
         assert_eq!(line_col_to_byte(source, 1, 0), Some(6));
         assert_eq!(line_col_to_byte(source, 2, 0), Some(12));
+    }
+
+    #[test]
+    fn standard_legend_has_all_types() {
+        let legend = standard_semantic_token_legend();
+        assert_eq!(legend.token_types.len(), STANDARD_TOKEN_TYPES.len());
+        assert_eq!(legend.token_modifiers.len(), STANDARD_TOKEN_MODIFIERS.len());
+    }
+
+    #[test]
+    fn manager_set_and_get() {
+        let mut mgr = SemanticTokensManager::new();
+        let path = std::path::PathBuf::from("test.rs");
+        let tok = SemanticToken {
+            line: 0, start: 0, length: 5, token_type: 0, modifiers: 0,
+        };
+        mgr.set_tokens(&path, vec![tok]);
+        assert_eq!(mgr.file_count(), 1);
+        assert!(mgr.get_tokens(&path).is_some());
+        assert_eq!(mgr.get_tokens(&path).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn manager_apply_delta() {
+        let mut mgr = SemanticTokensManager::new();
+        let path = std::path::PathBuf::from("test.rs");
+        mgr.set_tokens_from_data(&path, &[0, 5, 3, 1, 0, 0, 10, 4, 2, 0]);
+        assert_eq!(mgr.get_tokens(&path).unwrap().len(), 2);
+
+        let delta = SemanticTokensDelta {
+            result_id: None,
+            edits: vec![SemanticTokenEdit {
+                start: 5,
+                delete_count: 5,
+                data: vec![1, 3, 2, 3, 0],
+            }],
+        };
+        mgr.apply_delta(&path, &delta);
+        assert_eq!(mgr.get_tokens(&path).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn manager_remove_and_clear() {
+        let mut mgr = SemanticTokensManager::new();
+        let p1 = std::path::PathBuf::from("a.rs");
+        let p2 = std::path::PathBuf::from("b.rs");
+        mgr.set_tokens(&p1, vec![]);
+        mgr.set_tokens(&p2, vec![]);
+        assert_eq!(mgr.file_count(), 2);
+        mgr.remove(&p1);
+        assert_eq!(mgr.file_count(), 1);
+        mgr.clear();
+        assert_eq!(mgr.file_count(), 0);
+    }
+
+    #[test]
+    fn semantic_type_mapping() {
+        assert_eq!(semantic_type_to_scope("function"), Some(TokenScope::Function));
+        assert_eq!(semantic_type_to_scope("variable"), Some(TokenScope::Variable));
+        assert_eq!(semantic_type_to_scope("unknown_type"), None);
+    }
+
+    #[test]
+    fn merge_highlights_no_semantic() {
+        let syntax = vec![
+            HighlightToken::new(0, 5, TokenScope::Keyword),
+            HighlightToken::new(6, 4, TokenScope::Variable),
+        ];
+        let result = merge_highlights(&syntax, &[], &standard_semantic_token_legend(), 0);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].scope, TokenScope::Keyword);
+    }
+
+    #[test]
+    fn merge_highlights_semantic_override() {
+        let syntax = vec![HighlightToken::new(0, 10, TokenScope::Variable)];
+        let legend = standard_semantic_token_legend();
+        let func_idx = legend.token_types.iter().position(|t| t == "function").unwrap() as u32;
+        let semantic = vec![SemanticToken {
+            line: 0, start: 0, length: 5, token_type: func_idx, modifiers: 0,
+        }];
+        let result = merge_highlights(&syntax, &semantic, &legend, 0);
+        assert!(result.len() >= 2);
+        assert_eq!(result[0].scope, TokenScope::Function);
+        assert_eq!(result[0].length, 5);
+        assert_eq!(result[1].scope, TokenScope::Variable);
+    }
+
+    #[test]
+    fn apply_semantic_token_delta_test() {
+        let mut tokens = decode_semantic_tokens(&[0, 5, 3, 1, 0, 0, 10, 4, 2, 0]);
+        assert_eq!(tokens.len(), 2);
+        let delta = SemanticTokensDelta {
+            result_id: Some("v2".into()),
+            edits: vec![SemanticTokenEdit {
+                start: 5,
+                delete_count: 5,
+                data: vec![1, 3, 2, 3, 0],
+            }],
+        };
+        apply_semantic_token_delta(&mut tokens, &delta);
+        assert_eq!(tokens.len(), 2);
     }
 }

@@ -3,6 +3,8 @@ use crate::commands::extension_platform::{
     ExtensionManifest,
 };
 use serde::Serialize;
+use sidex_extensions::marketplace::MarketplaceClient;
+use sidex_extensions::contributions::{parse_contributions, ContributionPoint};
 use std::fs::{self, File};
 use std::io::{Cursor, Read};
 use std::path::Path;
@@ -183,4 +185,163 @@ pub async fn list_installed_extensions(app: AppHandle) -> Result<Vec<InstalledEx
         }
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace search
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct MarketplaceResult {
+    pub id: String,
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub version: String,
+    pub publisher: String,
+    pub install_count: u64,
+    pub rating: f32,
+    pub icon_url: Option<String>,
+    pub download_url: String,
+}
+
+#[tauri::command]
+pub async fn extension_search_marketplace(
+    query: String,
+    page: u32,
+) -> Result<Vec<MarketplaceResult>, String> {
+    let mut client = MarketplaceClient::new();
+    let result = client
+        .search(&query, page, 20)
+        .await
+        .map_err(|e| format!("marketplace search: {e}"))?;
+
+    Ok(result
+        .results
+        .into_iter()
+        .map(|ext| {
+            let desc = if ext.short_description.is_empty() {
+                ext.description.clone()
+            } else {
+                ext.short_description.clone()
+            };
+            MarketplaceResult {
+                id: ext.id,
+                name: ext.name,
+                display_name: ext.display_name,
+                description: desc,
+                version: ext.version,
+                publisher: ext.publisher.display_name,
+                install_count: ext.install_count,
+                rating: ext.rating,
+                icon_url: ext.icon_url,
+                download_url: ext.download_url,
+            }
+        })
+        .collect())
+}
+
+// ---------------------------------------------------------------------------
+// Extension contributions
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct ContributionInfo {
+    pub kind: String,
+    pub count: usize,
+    pub details: Vec<String>,
+}
+
+fn summarize_point(point: &ContributionPoint) -> ContributionInfo {
+    match point {
+        ContributionPoint::Commands(v) => ContributionInfo {
+            kind: "commands".into(),
+            count: v.len(),
+            details: v.iter().map(|c| c.title.clone()).collect(),
+        },
+        ContributionPoint::Languages(v) => ContributionInfo {
+            kind: "languages".into(),
+            count: v.len(),
+            details: v.iter().map(|l| l.id.clone()).collect(),
+        },
+        ContributionPoint::Themes(v) => ContributionInfo {
+            kind: "themes".into(),
+            count: v.len(),
+            details: v.iter().map(|t| t.label.clone()).collect(),
+        },
+        ContributionPoint::Grammars(v) => ContributionInfo {
+            kind: "grammars".into(),
+            count: v.len(),
+            details: v.iter().map(|g| g.scope_name.clone()).collect(),
+        },
+        ContributionPoint::Keybindings(v) => ContributionInfo {
+            kind: "keybindings".into(),
+            count: v.len(),
+            details: v.iter().map(|k| k.command.clone()).collect(),
+        },
+        ContributionPoint::Snippets(v) => ContributionInfo {
+            kind: "snippets".into(),
+            count: v.len(),
+            details: v.iter().map(|s| s.path.clone()).collect(),
+        },
+        ContributionPoint::Debuggers(v) => ContributionInfo {
+            kind: "debuggers".into(),
+            count: v.len(),
+            details: v.iter().map(|d| d.label.clone()).collect(),
+        },
+        ContributionPoint::Views(m) => ContributionInfo {
+            kind: "views".into(),
+            count: m.values().map(Vec::len).sum(),
+            details: m.values().flatten().map(|v| v.id.clone()).collect(),
+        },
+        ContributionPoint::Configuration(v) => ContributionInfo {
+            kind: "configuration".into(),
+            count: v.len(),
+            details: v.iter().filter_map(|c| c.title.clone()).collect(),
+        },
+        ContributionPoint::IconThemes(v) => ContributionInfo {
+            kind: "iconThemes".into(),
+            count: v.len(),
+            details: v.iter().map(|t| t.label.clone()).collect(),
+        },
+        ContributionPoint::ViewsContainers(m) => ContributionInfo {
+            kind: "viewsContainers".into(),
+            count: m.values().map(Vec::len).sum(),
+            details: m.values().flatten().map(|c| c.title.clone()).collect(),
+        },
+        ContributionPoint::Menus(m) => ContributionInfo {
+            kind: "menus".into(),
+            count: m.values().map(Vec::len).sum(),
+            details: m.keys().cloned().collect(),
+        },
+        ContributionPoint::TaskDefinitions(v) => ContributionInfo {
+            kind: "taskDefinitions".into(),
+            count: v.len(),
+            details: v.iter().map(|t| t.task_type.clone()).collect(),
+        },
+        ContributionPoint::ProblemMatchers(v) => ContributionInfo {
+            kind: "problemMatchers".into(),
+            count: v.len(),
+            details: v.iter().map(|p| p.name.clone()).collect(),
+        },
+        ContributionPoint::Terminal(t) => ContributionInfo {
+            kind: "terminal".into(),
+            count: t.profiles.len(),
+            details: t.profiles.iter().map(|p| p.title.clone()).collect(),
+        },
+    }
+}
+
+#[tauri::command]
+pub async fn extension_get_contributions(
+    extension_dir: String,
+) -> Result<Vec<ContributionInfo>, String> {
+    let pkg_path = Path::new(&extension_dir).join("package.json");
+    let raw = fs::read_to_string(&pkg_path)
+        .map_err(|e| format!("read package.json: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("parse package.json: {e}"))?;
+
+    let points = parse_contributions(&value);
+    Ok(points.iter().map(summarize_point).collect())
 }

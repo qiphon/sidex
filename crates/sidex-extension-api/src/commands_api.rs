@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde_json::Value;
 
 /// Callback type for a registered command.
@@ -95,10 +95,13 @@ mod tests {
     #[test]
     fn register_and_execute() {
         let reg = CommandRegistry::new();
-        reg.register("test.greet", Arc::new(|args| {
-            let name = args.as_str().unwrap_or("world");
-            Ok(json!(format!("hello, {name}!")))
-        }));
+        reg.register(
+            "test.greet",
+            Arc::new(|args| {
+                let name = args.as_str().unwrap_or("world");
+                Ok(json!(format!("hello, {name}!")))
+            }),
+        );
         let result = reg.execute("test.greet", json!("rust")).unwrap();
         assert_eq!(result, json!("hello, rust!"));
     }
@@ -157,6 +160,9 @@ mod tests {
         handle.join().unwrap();
 
         assert!(reg.has("from_thread"));
-        assert_eq!(reg.execute("from_thread", Value::Null).unwrap(), json!("ok"));
+        assert_eq!(
+            reg.execute("from_thread", Value::Null).unwrap(),
+            json!("ok")
+        );
     }
 }

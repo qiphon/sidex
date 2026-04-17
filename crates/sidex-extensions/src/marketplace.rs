@@ -1,44 +1,230 @@
 //! Marketplace API client for browsing and downloading extensions.
 //!
 //! Targets the Open VSX registry by default, with the base URL
-//! configurable for alternative marketplaces.
+//! configurable for alternative marketplaces. Supports search with
+//! filtering, category browsing, trending/recommended queries, VSIX
+//! download, and response caching.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_BASE_URL: &str = "https://open-vsx.org/api";
+const DEFAULT_PAGE_SIZE: u32 = 20;
+const CACHE_TTL_SECS: u64 = 300;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 /// Metadata about an extension as returned by the marketplace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketplaceExtension {
-    /// Canonical `namespace.name` id.
+    /// Canonical `publisher.name` id.
     #[serde(alias = "namespace_name")]
     pub id: String,
+    /// Human-readable display name.
+    #[serde(default)]
+    pub display_name: String,
     /// Extension name.
     pub name: String,
-    /// Latest version.
-    pub version: String,
     /// Short description.
     #[serde(default)]
+    pub short_description: String,
+    /// Legacy description field (used when `short_description` is absent).
+    #[serde(default)]
     pub description: String,
-    /// Direct download URL for the `.vsix`.
+    /// Publisher information.
     #[serde(default)]
-    pub download_url: String,
-    /// Icon URL.
+    pub publisher: PublisherInfo,
+    /// Latest version.
+    pub version: String,
+    /// All available versions.
     #[serde(default)]
-    pub icon_url: String,
+    pub versions: Vec<ExtensionVersion>,
     /// Number of installs.
     #[serde(default)]
     pub install_count: u64,
     /// Average rating (0.0–5.0).
     #[serde(default)]
-    pub rating: f64,
+    pub rating: f32,
+    /// Number of ratings.
+    #[serde(default)]
+    pub rating_count: u32,
+    /// Extension categories.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Freeform tags.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Icon URL.
+    #[serde(default)]
+    pub icon_url: Option<String>,
+    /// Source repository URL.
+    #[serde(default)]
+    pub repository_url: Option<String>,
+    /// License identifier (e.g. "MIT").
+    #[serde(default)]
+    pub license: Option<String>,
+    /// Direct download URL for the `.vsix`.
+    #[serde(default)]
+    pub download_url: String,
+    /// ISO 8601 timestamp of last update.
+    #[serde(default)]
+    pub last_updated: String,
 }
+
+/// Publisher / namespace information.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublisherInfo {
+    /// Internal publisher id.
+    #[serde(default)]
+    pub publisher_id: String,
+    /// Machine-readable name (namespace).
+    #[serde(default)]
+    pub publisher_name: String,
+    /// Human-readable name.
+    #[serde(default)]
+    pub display_name: String,
+    /// Whether the publisher is verified.
+    #[serde(default)]
+    pub is_verified: bool,
+}
+
+/// A single published version of an extension.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionVersion {
+    pub version: String,
+    #[serde(default)]
+    pub target_platform: Option<String>,
+    #[serde(default)]
+    pub engine_version: String,
+    #[serde(default)]
+    pub asset_uri: String,
+    #[serde(default)]
+    pub fallback_asset_uri: String,
+}
+
+/// Result of a marketplace search query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub results: Vec<MarketplaceExtension>,
+    pub total_count: u32,
+}
+
+/// Sort order for search results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SortOrder {
+    Relevance,
+    InstallCount,
+    Rating,
+    Name,
+    Updated,
+}
+
+impl SortOrder {
+    fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Relevance => "relevance",
+            Self::InstallCount => "downloadCount",
+            Self::Rating => "averageRating",
+            Self::Name => "name",
+            Self::Updated => "timestamp",
+        }
+    }
+}
+
+/// Well-known extension categories.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ExtensionCategory {
+    Languages,
+    Themes,
+    Snippets,
+    Formatters,
+    Linters,
+    Debuggers,
+    Testing,
+    Visualization,
+    SCMProviders,
+    Keymaps,
+    NotebookRenderers,
+    MachineLearning,
+    Education,
+    Other,
+    Custom(String),
+}
+
+impl ExtensionCategory {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Languages => "Programming Languages",
+            Self::Themes => "Themes",
+            Self::Snippets => "Snippets",
+            Self::Formatters => "Formatters",
+            Self::Linters => "Linters",
+            Self::Debuggers => "Debuggers",
+            Self::Testing => "Testing",
+            Self::Visualization => "Visualization",
+            Self::SCMProviders => "SCM Providers",
+            Self::Keymaps => "Keymaps",
+            Self::NotebookRenderers => "Notebook Renderers",
+            Self::MachineLearning => "Machine Learning",
+            Self::Education => "Education",
+            Self::Other => "Other",
+            Self::Custom(s) => s.as_str(),
+        }
+    }
+
+    pub fn all_builtin() -> &'static [ExtensionCategory] {
+        &[
+            Self::Languages,
+            Self::Themes,
+            Self::Snippets,
+            Self::Formatters,
+            Self::Linters,
+            Self::Debuggers,
+            Self::Testing,
+            Self::Visualization,
+            Self::SCMProviders,
+            Self::Keymaps,
+            Self::NotebookRenderers,
+            Self::MachineLearning,
+            Self::Education,
+            Self::Other,
+        ]
+    }
+}
+
+/// Filters applied to a marketplace search.
+#[derive(Debug, Clone, Default)]
+pub struct SearchFilters {
+    pub category: Option<String>,
+    pub tag: Option<String>,
+    pub sort_order: Option<SortOrder>,
+}
+
+/// Entry in the response cache.
+struct CachedQuery {
+    result: SearchResult,
+    fetched_at: Instant,
+}
+
+// ---------------------------------------------------------------------------
+// Client
+// ---------------------------------------------------------------------------
 
 /// Client for querying an Open VSX-compatible marketplace.
 pub struct MarketplaceClient {
-    base_url: String,
+    pub base_url: String,
+    pub cache_dir: PathBuf,
+    cached_queries: HashMap<String, CachedQuery>,
     http: reqwest::Client,
 }
 
@@ -47,6 +233,8 @@ impl MarketplaceClient {
     pub fn new() -> Self {
         Self {
             base_url: DEFAULT_BASE_URL.to_owned(),
+            cache_dir: std::env::temp_dir().join("sidex-marketplace-cache"),
+            cached_queries: HashMap::new(),
             http: reqwest::Client::new(),
         }
     }
@@ -55,23 +243,59 @@ impl MarketplaceClient {
     pub fn with_base_url(base_url: &str) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_owned(),
+            cache_dir: std::env::temp_dir().join("sidex-marketplace-cache"),
+            cached_queries: HashMap::new(),
             http: reqwest::Client::new(),
         }
     }
 
-    /// Searches for extensions matching `query`.
+    // -- Search -----------------------------------------------------------
+
+    /// Searches for extensions matching `query` with pagination.
     pub async fn search(
-        &self,
+        &mut self,
         query: &str,
         page: u32,
-    ) -> Result<Vec<MarketplaceExtension>> {
-        let url = format!(
-            "{base}/-/search?query={query}&offset={offset}&size=20",
+        page_size: u32,
+    ) -> Result<SearchResult> {
+        self.search_with_filters(query, page, page_size, &SearchFilters::default())
+            .await
+    }
+
+    /// Searches with additional filters.
+    pub async fn search_with_filters(
+        &mut self,
+        query: &str,
+        page: u32,
+        page_size: u32,
+        filters: &SearchFilters,
+    ) -> Result<SearchResult> {
+        let size = if page_size == 0 { DEFAULT_PAGE_SIZE } else { page_size };
+        let offset = page * size;
+
+        let mut url = format!(
+            "{base}/-/search?query={query}&offset={offset}&size={size}",
             base = self.base_url,
-            offset = page * 20,
         );
 
-        let resp: SearchResponse = self
+        if let Some(ref cat) = filters.category {
+            url.push_str(&format!("&category={cat}"));
+        }
+        if let Some(ref tag) = filters.tag {
+            url.push_str(&format!("&tag={tag}"));
+        }
+        if let Some(sort) = filters.sort_order {
+            url.push_str(&format!("&sortBy={}", sort.as_query_value()));
+        }
+
+        let cache_key = url.clone();
+        if let Some(entry) = self.cached_queries.get(&cache_key) {
+            if entry.fetched_at.elapsed().as_secs() < CACHE_TTL_SECS {
+                return Ok(entry.result.clone());
+            }
+        }
+
+        let resp: OpenVsxSearchResponse = self
             .http
             .get(&url)
             .send()
@@ -81,19 +305,29 @@ impl MarketplaceClient {
             .await
             .context("failed to parse marketplace search response")?;
 
-        Ok(resp.extensions)
+        let result = SearchResult {
+            results: resp.extensions,
+            total_count: resp.total_size.unwrap_or(0),
+        };
+
+        self.cached_queries.insert(
+            cache_key,
+            CachedQuery {
+                result: result.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
+
+        Ok(result)
     }
+
+    // -- Single extension -------------------------------------------------
 
     /// Fetches metadata for a single extension by its id (`namespace.name`).
     pub async fn get_extension(&self, id: &str) -> Result<MarketplaceExtension> {
-        let (namespace, name) = id
-            .split_once('.')
-            .unwrap_or(("unknown", id));
+        let (namespace, name) = id.split_once('.').unwrap_or(("unknown", id));
 
-        let url = format!(
-            "{base}/{namespace}/{name}",
-            base = self.base_url,
-        );
+        let url = format!("{base}/{namespace}/{name}", base = self.base_url);
 
         let resp: MarketplaceExtension = self
             .http
@@ -108,15 +342,27 @@ impl MarketplaceClient {
         Ok(resp)
     }
 
-    /// Downloads a `.vsix` for the given extension and version.
+    // -- Download ---------------------------------------------------------
+
+    /// Downloads a `.vsix` for the given extension and version, saving it to
+    /// `target_dir`. Returns the path to the downloaded file.
     pub async fn download_vsix(
         &self,
         id: &str,
         version: &str,
-    ) -> Result<Vec<u8>> {
-        let (namespace, name) = id
-            .split_once('.')
-            .unwrap_or(("unknown", id));
+        target_dir: &Path,
+    ) -> Result<PathBuf> {
+        let bytes = self.download_vsix_bytes(id, version).await?;
+        std::fs::create_dir_all(target_dir)?;
+        let filename = format!("{id}-{version}.vsix");
+        let path = target_dir.join(&filename);
+        std::fs::write(&path, &bytes)?;
+        Ok(path)
+    }
+
+    /// Downloads raw VSIX bytes.
+    pub async fn download_vsix_bytes(&self, id: &str, version: &str) -> Result<Vec<u8>> {
+        let (namespace, name) = id.split_once('.').unwrap_or(("unknown", id));
 
         let url = format!(
             "{base}/{namespace}/{name}/{version}/file/{namespace}.{name}-{version}.vsix",
@@ -135,6 +381,91 @@ impl MarketplaceClient {
 
         Ok(bytes.to_vec())
     }
+
+    // -- Recommended / Trending ------------------------------------------
+
+    /// Fetches recommended extensions (popular + high rating).
+    pub async fn get_recommended(&mut self, count: u32) -> Result<SearchResult> {
+        self.search_with_filters(
+            "",
+            0,
+            count,
+            &SearchFilters {
+                sort_order: Some(SortOrder::Rating),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    /// Fetches trending extensions (recently updated with high install count).
+    pub async fn get_trending(&mut self, count: u32) -> Result<SearchResult> {
+        self.search_with_filters(
+            "",
+            0,
+            count,
+            &SearchFilters {
+                sort_order: Some(SortOrder::InstallCount),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    // -- Category browsing ------------------------------------------------
+
+    /// Browse extensions by category.
+    pub async fn browse_category(
+        &mut self,
+        category: &ExtensionCategory,
+        page: u32,
+        page_size: u32,
+        sort_order: Option<SortOrder>,
+    ) -> Result<SearchResult> {
+        self.search_with_filters(
+            "",
+            page,
+            page_size,
+            &SearchFilters {
+                category: Some(category.as_str().to_owned()),
+                sort_order,
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    /// Browse extensions by tag.
+    pub async fn browse_tag(
+        &mut self,
+        tag: &str,
+        page: u32,
+        page_size: u32,
+    ) -> Result<SearchResult> {
+        self.search_with_filters(
+            "",
+            page,
+            page_size,
+            &SearchFilters {
+                tag: Some(tag.to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    // -- Cache management -------------------------------------------------
+
+    /// Evicts expired entries from the in-memory query cache.
+    pub fn evict_stale_cache(&mut self) {
+        self.cached_queries
+            .retain(|_, v| v.fetched_at.elapsed().as_secs() < CACHE_TTL_SECS);
+    }
+
+    /// Clears the entire in-memory query cache.
+    pub fn clear_cache(&mut self) {
+        self.cached_queries.clear();
+    }
 }
 
 impl Default for MarketplaceClient {
@@ -143,12 +474,23 @@ impl Default for MarketplaceClient {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Internal response shapes
+// ---------------------------------------------------------------------------
+
 /// Internal response shape for the Open VSX search endpoint.
 #[derive(Debug, Deserialize)]
-struct SearchResponse {
+#[serde(rename_all = "camelCase")]
+struct OpenVsxSearchResponse {
     #[serde(default)]
     extensions: Vec<MarketplaceExtension>,
+    #[serde(default)]
+    total_size: Option<u32>,
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -171,18 +513,25 @@ mod tests {
         let json = r#"{
             "id": "rust-lang.rust-analyzer",
             "name": "rust-analyzer",
+            "displayName": "rust-analyzer",
+            "shortDescription": "Rust language support",
             "version": "0.4.1234",
-            "description": "Rust language support",
             "downloadUrl": "https://example.com/file.vsix",
             "iconUrl": "https://example.com/icon.png",
             "installCount": 5000000,
-            "rating": 4.8
+            "rating": 4.8,
+            "ratingCount": 1200,
+            "categories": ["Programming Languages"],
+            "tags": ["rust"],
+            "lastUpdated": "2025-01-01T00:00:00Z"
         }"#;
         let ext: MarketplaceExtension = serde_json::from_str(json).unwrap();
         assert_eq!(ext.id, "rust-lang.rust-analyzer");
-        assert_eq!(ext.name, "rust-analyzer");
+        assert_eq!(ext.display_name, "rust-analyzer");
         assert_eq!(ext.install_count, 5_000_000);
-        assert!((ext.rating - 4.8).abs() < f64::EPSILON);
+        assert!((ext.rating - 4.8).abs() < f32::EPSILON);
+        assert_eq!(ext.rating_count, 1200);
+        assert_eq!(ext.categories, vec!["Programming Languages"]);
     }
 
     #[test]
@@ -190,7 +539,60 @@ mod tests {
         let json = r#"{ "id": "a.b", "name": "b", "version": "1.0.0" }"#;
         let ext: MarketplaceExtension = serde_json::from_str(json).unwrap();
         assert_eq!(ext.id, "a.b");
-        assert!(ext.description.is_empty());
+        assert!(ext.short_description.is_empty());
         assert_eq!(ext.install_count, 0);
+        assert_eq!(ext.rating_count, 0);
+        assert!(ext.categories.is_empty());
+    }
+
+    #[test]
+    fn publisher_info_default() {
+        let p = PublisherInfo::default();
+        assert!(p.publisher_name.is_empty());
+        assert!(!p.is_verified);
+    }
+
+    #[test]
+    fn search_result_deserialize() {
+        let json = r#"{ "results": [], "totalCount": 42 }"#;
+        let r: SearchResult = serde_json::from_str(json).unwrap();
+        assert!(r.results.is_empty());
+        assert_eq!(r.total_count, 42);
+    }
+
+    #[test]
+    fn sort_order_query_values() {
+        assert_eq!(SortOrder::Relevance.as_query_value(), "relevance");
+        assert_eq!(SortOrder::InstallCount.as_query_value(), "downloadCount");
+        assert_eq!(SortOrder::Rating.as_query_value(), "averageRating");
+        assert_eq!(SortOrder::Name.as_query_value(), "name");
+        assert_eq!(SortOrder::Updated.as_query_value(), "timestamp");
+    }
+
+    #[test]
+    fn extension_category_all_builtin() {
+        let cats = ExtensionCategory::all_builtin();
+        assert!(cats.len() >= 10);
+        assert_eq!(cats[0].as_str(), "Programming Languages");
+    }
+
+    #[test]
+    fn cache_eviction() {
+        let mut client = MarketplaceClient::new();
+        client.cached_queries.insert(
+            "test".to_string(),
+            CachedQuery {
+                result: SearchResult {
+                    results: vec![],
+                    total_count: 0,
+                },
+                fetched_at: Instant::now(),
+            },
+        );
+        assert_eq!(client.cached_queries.len(), 1);
+        client.evict_stale_cache();
+        assert_eq!(client.cached_queries.len(), 1);
+        client.clear_cache();
+        assert!(client.cached_queries.is_empty());
     }
 }

@@ -156,6 +156,201 @@ impl Default for UndoRedoStack {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Extended undo system — richer model with explicit open-group API,
+// max-size enforcement, and per-edit inverse tracking.
+// ═══════════════════════════════════════════════════════════════════
+
+/// A single atomic text edit with its inverse, used inside [`UndoGroup`].
+#[derive(Debug, Clone)]
+pub struct UndoEdit {
+    /// The range that was replaced (in the *before* state of the document).
+    pub range: sidex_text::Range,
+    /// The text that was inserted at `range.start`.
+    pub text: String,
+    /// The range that the inserted text occupies (in the *after* state).
+    pub inverse_range: sidex_text::Range,
+    /// The text that was removed (to restore the *before* state).
+    pub inverse_text: String,
+}
+
+/// A group of edits that should be undone/redone as a single user action.
+#[derive(Debug, Clone)]
+pub struct UndoGroup {
+    pub edits: Vec<UndoEdit>,
+    pub cursor_state_before: Vec<crate::cursor::CursorState>,
+    pub cursor_state_after: Vec<crate::cursor::CursorState>,
+    pub timestamp: Instant,
+}
+
+impl UndoGroup {
+    /// Creates a new empty group stamped at the current instant.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            edits: Vec::new(),
+            cursor_state_before: Vec::new(),
+            cursor_state_after: Vec::new(),
+            timestamp: Instant::now(),
+        }
+    }
+}
+
+impl Default for UndoGroup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Duration of inactivity after which an open group is automatically closed.
+const AUTO_CLOSE_GROUP_MS: u128 = 300;
+
+/// Extended undo stack with explicit group open/close, auto-close after a
+/// pause, maximum stack size, and cursor-state restoration.
+#[derive(Debug, Clone)]
+pub struct UndoStack {
+    pub past: Vec<UndoGroup>,
+    pub future: Vec<UndoGroup>,
+    pub open_group: Option<UndoGroup>,
+    pub max_size: usize,
+}
+
+impl UndoStack {
+    /// Creates a new undo stack with the given maximum size.
+    #[must_use]
+    pub fn with_max_size(max_size: usize) -> Self {
+        Self {
+            past: Vec::new(),
+            future: Vec::new(),
+            open_group: None,
+            max_size,
+        }
+    }
+
+    /// Creates a new undo stack with a default maximum of 1024 groups.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_max_size(1024)
+    }
+
+    /// Begins a new undo group. All subsequent `push_edit` calls will be added
+    /// to this group until `end_undo_group` is called (or the group is
+    /// auto-closed on timeout).
+    pub fn begin_undo_group(&mut self) {
+        if let Some(open) = self.open_group.take() {
+            self.commit_group(open);
+        }
+        self.open_group = Some(UndoGroup::new());
+    }
+
+    /// Ends the currently open undo group, committing it to the past stack.
+    pub fn end_undo_group(&mut self) {
+        if let Some(group) = self.open_group.take() {
+            self.commit_group(group);
+        }
+    }
+
+    /// Pushes a single edit into the currently open group. If no group is open,
+    /// one is created implicitly (and auto-closed on the next pause).
+    pub fn push_edit(&mut self, edit: UndoEdit) {
+        self.future.clear();
+        self.auto_close_if_stale();
+
+        if let Some(group) = &mut self.open_group {
+            group.edits.push(edit);
+            group.timestamp = Instant::now();
+        } else {
+            let mut group = UndoGroup::new();
+            group.edits.push(edit);
+            self.open_group = Some(group);
+        }
+    }
+
+    /// Undoes the last group. Returns `Some` with the group that was undone,
+    /// or `None` if there is nothing to undo.
+    pub fn undo(&mut self) -> Option<&UndoGroup> {
+        self.flush_open_group();
+        let group = self.past.pop()?;
+        self.future.push(group);
+        self.future.last()
+    }
+
+    /// Redoes the last undone group. Returns `Some` with the group that was
+    /// redone, or `None` if there is nothing to redo.
+    pub fn redo(&mut self) -> Option<&UndoGroup> {
+        let group = self.future.pop()?;
+        self.past.push(group);
+        self.past.last()
+    }
+
+    /// Clears both stacks and any open group.
+    pub fn clear(&mut self) {
+        self.past.clear();
+        self.future.clear();
+        self.open_group = None;
+    }
+
+    /// Returns `true` if there are groups to undo.
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.past.is_empty() || self.open_group.is_some()
+    }
+
+    /// Returns `true` if there are groups to redo.
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.future.is_empty()
+    }
+
+    /// Returns the depth of the undo stack (committed groups).
+    #[must_use]
+    pub fn depth(&self) -> usize {
+        self.past.len()
+    }
+
+    /// If an open group exists and has been idle for >= 300ms, close it.
+    fn auto_close_if_stale(&mut self) {
+        let should_close = self
+            .open_group
+            .as_ref()
+            .is_some_and(|g| {
+                Instant::now().duration_since(g.timestamp).as_millis() >= AUTO_CLOSE_GROUP_MS
+            });
+        if should_close {
+            if let Some(group) = self.open_group.take() {
+                self.commit_group(group);
+            }
+        }
+    }
+
+    /// Flushes the open group (if any) to the past stack.
+    fn flush_open_group(&mut self) {
+        if let Some(group) = self.open_group.take() {
+            self.commit_group(group);
+        }
+    }
+
+    fn commit_group(&mut self, group: UndoGroup) {
+        if group.edits.is_empty() {
+            return;
+        }
+        self.past.push(group);
+        self.enforce_max_size();
+    }
+
+    fn enforce_max_size(&mut self) {
+        while self.past.len() > self.max_size {
+            self.past.remove(0);
+        }
+    }
+}
+
+impl Default for UndoStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use sidex_text::{Position, Range};
@@ -273,5 +468,117 @@ mod tests {
     fn redo_empty_returns_none() {
         let mut stack = UndoRedoStack::new();
         assert!(stack.redo().is_none());
+    }
+
+    // ── UndoStack (extended) tests ────────────────────────────────
+
+    fn make_undo_edit() -> UndoEdit {
+        UndoEdit {
+            range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+            text: "a".into(),
+            inverse_range: Range::new(Position::new(0, 0), Position::new(0, 1)),
+            inverse_text: String::new(),
+        }
+    }
+
+    #[test]
+    fn undo_stack_empty() {
+        let stack = UndoStack::new();
+        assert!(!stack.can_undo());
+        assert!(!stack.can_redo());
+        assert_eq!(stack.depth(), 0);
+    }
+
+    #[test]
+    fn undo_stack_begin_end_group() {
+        let mut stack = UndoStack::new();
+        stack.begin_undo_group();
+        stack.push_edit(make_undo_edit());
+        stack.push_edit(make_undo_edit());
+        stack.end_undo_group();
+        assert_eq!(stack.depth(), 1);
+        assert!(stack.can_undo());
+    }
+
+    #[test]
+    fn undo_stack_push_edit_auto_group() {
+        let mut stack = UndoStack::new();
+        stack.push_edit(make_undo_edit());
+        stack.push_edit(make_undo_edit());
+        stack.end_undo_group();
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn undo_stack_undo_redo() {
+        let mut stack = UndoStack::new();
+        stack.begin_undo_group();
+        stack.push_edit(make_undo_edit());
+        stack.end_undo_group();
+
+        let undone = stack.undo();
+        assert!(undone.is_some());
+        assert_eq!(undone.unwrap().edits.len(), 1);
+        assert!(!stack.can_undo());
+        assert!(stack.can_redo());
+
+        let redone = stack.redo();
+        assert!(redone.is_some());
+        assert!(stack.can_undo());
+        assert!(!stack.can_redo());
+    }
+
+    #[test]
+    fn undo_stack_clear() {
+        let mut stack = UndoStack::new();
+        stack.begin_undo_group();
+        stack.push_edit(make_undo_edit());
+        stack.end_undo_group();
+        stack.clear();
+        assert!(!stack.can_undo());
+        assert!(!stack.can_redo());
+    }
+
+    #[test]
+    fn undo_stack_max_size() {
+        let mut stack = UndoStack::with_max_size(3);
+        for _ in 0..5 {
+            stack.begin_undo_group();
+            stack.push_edit(make_undo_edit());
+            stack.end_undo_group();
+        }
+        assert!(stack.depth() <= 3);
+    }
+
+    #[test]
+    fn undo_stack_push_edit_clears_redo() {
+        let mut stack = UndoStack::new();
+        stack.begin_undo_group();
+        stack.push_edit(make_undo_edit());
+        stack.end_undo_group();
+        stack.undo();
+        assert!(stack.can_redo());
+        stack.push_edit(make_undo_edit());
+        assert!(!stack.can_redo());
+    }
+
+    #[test]
+    fn undo_stack_empty_group_not_committed() {
+        let mut stack = UndoStack::new();
+        stack.begin_undo_group();
+        stack.end_undo_group();
+        assert_eq!(stack.depth(), 0);
+    }
+
+    #[test]
+    fn undo_stack_default() {
+        let stack = UndoStack::default();
+        assert_eq!(stack.max_size, 1024);
+    }
+
+    #[test]
+    fn undo_group_default() {
+        let group = UndoGroup::default();
+        assert!(group.edits.is_empty());
     }
 }

@@ -182,7 +182,11 @@ impl MinimapRenderer {
     /// Renders the complete minimap into the given [`RectRenderer`].
     ///
     /// The minimap is positioned at the origin set by [`set_origin`](Self::set_origin).
-    #[allow(clippy::cast_precision_loss, clippy::too_many_arguments, clippy::cast_possible_truncation)]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::too_many_arguments,
+        clippy::cast_possible_truncation
+    )]
     pub fn render(
         &mut self,
         rects: &mut RectRenderer,

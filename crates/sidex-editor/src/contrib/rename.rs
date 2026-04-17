@@ -1,5 +1,7 @@
 //! Inline rename — mirrors VS Code's `RenameController` + `RenameWidget`.
 
+use std::collections::HashMap;
+
 use sidex_text::{Position, Range};
 
 /// The phase of a rename operation.
@@ -11,8 +13,100 @@ pub enum RenamePhase {
     Resolving,
     /// The rename input box is visible and the user is typing.
     Editing,
+    /// The rename preview is being shown.
+    Previewing,
     /// The rename edits are being computed / applied.
     Applying,
+}
+
+/// A single file edit produced by a rename operation.
+#[derive(Debug, Clone)]
+pub struct RenameFileEdit {
+    /// URI or path of the file to edit.
+    pub file_path: String,
+    /// The text edits within this file.
+    pub edits: Vec<RenameTextEdit>,
+}
+
+/// A single text edit within a rename operation.
+#[derive(Debug, Clone)]
+pub struct RenameTextEdit {
+    /// Range to replace.
+    pub range: Range,
+    /// New text.
+    pub new_text: String,
+}
+
+/// Validation result for a proposed rename.
+#[derive(Debug, Clone)]
+pub enum RenameValidation {
+    /// The new name is valid.
+    Valid,
+    /// The new name is invalid with a reason.
+    Invalid(String),
+    /// Validation is still pending.
+    Pending,
+}
+
+/// Preview of all changes a rename would make.
+#[derive(Debug, Clone, Default)]
+pub struct RenamePreview {
+    /// Per-file edits grouped by file path.
+    pub file_edits: Vec<RenameFileEdit>,
+    /// Total number of occurrences across all files.
+    pub total_occurrences: usize,
+    /// Number of files affected.
+    pub file_count: usize,
+    /// Whether the user has confirmed the preview.
+    pub confirmed: bool,
+    /// Per-file checkboxes (file path → included).
+    pub file_included: HashMap<String, bool>,
+}
+
+impl RenamePreview {
+    /// Creates a preview from file edits.
+    pub fn from_edits(edits: Vec<RenameFileEdit>) -> Self {
+        let total_occurrences: usize = edits.iter().map(|f| f.edits.len()).sum();
+        let file_count = edits.len();
+        let file_included: HashMap<String, bool> =
+            edits.iter().map(|f| (f.file_path.clone(), true)).collect();
+        Self {
+            file_edits: edits,
+            total_occurrences,
+            file_count,
+            confirmed: false,
+            file_included,
+        }
+    }
+
+    /// Toggles whether a file is included in the rename.
+    pub fn toggle_file(&mut self, path: &str) {
+        if let Some(included) = self.file_included.get_mut(path) {
+            *included = !*included;
+        }
+    }
+
+    /// Returns the file edits that are included.
+    #[must_use]
+    pub fn included_edits(&self) -> Vec<&RenameFileEdit> {
+        self.file_edits
+            .iter()
+            .filter(|f| {
+                self.file_included
+                    .get(&f.file_path)
+                    .copied()
+                    .unwrap_or(true)
+            })
+            .collect()
+    }
+
+    /// Returns a summary string like "Renaming 12 occurrences across 4 files".
+    #[must_use]
+    pub fn summary(&self) -> String {
+        let files = self.included_edits().len();
+        let occurrences: usize = self.included_edits().iter().map(|f| f.edits.len()).sum();
+        format!("Renaming {occurrences} occurrences across {files} files")
+    }
 }
 
 /// Full state for the inline-rename feature.
@@ -32,6 +126,10 @@ pub struct RenameState {
     pub is_valid: bool,
     /// A placeholder hint from the provider (pre-fills the input).
     pub placeholder: Option<String>,
+    /// Current validation state of the new name.
+    pub validation: RenameValidation,
+    /// Preview of all changes (populated when user requests preview).
+    pub preview: Option<RenamePreview>,
 }
 
 impl Default for RenameState {
@@ -44,6 +142,8 @@ impl Default for RenameState {
             new_name: String::new(),
             is_valid: false,
             placeholder: None,
+            validation: RenameValidation::Valid,
+            preview: None,
         }
     }
 }
@@ -57,6 +157,8 @@ impl RenameState {
         self.new_name.clear();
         self.rename_range = None;
         self.is_valid = false;
+        self.preview = None;
+        self.validation = RenameValidation::Pending;
     }
 
     /// Called when the provider resolves the rename range and placeholder.
@@ -67,6 +169,7 @@ impl RenameState {
         self.placeholder = placeholder;
         self.is_valid = true;
         self.phase = RenamePhase::Editing;
+        self.validation = RenameValidation::Valid;
     }
 
     /// Called when resolution fails — cancels the rename.
@@ -77,16 +180,48 @@ impl RenameState {
     /// Updates the new name as the user types.
     pub fn set_new_name(&mut self, name: String) {
         self.new_name = name;
+        self.validation = RenameValidation::Pending;
+    }
+
+    /// Receives a validation result from the language server.
+    pub fn set_validation(&mut self, result: RenameValidation) {
+        self.validation = result;
+    }
+
+    /// Validates the new name locally (basic checks).
+    pub fn validate_local(&mut self) {
+        if self.new_name.is_empty() {
+            self.validation = RenameValidation::Invalid("Name cannot be empty".into());
+        } else if self.new_name == self.original_text {
+            self.validation = RenameValidation::Invalid("Name is unchanged".into());
+        } else if self.new_name.contains(char::is_whitespace)
+            && !self.original_text.contains(char::is_whitespace)
+        {
+            self.validation = RenameValidation::Invalid("Name contains whitespace".into());
+        } else {
+            self.validation = RenameValidation::Valid;
+        }
+    }
+
+    /// Returns `true` if the rename can be applied.
+    #[must_use]
+    pub fn can_apply(&self) -> bool {
+        self.phase == RenamePhase::Editing
+            && matches!(self.validation, RenameValidation::Valid)
+            && !self.new_name.is_empty()
+            && self.new_name != self.original_text
+    }
+
+    /// Enters preview mode with the given edits.
+    pub fn show_preview(&mut self, edits: Vec<RenameFileEdit>) {
+        self.preview = Some(RenamePreview::from_edits(edits));
+        self.phase = RenamePhase::Previewing;
     }
 
     /// Confirms the rename (transitions to Applying phase).
     /// Returns the new name if valid.
     pub fn apply_rename(&mut self) -> Option<String> {
-        if self.phase != RenamePhase::Editing || self.new_name.is_empty() {
-            return None;
-        }
-        if self.new_name == self.original_text {
-            self.cancel_rename();
+        if !self.can_apply() && self.phase != RenamePhase::Previewing {
             return None;
         }
         self.phase = RenamePhase::Applying;
@@ -102,6 +237,8 @@ impl RenameState {
         self.new_name.clear();
         self.is_valid = false;
         self.placeholder = None;
+        self.preview = None;
+        self.validation = RenameValidation::Valid;
     }
 
     /// Finalises after the rename edits have been applied.
@@ -126,6 +263,8 @@ mod tests {
         assert_eq!(state.new_name, "hello");
 
         state.set_new_name("world".into());
+        state.validate_local();
+        assert!(state.can_apply());
         let result = state.apply_rename();
         assert_eq!(result, Some("world".into()));
         assert_eq!(state.phase, RenamePhase::Applying);
@@ -137,8 +276,55 @@ mod tests {
         state.start_rename(Position::new(0, 0));
         let range = Range::new(Position::new(0, 0), Position::new(0, 3));
         state.resolve(range, "foo".into(), None);
-        let result = state.apply_rename();
-        assert!(result.is_none());
-        assert_eq!(state.phase, RenamePhase::Idle);
+        state.validate_local();
+        assert!(!state.can_apply());
+    }
+
+    #[test]
+    fn rename_preview() {
+        let mut state = RenameState::default();
+        state.start_rename(Position::new(0, 0));
+        let range = Range::new(Position::new(0, 0), Position::new(0, 3));
+        state.resolve(range, "foo".into(), None);
+        state.set_new_name("bar".into());
+
+        state.show_preview(vec![
+            RenameFileEdit {
+                file_path: "main.rs".into(),
+                edits: vec![RenameTextEdit {
+                    range,
+                    new_text: "bar".into(),
+                }],
+            },
+            RenameFileEdit {
+                file_path: "lib.rs".into(),
+                edits: vec![
+                    RenameTextEdit {
+                        range,
+                        new_text: "bar".into(),
+                    },
+                    RenameTextEdit {
+                        range,
+                        new_text: "bar".into(),
+                    },
+                ],
+            },
+        ]);
+
+        assert_eq!(state.phase, RenamePhase::Previewing);
+        let preview = state.preview.as_ref().unwrap();
+        assert_eq!(preview.file_count, 2);
+        assert_eq!(preview.total_occurrences, 3);
+    }
+
+    #[test]
+    fn empty_name_invalid() {
+        let mut state = RenameState::default();
+        state.start_rename(Position::new(0, 0));
+        let range = Range::new(Position::new(0, 0), Position::new(0, 3));
+        state.resolve(range, "foo".into(), None);
+        state.set_new_name(String::new());
+        state.validate_local();
+        assert!(matches!(state.validation, RenameValidation::Invalid(_)));
     }
 }

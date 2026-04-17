@@ -9,11 +9,11 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::codespaces::CodespacesTransport;
-use crate::container::{ContainerTransport, parse_devcontainer};
+use crate::container::{parse_devcontainer, ContainerTransport};
 use crate::ssh::{SshAuth, SshTransport};
 use crate::transport::RemoteTransport;
 use crate::wsl::WslTransport;
@@ -141,11 +141,7 @@ impl RemoteManager {
     // -- Codespace ----------------------------------------------------------
 
     /// Connect to a running GitHub Codespace.
-    pub async fn connect_codespace(
-        &mut self,
-        name: &str,
-        token: &str,
-    ) -> Result<ConnectionId> {
+    pub async fn connect_codespace(&mut self, name: &str, token: &str) -> Result<ConnectionId> {
         let transport = CodespacesTransport::connect(name, token).await?;
         let label = format!("Codespace: {name}");
         Ok(self.insert(Box::new(transport), ConnectionKind::Codespace, label))

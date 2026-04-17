@@ -4,8 +4,9 @@
 //! running instances over SSH (GitHub provides SSH access to Codespaces).
 
 use std::path::Path;
+use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::ssh::{SshAuth, SshTransport};
@@ -42,6 +43,158 @@ struct ListResponse {
     codespaces: Vec<Codespace>,
 }
 
+/// Lifecycle state of a codespace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CodespaceState {
+    Available,
+    Starting,
+    Running,
+    Stopping,
+    Stopped,
+    Rebuilding,
+    Deleted,
+}
+
+impl CodespaceState {
+    pub fn from_api(s: &str) -> Self {
+        match s {
+            "Available" => Self::Available,
+            "Starting" => Self::Starting,
+            "Running" => Self::Running,
+            "Stopping" => Self::Stopping,
+            "Stopped" => Self::Stopped,
+            "Rebuilding" => Self::Rebuilding,
+            "Deleted" => Self::Deleted,
+            _ => Self::Stopped,
+        }
+    }
+}
+
+/// Extended codespace information with timing and retention.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodespaceInfo {
+    pub name: String,
+    pub display_name: String,
+    pub repository: String,
+    pub branch: String,
+    pub machine_type: String,
+    pub state: CodespaceState,
+    pub created_at: String,
+    pub last_used: String,
+    pub idle_timeout_minutes: u64,
+    pub retention_period_minutes: u64,
+}
+
+impl From<&Codespace> for CodespaceInfo {
+    fn from(cs: &Codespace) -> Self {
+        Self {
+            name: cs.name.clone(),
+            display_name: cs.name.clone(),
+            repository: cs.repository.clone(),
+            branch: cs.branch.clone(),
+            machine_type: cs.machine_type.clone().unwrap_or_default(),
+            state: CodespaceState::from_api(&cs.state),
+            created_at: cs.created_at.clone(),
+            last_used: String::new(),
+            idle_timeout_minutes: 30,
+            retention_period_minutes: 43200,
+        }
+    }
+}
+
+/// High-level Codespaces connection wrapping transport and metadata.
+pub struct CodespacesConnection {
+    pub codespace: CodespaceInfo,
+    pub token: String,
+    transport: CodespacesTransport,
+}
+
+impl CodespacesConnection {
+    pub async fn connect(name: &str, token: &str) -> Result<Self> {
+        let transport = CodespacesTransport::connect(name, token).await?;
+        let codespaces = list_codespaces(token).await?;
+        let cs = codespaces
+            .iter()
+            .find(|c| c.name == name)
+            .ok_or_else(|| anyhow::anyhow!("codespace not found"))?;
+
+        Ok(Self {
+            codespace: CodespaceInfo::from(cs),
+            token: token.to_string(),
+            transport,
+        })
+    }
+
+    pub fn transport(&self) -> &CodespacesTransport {
+        &self.transport
+    }
+}
+
+/// List codespaces with rich info.
+pub async fn list_codespace_info(token: &str) -> Result<Vec<CodespaceInfo>> {
+    let codespaces = list_codespaces(token).await?;
+    Ok(codespaces.iter().map(CodespaceInfo::from).collect())
+}
+
+/// Wait for a codespace to reach the Available state, polling periodically.
+pub async fn wait_for_codespace(
+    name: &str,
+    token: &str,
+    timeout: Duration,
+) -> Result<Codespace> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let codespaces = list_codespaces(token).await?;
+        if let Some(cs) = codespaces.into_iter().find(|c| c.name == name) {
+            if cs.state == "Available" {
+                return Ok(cs);
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("timed out waiting for codespace '{name}' to become Available");
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
+/// Rebuild a codespace.
+pub async fn rebuild_codespace(name: &str, token: &str) -> Result<()> {
+    let client = gh_client(token)?;
+    let resp = client
+        .post(format!("{GITHUB_API}/user/codespaces/{name}/rebuild"))
+        .send()
+        .await
+        .context("rebuilding codespace")?;
+    if !resp.status().is_success() {
+        bail!("rebuild codespace: {}", resp.text().await?);
+    }
+    Ok(())
+}
+
+/// Get available machine types for a repository.
+pub async fn list_machine_types(
+    token: &str,
+    repo: &str,
+) -> Result<Vec<String>> {
+    let client = gh_client(token)?;
+    let resp = client
+        .get(format!(
+            "{GITHUB_API}/repos/{repo}/codespaces/machines"
+        ))
+        .send()
+        .await
+        .context("listing machine types")?;
+    if !resp.status().is_success() {
+        bail!("list machines: {}", resp.text().await?);
+    }
+    #[derive(Deserialize)]
+    struct Machine { name: String }
+    #[derive(Deserialize)]
+    struct MachinesResp { machines: Vec<Machine> }
+    let body: MachinesResp = resp.json().await?;
+    Ok(body.machines.into_iter().map(|m| m.name).collect())
+}
+
 // ---------------------------------------------------------------------------
 // Codespace lifecycle (API)
 // ---------------------------------------------------------------------------
@@ -61,7 +214,10 @@ fn gh_client(token: &str) -> Result<reqwest::Client> {
         "X-GitHub-Api-Version",
         header::HeaderValue::from_static("2022-11-28"),
     );
-    headers.insert(header::USER_AGENT, header::HeaderValue::from_static("sidex"));
+    headers.insert(
+        header::USER_AGENT,
+        header::HeaderValue::from_static("sidex"),
+    );
     Ok(reqwest::Client::builder()
         .default_headers(headers)
         .build()?)

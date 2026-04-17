@@ -52,6 +52,92 @@ pub enum ExtensionState {
     Uninstalling,
 }
 
+// ── Extension list item (marketplace-oriented card) ──────────────────────────
+
+/// A lightweight extension card used in search results and category listings.
+/// Mirrors the marketplace result shape for direct rendering.
+#[derive(Clone, Debug)]
+pub struct ExtensionListItem {
+    pub id: String,
+    pub name: String,
+    pub publisher: String,
+    pub description: String,
+    pub version: String,
+    pub icon_url: Option<String>,
+    pub install_count: u64,
+    pub rating: f32,
+    pub is_installed: bool,
+    pub is_enabled: bool,
+    pub update_available: Option<String>,
+}
+
+impl ExtensionListItem {
+    pub fn install_count_label(&self) -> String {
+        if self.install_count >= 1_000_000 {
+            format!("{:.1}M", self.install_count as f64 / 1_000_000.0)
+        } else if self.install_count >= 1_000 {
+            format!("{:.1}K", self.install_count as f64 / 1_000.0)
+        } else {
+            self.install_count.to_string()
+        }
+    }
+
+    pub fn rating_stars(&self) -> u8 {
+        self.rating.round() as u8
+    }
+
+    pub fn effective_state(&self) -> ExtensionState {
+        if self.update_available.is_some() {
+            ExtensionState::UpdateAvailable
+        } else if !self.is_installed {
+            ExtensionState::NotInstalled
+        } else if !self.is_enabled {
+            ExtensionState::Disabled
+        } else {
+            ExtensionState::Installed
+        }
+    }
+}
+
+// ── Extension filter ─────────────────────────────────────────────────────────
+
+/// Filters for narrowing the extension list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExtensionFilter {
+    Installed,
+    Enabled,
+    Disabled,
+    Outdated,
+    Recommended,
+    Popular,
+    Category(String),
+}
+
+impl ExtensionFilter {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Installed => "Installed",
+            Self::Enabled => "Enabled",
+            Self::Disabled => "Disabled",
+            Self::Outdated => "Outdated",
+            Self::Recommended => "Recommended",
+            Self::Popular => "Popular",
+            Self::Category(_) => "Category",
+        }
+    }
+
+    pub fn all_builtin() -> Vec<Self> {
+        vec![
+            Self::Installed,
+            Self::Enabled,
+            Self::Disabled,
+            Self::Outdated,
+            Self::Recommended,
+            Self::Popular,
+        ]
+    }
+}
+
 // ── Extension actions ────────────────────────────────────────────────────────
 
 /// Actions for extension management.
@@ -78,6 +164,116 @@ pub enum ExtensionView {
     Popular,
 }
 
+// ── Extension detail ─────────────────────────────────────────────────────────
+
+/// Detailed information for the extension detail view.
+#[derive(Clone, Debug)]
+pub struct ExtensionDetail {
+    pub id: String,
+    pub readme_html: String,
+    pub changelog_html: String,
+    pub features_html: String,
+    pub dependencies: Vec<String>,
+    pub extension_pack: Vec<String>,
+    pub active_tab: ExtensionDetailTab,
+    pub reviews: Vec<ExtensionReview>,
+}
+
+/// Tabs in the extension detail view.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExtensionDetailTab {
+    #[default]
+    Readme,
+    Features,
+    Changelog,
+    Dependencies,
+    Reviews,
+}
+
+/// A user review of an extension.
+#[derive(Clone, Debug)]
+pub struct ExtensionReview {
+    pub author: String,
+    pub rating: u8,
+    pub text: String,
+    pub timestamp: u64,
+}
+
+// ── Runtime status ───────────────────────────────────────────────────────────
+
+/// Runtime status of an installed extension.
+#[derive(Clone, Debug)]
+pub struct ExtensionRuntimeStatus {
+    pub id: String,
+    pub activation_time_ms: Option<u64>,
+    pub activated: bool,
+    pub startup_error: Option<String>,
+    pub unresponsive: bool,
+    pub memory_usage: Option<u64>,
+}
+
+// ── Recommendations ──────────────────────────────────────────────────────────
+
+/// Source of an extension recommendation.
+#[derive(Clone, Debug)]
+pub struct ExtensionRecommendation {
+    pub id: String,
+    pub reason: RecommendationReason,
+}
+
+/// Why an extension is recommended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RecommendationReason {
+    Workspace,
+    FileType(String),
+    Popular,
+    Explicit,
+}
+
+// ── Extension bisect ─────────────────────────────────────────────────────────
+
+/// State of an extension bisect session.
+#[derive(Clone, Debug)]
+pub struct ExtensionBisect {
+    pub active: bool,
+    pub all_extensions: Vec<String>,
+    pub disabled_set: Vec<String>,
+    pub step: u32,
+    pub total_steps: u32,
+    pub result: Option<String>,
+}
+
+impl ExtensionBisect {
+    pub fn new(extension_ids: Vec<String>) -> Self {
+        let total = (extension_ids.len() as f64).log2().ceil() as u32 + 1;
+        Self {
+            active: true,
+            all_extensions: extension_ids,
+            disabled_set: Vec::new(),
+            step: 0,
+            total_steps: total,
+            result: None,
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.result.is_some()
+    }
+
+    pub fn progress_label(&self) -> String {
+        format!("Step {} of {}", self.step + 1, self.total_steps)
+    }
+}
+
+// ── Workspace recommendations ────────────────────────────────────────────────
+
+/// Workspace extension recommendations from `.vscode/extensions.json`.
+#[derive(Clone, Debug, Default)]
+pub struct WorkspaceRecommendations {
+    pub recommended: Vec<String>,
+    pub unwanted: Vec<String>,
+}
+
 // ── Extensions panel ─────────────────────────────────────────────────────────
 
 /// The Extensions sidebar panel.
@@ -94,9 +290,25 @@ where
     pub installed: Vec<ExtensionInfo>,
     pub recommended: Vec<ExtensionInfo>,
     pub search_results: Vec<ExtensionInfo>,
+    pub list_items: Vec<ExtensionListItem>,
     pub search_query: String,
     pub view: ExtensionView,
+    pub active_filter: Option<ExtensionFilter>,
     pub on_action: OnAction,
+
+    // Detail view
+    detail: Option<ExtensionDetail>,
+    detail_scroll_offset: f32,
+
+    // Runtime statuses
+    runtime_statuses: Vec<ExtensionRuntimeStatus>,
+
+    // Recommendations
+    recommendations: Vec<ExtensionRecommendation>,
+    workspace_recommendations: WorkspaceRecommendations,
+
+    // Bisect
+    bisect: Option<ExtensionBisect>,
 
     selected_index: Option<usize>,
     detail_extension: Option<String>,
@@ -135,9 +347,18 @@ where
             installed: Vec::new(),
             recommended: Vec::new(),
             search_results: Vec::new(),
+            list_items: Vec::new(),
             search_query: String::new(),
             view: ExtensionView::Installed,
+            active_filter: None,
             on_action,
+
+            detail: None,
+            detail_scroll_offset: 0.0,
+            runtime_statuses: Vec::new(),
+            recommendations: Vec::new(),
+            workspace_recommendations: WorkspaceRecommendations::default(),
+            bisect: None,
 
             selected_index: None,
             detail_extension: None,
@@ -202,6 +423,123 @@ where
         (self.on_action)(ExtensionAction::ShowDetails(id.to_string()));
     }
 
+    // ── Detail view ──────────────────────────────────────────────────────
+
+    pub fn set_detail(&mut self, detail: ExtensionDetail) {
+        self.detail = Some(detail);
+        self.detail_scroll_offset = 0.0;
+    }
+
+    pub fn close_detail(&mut self) {
+        self.detail = None;
+        self.detail_extension = None;
+    }
+
+    pub fn detail(&self) -> Option<&ExtensionDetail> {
+        self.detail.as_ref()
+    }
+
+    pub fn is_showing_detail(&self) -> bool {
+        self.detail.is_some()
+    }
+
+    pub fn set_detail_tab(&mut self, tab: ExtensionDetailTab) {
+        if let Some(ref mut detail) = self.detail {
+            detail.active_tab = tab;
+            self.detail_scroll_offset = 0.0;
+        }
+    }
+
+    // ── Runtime status ───────────────────────────────────────────────────
+
+    pub fn set_runtime_statuses(&mut self, statuses: Vec<ExtensionRuntimeStatus>) {
+        self.runtime_statuses = statuses;
+    }
+
+    pub fn runtime_status_for(&self, id: &str) -> Option<&ExtensionRuntimeStatus> {
+        self.runtime_statuses.iter().find(|s| s.id == id)
+    }
+
+    // ── Recommendations ──────────────────────────────────────────────────
+
+    pub fn set_recommendations(&mut self, recs: Vec<ExtensionRecommendation>) {
+        self.recommendations = recs;
+    }
+
+    pub fn set_workspace_recommendations(&mut self, recs: WorkspaceRecommendations) {
+        self.workspace_recommendations = recs;
+    }
+
+    pub fn recommendations(&self) -> &[ExtensionRecommendation] {
+        &self.recommendations
+    }
+
+    // ── Bisect ───────────────────────────────────────────────────────────
+
+    pub fn start_bisect(&mut self) {
+        let ids: Vec<String> = self.installed.iter().map(|e| e.id.clone()).collect();
+        self.bisect = Some(ExtensionBisect::new(ids));
+    }
+
+    pub fn bisect_good(&mut self) {
+        if let Some(ref mut bisect) = self.bisect {
+            bisect.step += 1;
+            if bisect.step >= bisect.total_steps {
+                bisect.result = bisect.disabled_set.last().cloned();
+            }
+        }
+    }
+
+    pub fn bisect_bad(&mut self) {
+        if let Some(ref mut bisect) = self.bisect {
+            bisect.step += 1;
+            if bisect.step >= bisect.total_steps {
+                bisect.result = bisect.disabled_set.last().cloned();
+            }
+        }
+    }
+
+    pub fn end_bisect(&mut self) {
+        self.bisect = None;
+    }
+
+    pub fn bisect(&self) -> Option<&ExtensionBisect> {
+        self.bisect.as_ref()
+    }
+
+    // ── Filtering ─────────────────────────────────────────────────────────
+
+    pub fn set_filter(&mut self, filter: ExtensionFilter) {
+        self.active_filter = Some(filter);
+        self.scroll_offset = 0.0;
+    }
+
+    pub fn clear_filter(&mut self) {
+        self.active_filter = None;
+    }
+
+    /// Returns the list items matching the active filter.
+    pub fn filtered_list_items(&self) -> Vec<&ExtensionListItem> {
+        let Some(ref filter) = self.active_filter else {
+            return self.list_items.iter().collect();
+        };
+        self.list_items
+            .iter()
+            .filter(|item| match filter {
+                ExtensionFilter::Installed => item.is_installed,
+                ExtensionFilter::Enabled => item.is_installed && item.is_enabled,
+                ExtensionFilter::Disabled => item.is_installed && !item.is_enabled,
+                ExtensionFilter::Outdated => item.update_available.is_some(),
+                ExtensionFilter::Recommended | ExtensionFilter::Popular => true,
+                ExtensionFilter::Category(_) => true,
+            })
+            .collect()
+    }
+
+    pub fn set_list_items(&mut self, items: Vec<ExtensionListItem>) {
+        self.list_items = items;
+    }
+
     fn active_list(&self) -> &[ExtensionInfo] {
         match self.view {
             ExtensionView::Installed => &self.installed,
@@ -216,10 +554,9 @@ where
                 "Install",
                 Color::from_hex("#0e639c").unwrap_or(Color::BLACK),
             )),
-            ExtensionState::UpdateAvailable => Some((
-                "Update",
-                Color::from_hex("#0e639c").unwrap_or(Color::BLACK),
-            )),
+            ExtensionState::UpdateAvailable => {
+                Some(("Update", Color::from_hex("#0e639c").unwrap_or(Color::BLACK)))
+            }
             ExtensionState::Installed => Some((
                 "Uninstall",
                 Color::from_hex("#6c2020").unwrap_or(Color::BLACK),
@@ -243,7 +580,14 @@ where
     #[allow(clippy::cast_precision_loss)]
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let mut rr = sidex_gpu::RectRenderer::new();
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
 
         let mut y = rect.y + 8.0;
         let pad = 8.0;
@@ -421,9 +765,15 @@ where
                             let ext_id = self.active_list()[idx].id.clone();
                             let ext_state = self.active_list()[idx].state;
                             match ext_state {
-                                ExtensionState::NotInstalled => (self.on_action)(ExtensionAction::Install(ext_id)),
-                                ExtensionState::Installed => (self.on_action)(ExtensionAction::Uninstall(ext_id)),
-                                ExtensionState::UpdateAvailable => (self.on_action)(ExtensionAction::Update(ext_id)),
+                                ExtensionState::NotInstalled => {
+                                    (self.on_action)(ExtensionAction::Install(ext_id))
+                                }
+                                ExtensionState::Installed => {
+                                    (self.on_action)(ExtensionAction::Uninstall(ext_id))
+                                }
+                                ExtensionState::UpdateAvailable => {
+                                    (self.on_action)(ExtensionAction::Update(ext_id))
+                                }
                                 _ => {}
                             }
                         } else {
@@ -441,7 +791,9 @@ where
                 self.scroll_offset = (self.scroll_offset - dy * 40.0).clamp(0.0, max);
                 EventResult::Handled
             }
-            UiEvent::KeyPress { key: Key::Enter, .. } if self.search_focused => {
+            UiEvent::KeyPress {
+                key: Key::Enter, ..
+            } if self.search_focused => {
                 let q = self.search_query.clone();
                 self.search(q);
                 EventResult::Handled

@@ -12,7 +12,7 @@ use anyhow::Result;
 use walkdir::WalkDir;
 
 use crate::manifest::{
-    ExtensionKind, ExtensionManifest, is_version_greater, read_node_manifest, read_wasm_manifest,
+    is_version_greater, read_node_manifest, read_wasm_manifest, ExtensionKind, ExtensionManifest,
 };
 use crate::paths;
 
@@ -296,9 +296,8 @@ mod tests {
     use crate::manifest::parse_manifest_str;
 
     fn test_manifest(name: &str, publisher: &str) -> ExtensionManifest {
-        let json = format!(
-            r#"{{ "name": "{name}", "publisher": "{publisher}", "version": "1.0.0" }}"#
-        );
+        let json =
+            format!(r#"{{ "name": "{name}", "publisher": "{publisher}", "version": "1.0.0" }}"#);
         parse_manifest_str(&json).unwrap()
     }
 

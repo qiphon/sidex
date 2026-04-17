@@ -1,4 +1,8 @@
 use serde::Serialize;
+use sidex_text::diff::{compute_line_diff, LineDiff};
+use sidex_text::encoding::detect_encoding;
+use sidex_text::{detect_line_ending, line_ending_label, normalize_line_endings, LineEnding};
+use sidex_text::Buffer;
 use std::io::Read;
 
 #[derive(Debug, Serialize)]
@@ -36,102 +40,49 @@ pub fn count_lines(path: String) -> Result<usize, String> {
 pub fn file_summary(path: String) -> Result<FileSummary, String> {
     let content = std::fs::read(&path).map_err(|e| format!("Failed to read file: {e}"))?;
 
-    let has_bom = content.starts_with(&[0xEF, 0xBB, 0xBF]);
+    let encoding = detect_encoding(&content);
+    let has_bom = matches!(encoding, sidex_text::encoding::Encoding::Utf8Bom);
+
     let text_start = if has_bom { 3 } else { 0 };
     let text = String::from_utf8_lossy(&content[text_start..]);
 
-    let mut line_count = 0usize;
-    let mut word_count = 0usize;
-    let mut char_count = 0usize;
-    let mut has_crlf = false;
-    let mut has_cr = false;
-    let mut in_word = false;
+    let buffer = Buffer::from_str(&text);
+    let line_count = buffer.len_lines();
+    let char_count = buffer.len_chars();
 
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        char_count += 1;
-        let b = bytes[i];
-        match b {
-            b'\r' => {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                    has_crlf = true;
-                    line_count += 1;
-                    i += 2;
-                } else {
-                    has_cr = true;
-                    line_count += 1;
-                    i += 1;
-                }
-                in_word = false;
-                continue;
-            }
-            b'\n' => {
-                line_count += 1;
-                in_word = false;
-            }
-            b' ' | b'\t' => {
-                in_word = false;
-            }
-            _ if b > 127 => {
-                if !in_word {
-                    word_count += 1;
-                    in_word = true;
-                }
-            }
-            _ => {
-                if !in_word && !b.is_ascii_whitespace() {
-                    word_count += 1;
-                    in_word = true;
-                } else if b.is_ascii_whitespace() {
-                    in_word = false;
-                }
+    let mut word_count = 0usize;
+    for line_idx in 0..buffer.len_lines() {
+        for word_info in buffer.words_at(line_idx) {
+            if word_info.word_type == sidex_text::WordType::Word {
+                word_count += 1;
             }
         }
-        i += 1;
     }
 
-    if !text.is_empty() && !text.ends_with('\n') && !text.ends_with('\r') {
-        line_count += 1;
-    }
-
-    let line_endings = if has_crlf {
-        "CRLF"
-    } else if has_cr {
-        "CR"
-    } else {
-        "LF"
-    };
-
-    let likely_encoding = if has_bom {
-        "UTF-8 (with BOM)"
-    } else if content.is_ascii() {
-        "ASCII"
-    } else {
-        "UTF-8"
-    };
+    let line_ending = detect_line_ending(&text);
+    let line_endings = line_ending_label(line_ending).to_string();
+    let likely_encoding = encoding.label().to_string();
 
     Ok(FileSummary {
         line_count,
         word_count,
         char_count,
         has_bom,
-        likely_encoding: likely_encoding.to_string(),
-        line_endings: line_endings.to_string(),
+        likely_encoding,
+        line_endings,
     })
 }
 
 #[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub fn normalize_line_endings(text: String) -> String {
-    text.replace("\r\n", "\n").replace('\r', "\n")
+#[tauri::command(rename_all = "snake_case")]
+pub fn normalize_line_endings_cmd(text: String) -> String {
+    normalize_line_endings(&text, LineEnding::Lf)
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 pub fn to_crlf(text: String) -> String {
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    normalized.replace('\n', "\r\n")
+    normalize_line_endings(&text, LineEnding::CrLf)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -166,29 +117,25 @@ pub struct WordBoundary {
 #[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
 #[tauri::command]
 pub fn get_word_boundaries(line: String, column: usize) -> Result<WordBoundary, String> {
-    let bytes = line.as_bytes();
-    if bytes.is_empty() || column >= bytes.len() {
-        return Ok(WordBoundary { start: 0, end: 0 });
+    let buffer = Buffer::from_str(&line);
+    #[allow(clippy::cast_possible_truncation)]
+    let pos = sidex_text::Position::new(0, column as u32);
+
+    match buffer.get_word_at_position(pos) {
+        Some(word) => Ok(WordBoundary {
+            start: word.start_column as usize,
+            end: word.end_column as usize,
+        }),
+        None => {
+            let bytes = line.as_bytes();
+            if bytes.is_empty() || column >= bytes.len() {
+                return Ok(WordBoundary { start: 0, end: 0 });
+            }
+            let start = column.saturating_sub(1);
+            let end = (column + 1).min(bytes.len());
+            Ok(WordBoundary { start, end })
+        }
     }
-
-    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
-
-    let mut start = column;
-    while start > 0 && is_word(bytes[start - 1]) {
-        start -= 1;
-    }
-
-    let mut end = column;
-    while end < bytes.len() && is_word(bytes[end]) {
-        end += 1;
-    }
-
-    if start == column && end == column {
-        start = column.saturating_sub(1);
-        end = (column + 1).min(bytes.len());
-    }
-
-    Ok(WordBoundary { start, end })
 }
 
 #[derive(Debug, Serialize)]
@@ -203,33 +150,36 @@ pub struct DiffLine {
 pub fn simple_diff(old_text: String, new_text: String) -> Vec<DiffLine> {
     let old_lines: Vec<&str> = old_text.lines().collect();
     let new_lines: Vec<&str> = new_text.lines().collect();
-    let max_lines = old_lines.len().max(new_lines.len());
+
+    let diff = compute_line_diff(&old_lines, &new_lines);
 
     let mut result = Vec::new();
-    for i in 0..max_lines {
-        match (old_lines.get(i), new_lines.get(i)) {
-            (Some(old), Some(new)) if old != new => {
+    let mut line_number = 0usize;
+    for entry in &diff {
+        line_number += 1;
+        match entry {
+            LineDiff::Equal(_) => {}
+            LineDiff::Modified(_, new) => {
                 result.push(DiffLine {
-                    line_number: i + 1,
+                    line_number,
                     change_type: "modified",
-                    content: new.to_string(),
+                    content: new.clone(),
                 });
             }
-            (None, Some(new)) => {
+            LineDiff::Added(content) => {
                 result.push(DiffLine {
-                    line_number: i + 1,
+                    line_number,
                     change_type: "added",
-                    content: new.to_string(),
+                    content: content.clone(),
                 });
             }
-            (Some(_), None) => {
+            LineDiff::Removed(_) => {
                 result.push(DiffLine {
-                    line_number: i + 1,
+                    line_number,
                     change_type: "removed",
                     content: String::new(),
                 });
             }
-            _ => {}
         }
     }
     result

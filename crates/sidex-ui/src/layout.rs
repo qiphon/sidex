@@ -211,7 +211,11 @@ fn layout_node(node: &LayoutNode, available: Rect, out: &mut Vec<Rect>) {
 
     let is_row = node.direction == Direction::Row;
 
-    let total_main = if is_row { content.width } else { content.height };
+    let total_main = if is_row {
+        content.width
+    } else {
+        content.height
+    };
 
     // First pass: measure fixed / auto children, accumulate flex weights.
     let mut fixed_total: f32 = 0.0;
@@ -263,13 +267,27 @@ fn layout_node(node: &LayoutNode, available: Rect, out: &mut Vec<Rect>) {
         };
 
         let child_rect = if is_row {
-            Rect::new(cursor, content.y, main_size + child_margin_main, content.height)
+            Rect::new(
+                cursor,
+                content.y,
+                main_size + child_margin_main,
+                content.height,
+            )
         } else {
-            Rect::new(content.x, cursor, content.width, main_size + child_margin_main)
+            Rect::new(
+                content.x,
+                cursor,
+                content.width,
+                main_size + child_margin_main,
+            )
         };
 
         layout_node(child, child_rect, out);
-        cursor += if is_row { child_rect.width } else { child_rect.height };
+        cursor += if is_row {
+            child_rect.width
+        } else {
+            child_rect.height
+        };
     }
 }
 
@@ -283,8 +301,16 @@ fn apply_margin(available: Rect, margin: Edges) -> Rect {
 }
 
 fn clamp_size(value: f32, min: Option<f32>, max: Option<f32>) -> f32 {
-    let v = if let Some(lo) = min { value.max(lo) } else { value };
-    if let Some(hi) = max { v.min(hi) } else { v }
+    let v = if let Some(lo) = min {
+        value.max(lo)
+    } else {
+        value
+    };
+    if let Some(hi) = max {
+        v.min(hi)
+    } else {
+        v
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

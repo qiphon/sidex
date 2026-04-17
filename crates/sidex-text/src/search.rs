@@ -250,6 +250,169 @@ fn case_preserving_replace(original: &str, replacement: &str) -> String {
 
 // ── Public API ───────────────────────────────────────────────────────
 
+// ── TextSearchEngine (standalone, buffer-free search) ────────────────
+
+/// Standalone search options for the [`TextSearchEngine`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchOptions {
+    /// Case-sensitive matching.
+    pub case_sensitive: bool,
+    /// Match whole words only.
+    pub whole_word: bool,
+    /// Interpret the query as a regular expression.
+    pub regex: bool,
+}
+
+impl Default for SearchOptions {
+    fn default() -> Self {
+        Self {
+            case_sensitive: true,
+            whole_word: false,
+            regex: false,
+        }
+    }
+}
+
+/// A single search match with optional capture groups.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Match {
+    /// Byte start offset in the searched text.
+    pub start: usize,
+    /// Byte end offset (exclusive) in the searched text.
+    pub end: usize,
+    /// Capture group byte ranges (for regex search). The first element is
+    /// the full match, subsequent elements are capture groups.
+    pub captures: Vec<(usize, usize)>,
+}
+
+/// A buffer-free text search engine operating on raw `&str`.
+///
+/// Use this for quick searches that don't need `Buffer` or `Position` types.
+pub struct TextSearchEngine;
+
+impl TextSearchEngine {
+    /// Finds all non-overlapping matches of `query` in `text`.
+    pub fn find_all(text: &str, query: &str, options: &SearchOptions) -> Vec<Match> {
+        let Some(re) = Self::build_regex(query, options) else {
+            return Vec::new();
+        };
+        if options.regex {
+            re.captures_iter(text)
+                .map(|caps| {
+                    let full = caps.get(0).unwrap();
+                    let mut captures = Vec::new();
+                    for i in 0..caps.len() {
+                        if let Some(g) = caps.get(i) {
+                            captures.push((g.start(), g.end()));
+                        }
+                    }
+                    Match {
+                        start: full.start(),
+                        end: full.end(),
+                        captures,
+                    }
+                })
+                .collect()
+        } else {
+            re.find_iter(text)
+                .map(|m| Match {
+                    start: m.start(),
+                    end: m.end(),
+                    captures: vec![(m.start(), m.end())],
+                })
+                .collect()
+        }
+    }
+
+    /// Finds the next match at or after byte offset `from`.
+    pub fn find_next(
+        text: &str,
+        query: &str,
+        from: usize,
+        options: &SearchOptions,
+    ) -> Option<Match> {
+        let re = Self::build_regex(query, options)?;
+        re.find_at(text, from).map(|m| Match {
+            start: m.start(),
+            end: m.end(),
+            captures: vec![(m.start(), m.end())],
+        })
+    }
+
+    /// Finds the previous match ending before byte offset `from`.
+    pub fn find_prev(
+        text: &str,
+        query: &str,
+        from: usize,
+        options: &SearchOptions,
+    ) -> Option<Match> {
+        let re = Self::build_regex(query, options)?;
+        let search_text = if from <= text.len() {
+            &text[..from]
+        } else {
+            text
+        };
+        re.find_iter(search_text).last().map(|m| Match {
+            start: m.start(),
+            end: m.end(),
+            captures: vec![(m.start(), m.end())],
+        })
+    }
+
+    /// Replaces a single match range with `replacement`.
+    pub fn replace(
+        text: &str,
+        match_range: std::ops::Range<usize>,
+        replacement: &str,
+    ) -> String {
+        let mut result = String::with_capacity(text.len() + replacement.len());
+        result.push_str(&text[..match_range.start]);
+        result.push_str(replacement);
+        result.push_str(&text[match_range.end..]);
+        result
+    }
+
+    /// Replaces all non-overlapping matches with `replacement`, returning
+    /// the new string and the number of replacements made.
+    pub fn replace_all(
+        text: &str,
+        query: &str,
+        replacement: &str,
+        options: &SearchOptions,
+    ) -> (String, u32) {
+        let Some(re) = Self::build_regex(query, options) else {
+            return (text.to_string(), 0);
+        };
+        let mut count = 0u32;
+        let result = re.replace_all(text, |_caps: &regex::Captures<'_>| {
+            count += 1;
+            replacement.to_string()
+        });
+        (result.into_owned(), count)
+    }
+
+    fn build_regex(query: &str, options: &SearchOptions) -> Option<Regex> {
+        if query.is_empty() {
+            return None;
+        }
+        let mut pattern = if options.regex {
+            query.to_string()
+        } else {
+            regex::escape(query)
+        };
+        if options.whole_word {
+            pattern = format!(r"\b{pattern}\b");
+        }
+        RegexBuilder::new(&pattern)
+            .case_insensitive(!options.case_sensitive)
+            .multi_line(true)
+            .build()
+            .ok()
+    }
+}
+
+// ── Buffer-based search API ──────────────────────────────────────────
+
 /// Finds all matches of `query` in `buffer`.
 pub fn find_all(buffer: &Buffer, query: &SearchQuery) -> Vec<SearchMatch> {
     let Some(re) = build_regex(query) else {
@@ -730,5 +893,95 @@ mod tests {
         };
         let results = find_matches(&buf, &opts);
         assert!(results.is_empty());
+    }
+
+    // ── TextSearchEngine ─────────────────────────────────────────────
+
+    #[test]
+    fn engine_find_all_literal() {
+        let opts = SearchOptions::default();
+        let matches = TextSearchEngine::find_all("hello world hello", "hello", &opts);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].start, 0);
+        assert_eq!(matches[0].end, 5);
+        assert_eq!(matches[1].start, 12);
+    }
+
+    #[test]
+    fn engine_find_all_case_insensitive() {
+        let opts = SearchOptions {
+            case_sensitive: false,
+            ..Default::default()
+        };
+        let matches = TextSearchEngine::find_all("Hello HELLO hello", "hello", &opts);
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn engine_find_all_whole_word() {
+        let opts = SearchOptions {
+            whole_word: true,
+            ..Default::default()
+        };
+        let matches = TextSearchEngine::find_all("hello helloworld hello", "hello", &opts);
+        assert_eq!(matches.len(), 2);
+    }
+
+    #[test]
+    fn engine_find_all_regex_captures() {
+        let opts = SearchOptions {
+            regex: true,
+            ..Default::default()
+        };
+        let matches = TextSearchEngine::find_all("foo123 bar456", r"([a-z]+)(\d+)", &opts);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].captures.len(), 3);
+    }
+
+    #[test]
+    fn engine_find_next_from_offset() {
+        let opts = SearchOptions::default();
+        let m = TextSearchEngine::find_next("aaa bbb aaa", "aaa", 1, &opts);
+        assert!(m.is_some());
+        assert_eq!(m.unwrap().start, 8);
+    }
+
+    #[test]
+    fn engine_find_prev() {
+        let opts = SearchOptions::default();
+        let m = TextSearchEngine::find_prev("aaa bbb aaa", "aaa", 11, &opts);
+        assert!(m.is_some());
+        assert_eq!(m.unwrap().start, 8);
+    }
+
+    #[test]
+    fn engine_replace_single() {
+        let result = TextSearchEngine::replace("hello world", 6..11, "rust");
+        assert_eq!(result, "hello rust");
+    }
+
+    #[test]
+    fn engine_replace_all() {
+        let opts = SearchOptions::default();
+        let (result, count) =
+            TextSearchEngine::replace_all("foo bar foo", "foo", "baz", &opts);
+        assert_eq!(result, "baz bar baz");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn engine_replace_all_no_match() {
+        let opts = SearchOptions::default();
+        let (result, count) =
+            TextSearchEngine::replace_all("hello", "xyz", "abc", &opts);
+        assert_eq!(result, "hello");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn engine_find_all_empty_returns_empty() {
+        let opts = SearchOptions::default();
+        let matches = TextSearchEngine::find_all("hello", "", &opts);
+        assert!(matches.is_empty());
     }
 }

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -221,14 +221,8 @@ impl TasksApi {
     pub fn handle(&self, action: &str, params: &Value) -> Result<Value> {
         match action {
             "registerTaskProvider" => {
-                let task_type = params
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let id = self.register_task_provider(
-                    task_type,
-                    Arc::new(|_| Ok(Vec::new())),
-                );
+                let task_type = params.get("type").and_then(Value::as_str).unwrap_or("");
+                let id = self.register_task_provider(task_type, Arc::new(|_| Ok(Vec::new())));
                 Ok(serde_json::to_value(id)?)
             }
             "fetchTasks" => {
@@ -240,9 +234,8 @@ impl TasksApi {
                 Ok(serde_json::to_value(tasks)?)
             }
             "executeTask" => {
-                let task: Task = serde_json::from_value(
-                    params.get("task").cloned().unwrap_or(params.clone()),
-                )?;
+                let task: Task =
+                    serde_json::from_value(params.get("task").cloned().unwrap_or(params.clone()))?;
                 let id = self.execute_task(task)?;
                 Ok(serde_json::to_value(id)?)
             }
@@ -307,10 +300,7 @@ impl TasksApi {
     /// Fetches all tasks matching the filter.
     pub fn fetch_tasks(&self, filter: &TaskFilter) -> Result<Vec<Task>> {
         log::debug!("[ext] fetchTasks(type={:?})", filter.task_type);
-        let providers = self
-            .providers
-            .read()
-            .expect("task providers lock poisoned");
+        let providers = self.providers.read().expect("task providers lock poisoned");
 
         let mut tasks = Vec::new();
         for entry in providers.values() {
@@ -337,18 +327,16 @@ impl TasksApi {
         self.running
             .write()
             .expect("running tasks lock poisoned")
-            .insert(id, RunningTask {
-                execution_id: id,
-                task,
-            });
+            .insert(
+                id,
+                RunningTask {
+                    execution_id: id,
+                    task,
+                },
+            );
 
         let val = serde_json::to_value(id).unwrap_or(Value::Null);
-        for listener in self
-            .on_did_start_task
-            .read()
-            .expect("lock poisoned")
-            .iter()
-        {
+        for listener in self.on_did_start_task.read().expect("lock poisoned").iter() {
             let _ = listener(val.clone());
         }
 
@@ -364,12 +352,7 @@ impl TasksApi {
             .remove(&id);
 
         let val = serde_json::to_value(id).unwrap_or(Value::Null);
-        for listener in self
-            .on_did_end_task
-            .read()
-            .expect("lock poisoned")
-            .iter()
-        {
+        for listener in self.on_did_end_task.read().expect("lock poisoned").iter() {
             let _ = listener(val.clone());
         }
 

@@ -70,7 +70,8 @@ impl DocumentState {
 
     /// Open a file from disk, detecting encoding and language.
     pub fn open_file(path: &Path, lang_registry: &LanguageRegistry) -> Result<Self> {
-        let bytes = std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+        let bytes =
+            std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
         let encoding = sidex_text::encoding::detect_encoding(&bytes);
         let text = sidex_text::encoding::decode(&bytes, encoding)
             .with_context(|| format!("failed to decode {} as {encoding}", path.display()))?;
@@ -90,9 +91,9 @@ impl DocumentState {
 
         let highlight_config = language
             .and_then(|lang| {
-                lang.highlight_query.as_ref().map(|q| {
-                    HighlightConfig::new(lang.ts_language.clone(), q).ok()
-                })
+                lang.highlight_query
+                    .as_ref()
+                    .map(|q| HighlightConfig::new(lang.ts_language.clone(), q).ok())
             })
             .flatten();
 

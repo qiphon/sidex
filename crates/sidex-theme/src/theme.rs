@@ -154,7 +154,6 @@ fn parse_font_style_str(s: &str) -> FontStyle {
     style
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

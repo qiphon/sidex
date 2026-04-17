@@ -111,12 +111,6 @@ import { InputValidationType } from '../../contrib/scm/common/scm.js';
 import { IWorkspaceSymbol, NotebookPriorityInfo } from '../../contrib/search/common/search.js';
 import { IRawClosedNotebookFileMatch } from '../../contrib/search/common/searchNotebookHelpers.js';
 import {
-	IKeywordRecognitionEvent,
-	ISpeechProviderMetadata,
-	ISpeechToTextEvent,
-	ITextToSpeechEvent
-} from '../../contrib/speech/common/speechService.js';
-import {
 	CoverageDetails,
 	ExtensionRunTestsRequest,
 	ICallProfileRunHandler,
@@ -1677,27 +1671,6 @@ export interface MainThreadNotebookRenderersShape extends IDisposable {
 }
 
 export interface MainThreadInteractiveShape extends IDisposable {}
-
-export interface MainThreadSpeechShape extends IDisposable {
-	$registerProvider(handle: number, identifier: string, metadata: ISpeechProviderMetadata): void;
-	$unregisterProvider(handle: number): void;
-
-	$emitSpeechToTextEvent(session: number, event: ISpeechToTextEvent): void;
-	$emitTextToSpeechEvent(session: number, event: ITextToSpeechEvent): void;
-	$emitKeywordRecognitionEvent(session: number, event: IKeywordRecognitionEvent): void;
-}
-
-export interface ExtHostSpeechShape {
-	$createSpeechToTextSession(handle: number, session: number, language?: string): Promise<void>;
-	$cancelSpeechToTextSession(session: number): Promise<void>;
-
-	$createTextToSpeechSession(handle: number, session: number, language?: string): Promise<void>;
-	$synthesizeSpeech(session: number, text: string): Promise<void>;
-	$cancelTextToSpeechSession(session: number): Promise<void>;
-
-	$createKeywordRecognitionSession(handle: number, session: number): Promise<void>;
-	$cancelKeywordRecognitionSession(session: number): Promise<void>;
-}
 
 export interface BrowserTabDto {
 	id: string;
@@ -4152,7 +4125,6 @@ export const MainContext = {
 	MainThreadStatusBar: createProxyIdentifier<MainThreadStatusBarShape>('MainThreadStatusBar'),
 	MainThreadSecretState: createProxyIdentifier<MainThreadSecretStateShape>('MainThreadSecretState'),
 	MainThreadStorage: createProxyIdentifier<MainThreadStorageShape>('MainThreadStorage'),
-	MainThreadSpeech: createProxyIdentifier<MainThreadSpeechShape>('MainThreadSpeechProvider'),
 	MainThreadTelemetry: createProxyIdentifier<MainThreadTelemetryShape>('MainThreadTelemetry'),
 	MainThreadMeteredConnection: createProxyIdentifier<MainThreadMeteredConnectionShape>('MainThreadMeteredConnection'),
 	MainThreadTerminalService: createProxyIdentifier<MainThreadTerminalServiceShape>('MainThreadTerminalService'),
@@ -4264,7 +4236,6 @@ export const ExtHostContext = {
 		'ExtHostNotebookDocumentSaveParticipant'
 	),
 	ExtHostInteractive: createProxyIdentifier<ExtHostInteractiveShape>('ExtHostInteractive'),
-	ExtHostSpeech: createProxyIdentifier<ExtHostSpeechShape>('ExtHostSpeech'),
 	ExtHostTheming: createProxyIdentifier<ExtHostThemingShape>('ExtHostTheming'),
 	ExtHostTunnelService: createProxyIdentifier<ExtHostTunnelServiceShape>('ExtHostTunnelService'),
 	ExtHostManagedSockets: createProxyIdentifier<ExtHostManagedSocketsShape>('ExtHostManagedSockets'),

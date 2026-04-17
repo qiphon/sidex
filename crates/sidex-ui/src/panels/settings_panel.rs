@@ -13,8 +13,15 @@ use crate::widget::{EventResult, Key, MouseButton, UiEvent, Widget};
 pub enum SettingControl {
     Boolean(bool),
     String(String),
-    Number { value: f64, min: Option<f64>, max: Option<f64> },
-    Enum { value: String, options: Vec<String> },
+    Number {
+        value: f64,
+        min: Option<f64>,
+        max: Option<f64>,
+    },
+    Enum {
+        value: String,
+        options: Vec<String>,
+    },
     StringArray(Vec<String>),
     Object(String),
 }
@@ -92,7 +99,11 @@ impl SettingEntry {
             description: description.into(),
             category: category.into(),
             control: SettingControl::Number { value, min, max },
-            default_control: SettingControl::Number { value: default, min, max },
+            default_control: SettingControl::Number {
+                value: default,
+                min,
+                max,
+            },
             modified: (value - default).abs() > f64::EPSILON,
             scope: SettingScope::User,
         }
@@ -171,6 +182,78 @@ pub enum SettingsViewMode {
     Json,
 }
 
+// ── Commonly used categories ─────────────────────────────────────────────────
+
+/// Well-known settings categories matching VS Code's sidebar.
+pub fn default_setting_categories() -> Vec<SettingsCategory> {
+    vec![
+        SettingsCategory::new("commonly-used", "Commonly Used", 0),
+        SettingsCategory::new("text-editor", "Text Editor", 0),
+        SettingsCategory::new("workbench", "Workbench", 0),
+        SettingsCategory::new("window", "Window", 0),
+        SettingsCategory::new("features", "Features", 0),
+        SettingsCategory::new("application", "Application", 0),
+        SettingsCategory::new("extensions", "Extensions", 0),
+    ]
+}
+
+// ── Settings filter mode ─────────────────────────────────────────────────────
+
+/// Special filter modes for the settings panel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SettingsFilterMode {
+    #[default]
+    None,
+    Modified,
+}
+
+// ── Setting tag for fuzzy matching ───────────────────────────────────────────
+
+/// Tags associated with settings for improved fuzzy search.
+#[derive(Clone, Debug)]
+pub struct SettingTag {
+    pub id: String,
+    pub label: String,
+}
+
+/// Predefined setting tags.
+pub fn common_setting_tags() -> Vec<SettingTag> {
+    vec![
+        SettingTag {
+            id: "@modified".into(),
+            label: "Modified".into(),
+        },
+        SettingTag {
+            id: "@tag:preview".into(),
+            label: "Preview".into(),
+        },
+        SettingTag {
+            id: "@tag:experimental".into(),
+            label: "Experimental".into(),
+        },
+        SettingTag {
+            id: "@tag:deprecated".into(),
+            label: "Deprecated".into(),
+        },
+        SettingTag {
+            id: "@ext:".into(),
+            label: "Extension ID".into(),
+        },
+        SettingTag {
+            id: "@feature:".into(),
+            label: "Feature".into(),
+        },
+        SettingTag {
+            id: "@id:".into(),
+            label: "Setting ID".into(),
+        },
+        SettingTag {
+            id: "@lang:".into(),
+            label: "Language".into(),
+        },
+    ]
+}
+
 // ── Settings panel ───────────────────────────────────────────────────────────
 
 /// The Settings editor tab.
@@ -190,6 +273,18 @@ where
     pub active_scope: SettingScope,
     pub view_mode: SettingsViewMode,
     pub on_change: OnChange,
+
+    // Filter mode
+    filter_mode: SettingsFilterMode,
+
+    // Show default value
+    show_default_values: bool,
+
+    // JSON editor content (when in JSON mode)
+    json_content: String,
+
+    // Search history
+    search_history: Vec<String>,
 
     selected_category: Option<String>,
     selected_setting: Option<usize>,
@@ -237,6 +332,11 @@ where
             active_scope: SettingScope::User,
             view_mode: SettingsViewMode::Gui,
             on_change,
+
+            filter_mode: SettingsFilterMode::default(),
+            show_default_values: true,
+            json_content: String::new(),
+            search_history: Vec::new(),
 
             selected_category: None,
             selected_setting: None,
@@ -307,16 +407,98 @@ where
         }
     }
 
+    // ── Filter mode ──────────────────────────────────────────────────────
+
+    pub fn set_filter_mode(&mut self, mode: SettingsFilterMode) {
+        self.filter_mode = mode;
+        self.scroll_offset = 0.0;
+    }
+
+    pub fn filter_mode(&self) -> SettingsFilterMode {
+        self.filter_mode
+    }
+
+    pub fn toggle_modified_filter(&mut self) {
+        self.filter_mode = match self.filter_mode {
+            SettingsFilterMode::None => SettingsFilterMode::Modified,
+            SettingsFilterMode::Modified => SettingsFilterMode::None,
+        };
+        self.scroll_offset = 0.0;
+    }
+
+    pub fn modified_settings_count(&self) -> usize {
+        self.settings.iter().filter(|s| s.modified).count()
+    }
+
+    // ── Default value display ────────────────────────────────────────────
+
+    pub fn set_show_default_values(&mut self, show: bool) {
+        self.show_default_values = show;
+    }
+
+    pub fn show_default_values(&self) -> bool {
+        self.show_default_values
+    }
+
+    // ── JSON view ────────────────────────────────────────────────────────
+
+    pub fn set_json_content(&mut self, content: impl Into<String>) {
+        self.json_content = content.into();
+    }
+
+    pub fn json_content(&self) -> &str {
+        &self.json_content
+    }
+
+    // ── Search history ───────────────────────────────────────────────────
+
+    pub fn push_search_history(&mut self, query: &str) {
+        if query.is_empty() {
+            return;
+        }
+        let q = query.to_string();
+        self.search_history.retain(|e| *e != q);
+        self.search_history.insert(0, q);
+        if self.search_history.len() > 20 {
+            self.search_history.pop();
+        }
+    }
+
+    pub fn search_history(&self) -> &[String] {
+        &self.search_history
+    }
+
+    // ── Fuzzy search ─────────────────────────────────────────────────────
+
+    pub fn fuzzy_matches_setting(query: &str, setting: &SettingEntry) -> bool {
+        if query.is_empty() {
+            return true;
+        }
+        let q = query.to_lowercase();
+
+        if q.starts_with("@modified") {
+            return setting.modified;
+        }
+        if let Some(id) = q.strip_prefix("@id:") {
+            return setting.key.to_lowercase().contains(id.trim());
+        }
+
+        setting.key.to_lowercase().contains(&q)
+            || setting.display_name.to_lowercase().contains(&q)
+            || setting.description.to_lowercase().contains(&q)
+    }
+
     fn filtered_settings(&self) -> Vec<(usize, &SettingEntry)> {
         self.settings
             .iter()
             .enumerate()
             .filter(|(_, s)| {
+                // Modified filter
+                if self.filter_mode == SettingsFilterMode::Modified && !s.modified {
+                    return false;
+                }
                 if !self.search_query.is_empty() {
-                    let q = self.search_query.to_lowercase();
-                    return s.key.to_lowercase().contains(&q)
-                        || s.display_name.to_lowercase().contains(&q)
-                        || s.description.to_lowercase().contains(&q);
+                    return Self::fuzzy_matches_setting(&self.search_query, s);
                 }
                 if let Some(ref cat) = self.selected_category {
                     return s.category == *cat;
@@ -342,7 +524,14 @@ where
     #[allow(clippy::cast_precision_loss)]
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let mut rr = sidex_gpu::RectRenderer::new();
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
 
         let mut y = rect.y;
         let pad = 12.0;
@@ -384,7 +573,10 @@ where
         y += self.search_bar_height + 16.0;
 
         // Scope tabs (User / Workspace)
-        let scopes = [("User", SettingScope::User), ("Workspace", SettingScope::Workspace)];
+        let scopes = [
+            ("User", SettingScope::User),
+            ("Workspace", SettingScope::Workspace),
+        ];
         let tab_w = 80.0;
         for (i, (_, scope)) in scopes.iter().enumerate() {
             let tx = rect.x + pad + i as f32 * tab_w;
@@ -408,7 +600,14 @@ where
         let content_x = rect.x + self.category_width;
         let content_w = rect.width - self.category_width;
 
-        rr.draw_rect(cat_x, y, self.category_width, rect.height - (y - rect.y), self.category_bg, 0.0);
+        rr.draw_rect(
+            cat_x,
+            y,
+            self.category_width,
+            rect.height - (y - rect.y),
+            self.category_bg,
+            0.0,
+        );
         rr.draw_rect(
             content_x - 1.0,
             y,
@@ -505,14 +704,7 @@ where
                     );
                 }
                 SettingControl::Enum { .. } => {
-                    rr.draw_rect(
-                        control_x,
-                        control_y,
-                        200.0,
-                        24.0,
-                        self.dropdown_bg,
-                        2.0,
-                    );
+                    rr.draw_rect(control_x, control_y, 200.0, 24.0, self.dropdown_bg, 2.0);
                 }
                 SettingControl::StringArray(_) | SettingControl::Object(_) => {
                     rr.draw_rect(
@@ -585,8 +777,7 @@ where
                 self.search_focused = false;
 
                 // Scope tabs
-                let scope_bottom =
-                    search_bottom + 16.0 + self.scope_tab_height + 1.0;
+                let scope_bottom = search_bottom + 16.0 + self.scope_tab_height + 1.0;
                 if *y < scope_bottom && *y >= search_bottom + 16.0 {
                     let pad = 12.0;
                     let tab_w = 80.0;
@@ -643,9 +834,9 @@ where
                 self.scroll_offset = (self.scroll_offset - dy * 40.0).clamp(0.0, max);
                 EventResult::Handled
             }
-            UiEvent::KeyPress { key: Key::Enter, .. } if self.search_focused => {
-                EventResult::Handled
-            }
+            UiEvent::KeyPress {
+                key: Key::Enter, ..
+            } if self.search_focused => EventResult::Handled,
             _ => EventResult::Ignored,
         }
     }

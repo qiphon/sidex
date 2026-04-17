@@ -20,10 +20,7 @@ pub struct BlameLine {
 /// Run `git blame` on a file and parse the output.
 pub fn blame(repo_root: &Path, path: &Path) -> GitResult<Vec<BlameLine>> {
     let path_str = path.to_string_lossy();
-    let output = run_git(
-        repo_root,
-        &["blame", "--porcelain", "--", &path_str],
-    )?;
+    let output = run_git(repo_root, &["blame", "--porcelain", "--", &path_str])?;
     parse_porcelain_blame(&output)
 }
 
@@ -52,7 +49,10 @@ fn parse_porcelain_blame(output: &str) -> GitResult<Vec<BlameLine>> {
         } else {
             // Could be a commit header: "<hash> <orig_line> <final_line> [<num_lines>]"
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 && parts[0].len() >= 7 && parts[0].chars().all(|c| c.is_ascii_hexdigit()) {
+            if parts.len() >= 3
+                && parts[0].len() >= 7
+                && parts[0].chars().all(|c| c.is_ascii_hexdigit())
+            {
                 current_hash = parts[0].to_string();
                 current_line_number = parts[2]
                     .parse()

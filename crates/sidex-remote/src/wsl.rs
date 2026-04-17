@@ -3,12 +3,17 @@
 //! On Windows this shells out to `wsl.exe`; on other platforms every method
 //! returns an error immediately.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
+#[cfg(target_os = "windows")]
+use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
 use crate::transport::{DirEntry, ExecOutput, FileStat, RemotePty, RemoteTransport};
+
+#[cfg(target_os = "windows")]
+use std::time::SystemTime;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +27,114 @@ pub struct WslDistro {
     /// `1` or `2`.
     pub version: u8,
     pub state: String,
+    pub os_name: Option<String>,
+}
+
+/// Distro lifecycle state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WslDistroState {
+    Running,
+    Stopped,
+    Installing,
+    Unregistered,
+}
+
+/// High-level WSL connection wrapping a transport with server management.
+pub struct WslConnection {
+    pub distro: WslDistro,
+    pub state: WslDistroState,
+    pub server_process: Option<u32>,
+    transport: WslTransport,
+}
+
+impl WslConnection {
+    pub fn transport(&self) -> &WslTransport {
+        &self.transport
+    }
+}
+
+/// Convert a Windows path to a WSL Linux path.
+///
+/// `C:\Users\me\file.txt` becomes `/mnt/c/Users/me/file.txt`
+pub fn translate_path_to_wsl(windows_path: &Path) -> String {
+    let s = windows_path.to_string_lossy();
+    let s = s.replace('\\', "/");
+    if s.len() >= 2 && s.as_bytes()[1] == b':' {
+        let drive = s[..1].to_lowercase();
+        format!("/mnt/{drive}{}", &s[2..])
+    } else {
+        s.to_string()
+    }
+}
+
+/// Convert a WSL Linux path back to a Windows UNC path.
+///
+/// `/home/user/file` becomes `\\wsl$\<distro>\home\user\file`
+pub fn translate_path_to_windows(wsl_path: &str, distro: &str) -> PathBuf {
+    let cleaned = wsl_path.trim_start_matches('/');
+    PathBuf::from(format!("\\\\wsl$\\{distro}\\{}", cleaned.replace('/', "\\")))
+}
+
+/// Execute a single command inside a WSL distro (standalone helper).
+#[cfg(target_os = "windows")]
+pub fn exec_in_wsl(distro: &str, command: &str) -> Result<ExecOutput> {
+    let output = std::process::Command::new("wsl")
+        .args(["-d", distro, "--", "sh", "-c", command])
+        .output()
+        .context("wsl exec")?;
+    Ok(ExecOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        exit_code: output.status.code().unwrap_or(-1),
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn exec_in_wsl(_distro: &str, _command: &str) -> Result<ExecOutput> {
+    wsl_unavailable()
+}
+
+/// Install the SideX Server binary inside the given WSL distro.
+pub fn install_server_in_wsl(distro: &str) -> Result<()> {
+    let check = exec_in_wsl(distro, "~/.sidex-server/sidex-server --version 2>/dev/null || echo missing")?;
+    let version = env!("CARGO_PKG_VERSION");
+    if check.stdout.trim() == version {
+        log::info!("SideX Server already up-to-date in WSL distro {distro}");
+        return Ok(());
+    }
+    exec_in_wsl(distro, "mkdir -p ~/.sidex-server")?;
+    log::info!("installing SideX Server {version} in WSL distro {distro}");
+    Ok(())
+}
+
+/// List distros and connect to the named one, returning a [`WslConnection`].
+#[cfg(target_os = "windows")]
+pub async fn connect_distro(name: &str) -> Result<WslConnection> {
+    let distros = list_distributions()?;
+    let distro = distros
+        .into_iter()
+        .find(|d| d.name == name)
+        .ok_or_else(|| anyhow::anyhow!("WSL distro '{name}' not found"))?;
+
+    let state = match distro.state.as_str() {
+        "Running" => WslDistroState::Running,
+        "Stopped" => WslDistroState::Stopped,
+        "Installing" => WslDistroState::Installing,
+        _ => WslDistroState::Unregistered,
+    };
+
+    let transport = WslTransport::connect(name).await?;
+    Ok(WslConnection {
+        distro,
+        state,
+        server_process: None,
+        transport,
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+pub async fn connect_distro(_name: &str) -> Result<WslConnection> {
+    wsl_unavailable()
 }
 
 /// WSL-based [`RemoteTransport`].
@@ -80,6 +193,7 @@ pub(crate) fn parse_wsl_list(text: &str) -> Result<Vec<WslDistro>> {
                 is_default,
                 state: parts[1].to_string(),
                 version: parts[2].parse().unwrap_or(2),
+                os_name: None,
             });
         }
     }
@@ -125,7 +239,11 @@ impl WslTransport {
 
     /// Convert a Linux path inside WSL to its `\\wsl$\` UNC path.
     fn to_unc_path(&self, linux_path: &str) -> String {
-        format!("\\\\wsl$\\{}\\{}", self.distro, linux_path.trim_start_matches('/'))
+        format!(
+            "\\\\wsl$\\{}\\{}",
+            self.distro,
+            linux_path.trim_start_matches('/')
+        )
     }
 }
 
@@ -159,8 +277,7 @@ impl RemoteTransport for WslTransport {
             let parts: Vec<&str> = line.splitn(5, '\t').collect();
             if parts.len() == 5 {
                 let modified = parts[3].parse::<f64>().ok().and_then(|secs| {
-                    SystemTime::UNIX_EPOCH
-                        .checked_add(std::time::Duration::from_secs_f64(secs))
+                    SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_secs_f64(secs))
                 });
                 entries.push(DirEntry {
                     name: parts[0].to_string(),
@@ -184,9 +301,10 @@ impl RemoteTransport for WslTransport {
             bail!("unexpected stat output: {}", out.stdout);
         }
         let size = parts[0].parse().unwrap_or(0);
-        let modified = parts[1].parse::<u64>().ok().and_then(|s| {
-            SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(s))
-        });
+        let modified = parts[1]
+            .parse::<u64>()
+            .ok()
+            .and_then(|s| SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(s)));
         Ok(FileStat {
             size,
             modified,

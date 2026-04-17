@@ -12,6 +12,8 @@ vte = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 crossbeam = { workspace = true }
+regex = { workspace = true }
+bitflags = "2"
 thiserror = "2"
 log = "0.4"
 which = "7"
@@ -19,6 +21,9 @@ dirs = "6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

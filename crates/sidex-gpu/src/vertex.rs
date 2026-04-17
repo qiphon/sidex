@@ -116,3 +116,68 @@ impl RectVertex {
         }
     }
 }
+
+/// Vertex for anti-aliased line segments (indent guides, rulers, borders).
+///
+/// The fragment shader computes signed distance to the line segment
+/// defined by `line_start` / `line_end` and anti-aliases using `thickness`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+pub struct LineVertex {
+    /// Screen-space X position.
+    pub x: f32,
+    /// Screen-space Y position.
+    pub y: f32,
+    /// Segment start point in screen-space.
+    pub line_start: [f32; 2],
+    /// Segment end point in screen-space.
+    pub line_end: [f32; 2],
+    /// RGBA color packed as four floats.
+    pub color: [f32; 4],
+    /// Line thickness in pixels.
+    pub thickness: f32,
+    /// Padding to maintain alignment.
+    pub(crate) _pad: f32,
+}
+
+impl LineVertex {
+    /// Returns the `wgpu` vertex buffer layout for this vertex type.
+    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                // position
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                // line_start
+                wgpu::VertexAttribute {
+                    offset: 8,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                // line_end
+                wgpu::VertexAttribute {
+                    offset: 16,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                // color
+                wgpu::VertexAttribute {
+                    offset: 24,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                // thickness
+                wgpu::VertexAttribute {
+                    offset: 40,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32,
+                },
+            ],
+        }
+    }
+}

@@ -14,7 +14,6 @@ import {
 	isSearchTreeMatch,
 	RenderableMatch
 } from './searchTreeModel/searchTreeCommon.js';
-import { isSearchTreeAIFileMatch } from './AISearch/aiSearchModelBase.js';
 
 let elemAIndex: number = -1;
 let elemBIndex: number = -1;
@@ -43,9 +42,6 @@ export function searchMatchComparer(
 			return elemAIndex - elemBIndex;
 		}
 
-		if (isSearchTreeAIFileMatch(elementA) && isSearchTreeAIFileMatch(elementB)) {
-			return elementA.rank - elementB.rank;
-		}
 		switch (sortOrder) {
 			case SearchSortOrder.CountDescending:
 				return elementB.count() - elementA.count();

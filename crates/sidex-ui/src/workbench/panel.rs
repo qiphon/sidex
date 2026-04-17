@@ -119,7 +119,14 @@ impl<F: FnMut(usize)> Widget for Panel<F> {
         }
         let mut rr = sidex_gpu::RectRenderer::new();
 
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
         rr.draw_rect(rect.x, rect.y, rect.width, 1.0, self.border_color, 0.0);
 
         let tab_rects = self.tab_rects(rect);

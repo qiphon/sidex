@@ -116,15 +116,6 @@ export class DataChannelForwardingTelemetryService extends InterceptingTelemetry
 const shouldForwardToChannel = Symbol('shouldForwardToChannel');
 export function forwardToChannelIf(value: boolean): Record<string, unknown> {
 	return {
-		// This will not be sent via telemetry, it is just a marker
 		[shouldForwardToChannel]: value
 	};
-}
-
-export function isCopilotLikeExtension(extensionId: string | undefined): boolean {
-	if (!extensionId) {
-		return false;
-	}
-	const extIdLowerCase = extensionId.toLowerCase();
-	return extIdLowerCase === 'github.copilot' || extIdLowerCase === 'github.copilot-chat';
 }

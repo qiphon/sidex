@@ -23,7 +23,6 @@ import { TerminalContextKeys, TerminalContextKeyStrings } from '../common/termin
 import { terminalStrings } from '../common/terminalStrings.js';
 import { ACTIVE_GROUP, AUX_WINDOW_GROUP, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
-import { HasSpeechProvider } from '../../speech/common/speechService.js';
 import { hasKey } from '../../../../base/common/types.js';
 
 export const enum TerminalContextMenuGroup {
@@ -778,7 +777,7 @@ export function setupTerminalMenus(): void {
 			order: 10,
 			when: ContextKeyExpr.and(
 				ResourceContextKey.Scheme.isEqualTo(Schemas.vscodeTerminal),
-				HasSpeechProvider,
+				ContextKeyExpr.false(),
 				TerminalContextKeys.terminalDictationInProgress
 			),
 			isHiddenByDefault: true
@@ -949,17 +948,11 @@ function splitContributedProfiles(
 }
 
 function isAiContributedProfile(profile: IExtensionTerminalProfile): boolean {
-	const extensionIdentifier = profile.extensionIdentifier.toLowerCase();
-	if (extensionIdentifier === 'github.copilot-chat' || extensionIdentifier === 'anthropic.claude-code') {
-		return true;
-	}
-
 	return isAiProfileName(profile.title);
 }
 
 function isAiProfileName(name: string): boolean {
-	const lowerCaseName = name.toLowerCase();
-	return lowerCaseName.includes('copilot') || lowerCaseName.includes('claude');
+	return false;
 }
 
 function addProfileActions(

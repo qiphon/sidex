@@ -1,4 +1,5 @@
-//! Problems panel — diagnostics grouped by file with severity filtering.
+//! Problems panel — diagnostics grouped by file with severity filtering,
+//! grouping modes, auto-scroll to current file, and quick fix support.
 
 use std::path::PathBuf;
 
@@ -7,6 +8,30 @@ use sidex_gpu::GpuRenderer;
 
 use crate::layout::{LayoutNode, Rect, Size};
 use crate::widget::{EventResult, Key, MouseButton, UiEvent, Widget};
+
+// ── ProblemCount ─────────────────────────────────────────────────────────────
+
+/// Aggregate problem counts by severity.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProblemCount {
+    pub errors: u32,
+    pub warnings: u32,
+    pub infos: u32,
+    pub hints: u32,
+}
+
+impl ProblemCount {
+    pub fn total(&self) -> u32 {
+        self.errors + self.warnings + self.infos + self.hints
+    }
+
+    pub fn status_text(&self) -> String {
+        format!(
+            "\u{2298} {}  \u{26A0} {}",
+            self.errors, self.warnings
+        )
+    }
+}
 
 // ── Severity ─────────────────────────────────────────────────────────────────
 
@@ -40,6 +65,11 @@ impl DiagnosticSeverity {
 }
 
 // ── Diagnostic ───────────────────────────────────────────────────────────────
+
+/// Trait for converting external diagnostic types into the panel's format.
+pub trait IntoPanelDiagnostic {
+    fn into_panel_diagnostic(self) -> Diagnostic;
+}
 
 /// A single diagnostic (error, warning, etc.).
 #[derive(Clone, Debug)]
@@ -96,6 +126,83 @@ impl Diagnostic {
     }
 }
 
+impl IntoPanelDiagnostic for Diagnostic {
+    fn into_panel_diagnostic(self) -> Diagnostic {
+        self
+    }
+}
+
+/// Lightweight external diagnostic for bridging from `DiagnosticManager`.
+#[derive(Clone, Debug)]
+pub struct ExternalDiagnostic {
+    pub severity: DiagnosticSeverity,
+    pub message: String,
+    pub source: Option<String>,
+    pub code: Option<String>,
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: Option<u32>,
+    pub end_column: Option<u32>,
+}
+
+impl IntoPanelDiagnostic for ExternalDiagnostic {
+    fn into_panel_diagnostic(self) -> Diagnostic {
+        Diagnostic {
+            severity: self.severity,
+            message: self.message,
+            source: self.source,
+            code: self.code,
+            line: self.start_line,
+            column: self.start_column,
+            end_line: self.end_line,
+            end_column: self.end_column,
+        }
+    }
+}
+
+// ── Quick fix ────────────────────────────────────────────────────────────────
+
+/// A quick fix action that can be applied from the problems panel.
+#[derive(Clone, Debug)]
+pub struct QuickFix {
+    pub title: String,
+    pub kind: QuickFixKind,
+    pub is_preferred: bool,
+    pub diagnostic_index: usize,
+    pub file_index: usize,
+}
+
+/// Kind of quick fix.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QuickFixKind {
+    Fix,
+    Refactor,
+    SourceAction,
+    Organize,
+}
+
+// ── Grouping mode ────────────────────────────────────────────────────────────
+
+/// How diagnostics are grouped in the problems panel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProblemsGrouping {
+    #[default]
+    ByFile,
+    BySeverity,
+    BySource,
+}
+
+// ── Sort order ───────────────────────────────────────────────────────────────
+
+/// How diagnostics are sorted within groups.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProblemsSortOrder {
+    #[default]
+    BySeverity,
+    ByPosition,
+    BySource,
+}
+
 // ── File diagnostics ─────────────────────────────────────────────────────────
 
 /// All diagnostics for a single file.
@@ -130,10 +237,7 @@ impl FileDiagnostics {
     }
 
     pub fn filename(&self) -> &str {
-        self.path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
+        self.path.file_name().and_then(|n| n.to_str()).unwrap_or("")
     }
 }
 
@@ -205,6 +309,22 @@ where
     pub filter: ProblemsFilter,
     pub on_navigate: OnNavigate,
 
+    // Grouping
+    grouping: ProblemsGrouping,
+    sort_order: ProblemsSortOrder,
+
+    // Auto-scroll
+    active_file: Option<PathBuf>,
+    auto_scroll_enabled: bool,
+
+    // Quick fixes
+    quick_fixes: Vec<QuickFix>,
+    selected_quick_fix: Option<usize>,
+    quick_fix_menu_visible: bool,
+
+    // File filter (show only specific file's problems)
+    file_filter: Option<PathBuf>,
+
     selected_file: Option<usize>,
     selected_diagnostic: Option<(usize, usize)>,
     scroll_offset: f32,
@@ -226,6 +346,9 @@ where
     separator_color: Color,
     filter_bg: Color,
     filter_border: Color,
+    quick_fix_bg: Color,
+    quick_fix_hover_bg: Color,
+    quick_fix_icon: Color,
 }
 
 impl<OnNavigate> ProblemsPanel<OnNavigate>
@@ -237,6 +360,15 @@ where
             files: Vec::new(),
             filter: ProblemsFilter::default(),
             on_navigate,
+
+            grouping: ProblemsGrouping::default(),
+            sort_order: ProblemsSortOrder::default(),
+            active_file: None,
+            auto_scroll_enabled: true,
+            quick_fixes: Vec::new(),
+            selected_quick_fix: None,
+            quick_fix_menu_visible: false,
+            file_filter: None,
 
             selected_file: None,
             selected_diagnostic: None,
@@ -259,6 +391,9 @@ where
             separator_color: Color::from_hex("#2b2b2b").unwrap_or(Color::BLACK),
             filter_bg: Color::from_hex("#3c3c3c").unwrap_or(Color::BLACK),
             filter_border: Color::from_hex("#3c3c3c").unwrap_or(Color::BLACK),
+            quick_fix_bg: Color::from_hex("#3c3c3c").unwrap_or(Color::BLACK),
+            quick_fix_hover_bg: Color::from_hex("#04395e").unwrap_or(Color::BLACK),
+            quick_fix_icon: Color::from_hex("#007fd4").unwrap_or(Color::WHITE),
         }
     }
 
@@ -277,11 +412,196 @@ where
         (self.total_errors, self.total_warnings, self.total_info)
     }
 
+    // ── Grouping ─────────────────────────────────────────────────────────
+
+    pub fn set_grouping(&mut self, grouping: ProblemsGrouping) {
+        self.grouping = grouping;
+    }
+
+    pub fn grouping(&self) -> ProblemsGrouping {
+        self.grouping
+    }
+
+    pub fn set_sort_order(&mut self, order: ProblemsSortOrder) {
+        self.sort_order = order;
+    }
+
+    pub fn sort_order(&self) -> ProblemsSortOrder {
+        self.sort_order
+    }
+
+    // ── File filter ──────────────────────────────────────────────────────
+
+    pub fn set_file_filter(&mut self, path: Option<PathBuf>) {
+        self.file_filter = path;
+    }
+
+    pub fn file_filter(&self) -> Option<&PathBuf> {
+        self.file_filter.as_ref()
+    }
+
+    pub fn clear_file_filter(&mut self) {
+        self.file_filter = None;
+    }
+
+    // ── Auto-scroll ──────────────────────────────────────────────────────
+
+    pub fn set_active_file(&mut self, path: &PathBuf) {
+        self.active_file = Some(path.clone());
+        if self.auto_scroll_enabled {
+            self.scroll_to_file(path);
+        }
+    }
+
+    pub fn set_auto_scroll(&mut self, enabled: bool) {
+        self.auto_scroll_enabled = enabled;
+    }
+
+    pub fn is_auto_scroll_enabled(&self) -> bool {
+        self.auto_scroll_enabled
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn scroll_to_file(&mut self, path: &PathBuf) {
+        for (i, file) in self.files.iter().enumerate() {
+            if file.path == *path {
+                self.scroll_offset = i as f32 * self.row_height;
+                self.selected_file = Some(i);
+                return;
+            }
+        }
+    }
+
+    // ── Quick fixes ──────────────────────────────────────────────────────
+
+    pub fn set_quick_fixes(&mut self, fixes: Vec<QuickFix>) {
+        self.quick_fixes = fixes;
+    }
+
+    pub fn show_quick_fix_menu(&mut self, diagnostic_index: usize, file_index: usize) {
+        self.selected_quick_fix = None;
+        self.quick_fix_menu_visible = true;
+        let _ = (diagnostic_index, file_index);
+    }
+
+    pub fn hide_quick_fix_menu(&mut self) {
+        self.quick_fix_menu_visible = false;
+    }
+
+    pub fn available_quick_fixes(&self, file_idx: usize, diag_idx: usize) -> Vec<&QuickFix> {
+        self.quick_fixes
+            .iter()
+            .filter(|f| f.file_index == file_idx && f.diagnostic_index == diag_idx)
+            .collect()
+    }
+
+    // ── Collapse / expand all ────────────────────────────────────────────
+
+    pub fn collapse_all(&mut self) {
+        for file in &mut self.files {
+            file.expanded = false;
+        }
+    }
+
+    pub fn expand_all(&mut self) {
+        for file in &mut self.files {
+            file.expanded = true;
+        }
+    }
+
     pub fn status_text(&self) -> String {
         format!(
             "{} errors, {} warnings",
             self.total_errors, self.total_warnings
         )
+    }
+
+    /// Syncs the panel from external diagnostic data. This is the bridge
+    /// between `DiagnosticManager` (in sidex-lsp) and the UI panel.
+    ///
+    /// `file_diagnostics` should be an iterator of `(file_path, diagnostics)`
+    /// pairs, sorted with errors first within each file.
+    pub fn sync_from_diagnostic_data<I, D>(&mut self, file_diagnostics: I)
+    where
+        I: IntoIterator<Item = (PathBuf, Vec<D>)>,
+        D: IntoPanelDiagnostic,
+    {
+        let files: Vec<FileDiagnostics> = file_diagnostics
+            .into_iter()
+            .map(|(path, diags)| {
+                let mut panel_diags: Vec<Diagnostic> =
+                    diags.into_iter().map(|d| d.into_panel_diagnostic()).collect();
+                panel_diags.sort_by_key(|d| (d.severity, d.line, d.column));
+                FileDiagnostics::new(path, panel_diags)
+            })
+            .collect();
+        self.set_diagnostics(files);
+    }
+
+    /// Double-click handler: open file and navigate to the diagnostic.
+    pub fn handle_double_click(&mut self, file_index: usize, diag_index: usize) {
+        if let Some(file) = self.files.get(file_index) {
+            if let Some(diag) = file.diagnostics.get(diag_index) {
+                let path = file.path.clone();
+                (self.on_navigate)(&path, diag.line, diag.column);
+            }
+        }
+    }
+
+    /// Returns aggregate problem counts.
+    pub fn problem_count(&self) -> ProblemCount {
+        let mut count = ProblemCount::default();
+        for file in &self.files {
+            for diag in &file.diagnostics {
+                match diag.severity {
+                    DiagnosticSeverity::Error => count.errors += 1,
+                    DiagnosticSeverity::Warning => count.warnings += 1,
+                    DiagnosticSeverity::Info => count.infos += 1,
+                    DiagnosticSeverity::Hint => count.hints += 1,
+                }
+            }
+        }
+        count
+    }
+
+    /// Copies the diagnostic message to clipboard (returns the text).
+    pub fn copy_diagnostic_message(
+        &self,
+        file_index: usize,
+        diag_index: usize,
+    ) -> Option<String> {
+        self.files
+            .get(file_index)
+            .and_then(|f| f.diagnostics.get(diag_index))
+            .map(|d| {
+                let src = d.source.as_deref().unwrap_or("unknown");
+                let code = d
+                    .code
+                    .as_ref()
+                    .map(|c| format!(" [{c}]"))
+                    .unwrap_or_default();
+                format!(
+                    "{}{}: {} ({}:{})",
+                    src,
+                    code,
+                    d.message,
+                    d.line,
+                    d.column
+                )
+            })
+    }
+
+    /// Returns all unique diagnostic sources across all files.
+    pub fn all_sources(&self) -> Vec<String> {
+        let mut sources: Vec<String> = self
+            .files
+            .iter()
+            .flat_map(|f| &f.diagnostics)
+            .filter_map(|d| d.source.clone())
+            .collect();
+        sources.sort();
+        sources.dedup();
+        sources
     }
 
     fn toggle_file_expanded(&mut self, index: usize) {
@@ -290,7 +610,10 @@ where
         }
     }
 
-    fn filtered_diagnostics<'a>(&'a self, file: &'a FileDiagnostics) -> Vec<(usize, &'a Diagnostic)> {
+    fn filtered_diagnostics<'a>(
+        &'a self,
+        file: &'a FileDiagnostics,
+    ) -> Vec<(usize, &'a Diagnostic)> {
         file.diagnostics
             .iter()
             .enumerate()
@@ -313,12 +636,26 @@ where
     #[allow(clippy::cast_precision_loss)]
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let mut rr = sidex_gpu::RectRenderer::new();
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
 
         let mut y = rect.y;
 
         // Filter bar
-        rr.draw_rect(rect.x, y, rect.width, self.filter_bar_height, self.filter_bg, 0.0);
+        rr.draw_rect(
+            rect.x,
+            y,
+            rect.width,
+            self.filter_bar_height,
+            self.filter_bg,
+            0.0,
+        );
 
         // Severity toggle indicators
         let toggle_size = 18.0;
@@ -342,7 +679,14 @@ where
             }
         }
 
-        rr.draw_rect(rect.x, y + self.filter_bar_height - 1.0, rect.width, 1.0, self.separator_color, 0.0);
+        rr.draw_rect(
+            rect.x,
+            y + self.filter_bar_height - 1.0,
+            rect.width,
+            1.0,
+            self.separator_color,
+            0.0,
+        );
         y += self.filter_bar_height;
 
         // File groups
@@ -360,9 +704,23 @@ where
             // File header
             let is_sel_file = self.selected_file == Some(fi);
             if is_sel_file {
-                rr.draw_rect(rect.x, ry, rect.width, self.row_height, self.selected_bg, 0.0);
+                rr.draw_rect(
+                    rect.x,
+                    ry,
+                    rect.width,
+                    self.row_height,
+                    self.selected_bg,
+                    0.0,
+                );
             } else {
-                rr.draw_rect(rect.x, ry, rect.width, self.row_height, self.file_row_bg, 0.0);
+                rr.draw_rect(
+                    rect.x,
+                    ry,
+                    rect.width,
+                    self.row_height,
+                    self.file_row_bg,
+                    0.0,
+                );
             }
 
             // Error/warning count badges
@@ -485,21 +843,21 @@ where
                 let mut row_y = rect.y + self.filter_bar_height - self.scroll_offset;
 
                 // Pre-collect the hit-test data to avoid borrow conflicts.
-                let file_info: Vec<(usize, bool, Vec<(usize, u32, u32)>, std::path::PathBuf)> = self
-                    .files
-                    .iter()
-                    .enumerate()
-                    .map(|(fi, file)| {
-                        let diags: Vec<(usize, u32, u32)> = file
-                            .diagnostics
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, d)| self.filter.accepts(d))
-                            .map(|(di, d)| (di, d.line, d.column))
-                            .collect();
-                        (fi, file.expanded, diags, file.path.clone())
-                    })
-                    .collect();
+                let file_info: Vec<(usize, bool, Vec<(usize, u32, u32)>, std::path::PathBuf)> =
+                    self.files
+                        .iter()
+                        .enumerate()
+                        .map(|(fi, file)| {
+                            let diags: Vec<(usize, u32, u32)> = file
+                                .diagnostics
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, d)| self.filter.accepts(d))
+                                .map(|(di, d)| (di, d.line, d.column))
+                                .collect();
+                            (fi, file.expanded, diags, file.path.clone())
+                        })
+                        .collect();
 
                 for (fi, expanded, filtered, path) in &file_info {
                     if filtered.is_empty() {
@@ -530,7 +888,9 @@ where
                 self.scroll_offset = (self.scroll_offset - dy * 40.0).max(0.0);
                 EventResult::Handled
             }
-            UiEvent::KeyPress { key: Key::Enter, .. } if self.focused => {
+            UiEvent::KeyPress {
+                key: Key::Enter, ..
+            } if self.focused => {
                 if let Some((fi, di)) = self.selected_diagnostic {
                     if let Some(file) = self.files.get(fi) {
                         if let Some(diag) = file.diagnostics.get(di) {

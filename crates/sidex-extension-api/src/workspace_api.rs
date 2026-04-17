@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -175,17 +175,11 @@ impl WorkspaceApi {
     pub fn handle(&self, action: &str, params: &Value) -> Result<Value> {
         match action {
             "getConfiguration" => {
-                let section = params
-                    .get("section")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let section = params.get("section").and_then(Value::as_str).unwrap_or("");
                 self.get_configuration(section)
             }
             "openTextDocument" => {
-                let uri = params
-                    .get("uri")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
                 let info = self.open_text_document(uri)?;
                 Ok(serde_json::to_value(info)?)
             }
@@ -210,10 +204,7 @@ impl WorkspaceApi {
 
             // -- file system provider --
             "registerFileSystemProvider" => {
-                let scheme = params
-                    .get("scheme")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let scheme = params.get("scheme").and_then(Value::as_str).unwrap_or("");
                 let id = self.register_file_system_provider(
                     scheme,
                     Arc::new(|_op, _params| Ok(Value::Null)),
@@ -223,10 +214,7 @@ impl WorkspaceApi {
 
             // -- text document content provider --
             "registerTextDocumentContentProvider" => {
-                let scheme = params
-                    .get("scheme")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let scheme = params.get("scheme").and_then(Value::as_str).unwrap_or("");
                 let id = self.register_text_document_content_provider(
                     scheme,
                     Arc::new(|_uri| Ok(String::new())),
@@ -241,10 +229,7 @@ impl WorkspaceApi {
             }
             "updateWorkspaceFolders" => {
                 #[allow(clippy::cast_possible_truncation)]
-                let start = params
-                    .get("start")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0) as usize;
+                let start = params.get("start").and_then(Value::as_u64).unwrap_or(0) as usize;
                 #[allow(clippy::cast_possible_truncation)]
                 let delete_count = params
                     .get("deleteCount")
@@ -258,10 +243,7 @@ impl WorkspaceApi {
                 Ok(Value::Bool(ok))
             }
             "getWorkspaceFolder" => {
-                let uri = params
-                    .get("uri")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
                 match self.get_workspace_folder(uri) {
                     Some(f) => Ok(serde_json::to_value(f)?),
                     None => Ok(Value::Null),
@@ -270,43 +252,30 @@ impl WorkspaceApi {
 
             // -- file system watcher --
             "createFileSystemWatcher" => {
-                let glob = params
-                    .get("glob")
-                    .and_then(Value::as_str)
-                    .unwrap_or("**/*");
+                let glob = params.get("glob").and_then(Value::as_str).unwrap_or("**/*");
                 let id = self.create_file_system_watcher(glob);
                 Ok(serde_json::to_value(id)?)
             }
 
             // -- document / config event subscriptions --
             "onDidChangeTextDocument" => {
-                let id = self.subscribe_on_did_change_text_document(
-                    Arc::new(|_| Ok(())),
-                );
+                let id = self.subscribe_on_did_change_text_document(Arc::new(|_| Ok(())));
                 Ok(serde_json::to_value(id)?)
             }
             "onDidOpenTextDocument" => {
-                let id = self.subscribe_on_did_open_text_document(
-                    Arc::new(|_| Ok(())),
-                );
+                let id = self.subscribe_on_did_open_text_document(Arc::new(|_| Ok(())));
                 Ok(serde_json::to_value(id)?)
             }
             "onDidCloseTextDocument" => {
-                let id = self.subscribe_on_did_close_text_document(
-                    Arc::new(|_| Ok(())),
-                );
+                let id = self.subscribe_on_did_close_text_document(Arc::new(|_| Ok(())));
                 Ok(serde_json::to_value(id)?)
             }
             "onDidSaveTextDocument" => {
-                let id = self.subscribe_on_did_save_text_document(
-                    Arc::new(|_| Ok(())),
-                );
+                let id = self.subscribe_on_did_save_text_document(Arc::new(|_| Ok(())));
                 Ok(serde_json::to_value(id)?)
             }
             "onDidChangeConfiguration" => {
-                let id = self.subscribe_on_did_change_configuration(
-                    Arc::new(|_| Ok(())),
-                );
+                let id = self.subscribe_on_did_change_configuration(Arc::new(|_| Ok(())));
                 Ok(serde_json::to_value(id)?)
             }
 
@@ -392,9 +361,7 @@ impl WorkspaceApi {
     ) -> ContentProviderId {
         let raw = self.next_content_provider.fetch_add(1, Ordering::Relaxed);
         let id = ContentProviderId(raw);
-        log::debug!(
-            "[ext] registerTextDocumentContentProvider({scheme}) -> {raw}"
-        );
+        log::debug!("[ext] registerTextDocumentContentProvider({scheme}) -> {raw}");
         self.content_providers
             .write()
             .expect("content providers lock poisoned")
@@ -500,9 +467,7 @@ impl WorkspaceApi {
     pub fn create_file_system_watcher(&self, glob_pattern: &str) -> FileSystemWatcherId {
         let raw = self.next_watcher.fetch_add(1, Ordering::Relaxed);
         let id = FileSystemWatcherId(raw);
-        log::debug!(
-            "[ext] createFileSystemWatcher({glob_pattern}) -> {raw}"
-        );
+        log::debug!("[ext] createFileSystemWatcher({glob_pattern}) -> {raw}");
         self.watchers
             .write()
             .expect("watchers lock poisoned")
@@ -559,10 +524,7 @@ impl WorkspaceApi {
     }
 
     /// Subscribes to `onDidOpenTextDocument`.
-    pub fn subscribe_on_did_open_text_document(
-        &self,
-        listener: EventListener,
-    ) -> EventListenerId {
+    pub fn subscribe_on_did_open_text_document(&self, listener: EventListener) -> EventListenerId {
         let id = self.next_event_id();
         self.on_did_open_text_document
             .write()
@@ -585,10 +547,7 @@ impl WorkspaceApi {
     }
 
     /// Subscribes to `onDidCloseTextDocument`.
-    pub fn subscribe_on_did_close_text_document(
-        &self,
-        listener: EventListener,
-    ) -> EventListenerId {
+    pub fn subscribe_on_did_close_text_document(&self, listener: EventListener) -> EventListenerId {
         let id = self.next_event_id();
         self.on_did_close_text_document
             .write()
@@ -611,10 +570,7 @@ impl WorkspaceApi {
     }
 
     /// Subscribes to `onDidSaveTextDocument`.
-    pub fn subscribe_on_did_save_text_document(
-        &self,
-        listener: EventListener,
-    ) -> EventListenerId {
+    pub fn subscribe_on_did_save_text_document(&self, listener: EventListener) -> EventListenerId {
         let id = self.next_event_id();
         self.on_did_save_text_document
             .write()
@@ -724,9 +680,7 @@ mod tests {
     #[test]
     fn handle_save_all() {
         let api = WorkspaceApi::new();
-        let result = api
-            .handle("saveAll", &serde_json::Value::Null)
-            .unwrap();
+        let result = api.handle("saveAll", &serde_json::Value::Null).unwrap();
         assert_eq!(result, serde_json::Value::Bool(true));
     }
 
@@ -735,7 +689,9 @@ mod tests {
         let api = WorkspaceApi::new();
         api.add_workspace_folder("file:///project", "project");
         assert_eq!(api.get_workspace_folders().len(), 1);
-        assert!(api.get_workspace_folder("file:///project/src/main.rs").is_some());
+        assert!(api
+            .get_workspace_folder("file:///project/src/main.rs")
+            .is_some());
         assert!(api.get_workspace_folder("file:///other").is_none());
     }
 }

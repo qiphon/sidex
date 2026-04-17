@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
@@ -249,4 +250,62 @@ pub fn debug_kill(state: State<'_, Arc<DebugAdapterStore>>, adapter_id: u32) -> 
 pub fn debug_list_adapters(state: State<'_, Arc<DebugAdapterStore>>) -> Result<Vec<u32>, String> {
     let adapters = state.adapters.lock().map_err(|e| e.to_string())?;
     Ok(adapters.keys().copied().collect())
+}
+
+// ---------------------------------------------------------------------------
+// sidex-dap integration
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DapLaunchConfigResponse {
+    pub configs: Vec<sidex_dap::LaunchConfig>,
+    pub compounds: Vec<sidex_dap::CompoundLaunchConfig>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugAdapterInfo {
+    pub type_name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub runtime: Option<String>,
+    pub command_line: String,
+}
+
+/// Parse `.vscode/launch.json` (JSONC) from the given workspace root.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn dap_get_launch_configs(workspace: String) -> Result<DapLaunchConfigResponse, String> {
+    let launch_path = PathBuf::from(&workspace).join(".vscode/launch.json");
+    if !launch_path.is_file() {
+        return Ok(DapLaunchConfigResponse {
+            configs: Vec::new(),
+            compounds: Vec::new(),
+        });
+    }
+    let (configs, compounds) =
+        sidex_dap::parse_launch_json(&launch_path).map_err(|e| e.to_string())?;
+    Ok(DapLaunchConfigResponse { configs, compounds })
+}
+
+/// Return the built-in debug adapter registry.
+#[tauri::command]
+pub fn dap_get_adapter_registry() -> Result<Vec<DebugAdapterInfo>, String> {
+    let registry = sidex_dap::DebugAdapterRegistry::with_builtins();
+    let infos = registry
+        .registered_types()
+        .into_iter()
+        .filter_map(|t| {
+            let desc = registry.get(t)?;
+            Some(DebugAdapterInfo {
+                type_name: desc.type_name.clone(),
+                command: desc.command.clone(),
+                args: desc.args.clone(),
+                runtime: desc.runtime.clone(),
+                command_line: registry.command_line(t).unwrap_or_default(),
+            })
+        })
+        .collect();
+    Ok(infos)
 }

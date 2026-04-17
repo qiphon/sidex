@@ -267,11 +267,25 @@ impl LineRenderer {
             let span_w = span.text.chars().count() as f32 * cfg.font_size * 0.6;
             if span.style.underline {
                 let uy = y + cfg.line_height - 2.0;
-                rect_renderer.draw_rect(cursor_x, uy, span_w, cfg.underline_thickness, span.style.color, 0.0);
+                rect_renderer.draw_rect(
+                    cursor_x,
+                    uy,
+                    span_w,
+                    cfg.underline_thickness,
+                    span.style.color,
+                    0.0,
+                );
             }
             if span.style.strikethrough {
                 let sy = y + cfg.line_height * 0.5;
-                rect_renderer.draw_rect(cursor_x, sy, span_w, cfg.strikethrough_thickness, span.style.color, 0.0);
+                rect_renderer.draw_rect(
+                    cursor_x,
+                    sy,
+                    span_w,
+                    cfg.strikethrough_thickness,
+                    span.style.color,
+                    0.0,
+                );
             }
             cursor_x += span_w;
         }
@@ -310,7 +324,14 @@ impl LineRenderer {
                 '\t' => {
                     let tab_w = char_width * cfg.tab_size as f32;
                     let arrow_h = 1.5;
-                    rect_renderer.draw_rect(cx + 2.0, mid_y - arrow_h * 0.5, tab_w - 4.0, arrow_h, cfg.whitespace_color, 0.0);
+                    rect_renderer.draw_rect(
+                        cx + 2.0,
+                        mid_y - arrow_h * 0.5,
+                        tab_w - 4.0,
+                        arrow_h,
+                        cfg.whitespace_color,
+                        0.0,
+                    );
                     // Arrow head
                     let head_size = 3.0;
                     rect_renderer.draw_rect(
@@ -333,11 +354,7 @@ impl LineRenderer {
     }
 
     /// Renders vertical indent guides.
-    pub fn render_indent_guides(
-        &self,
-        rect_renderer: &mut RectRenderer,
-        guides: &[IndentGuide],
-    ) {
+    pub fn render_indent_guides(&self, rect_renderer: &mut RectRenderer, guides: &[IndentGuide]) {
         let cfg = &self.config;
         for guide in guides {
             let color = if guide.active {
@@ -346,7 +363,14 @@ impl LineRenderer {
                 cfg.indent_guide_color
             };
             let h = guide.y_end - guide.y_start;
-            rect_renderer.draw_rect(guide.x, guide.y_start, cfg.indent_guide_width, h, color, 0.0);
+            rect_renderer.draw_rect(
+                guide.x,
+                guide.y_start,
+                cfg.indent_guide_width,
+                h,
+                color,
+                0.0,
+            );
         }
     }
 
@@ -362,7 +386,14 @@ impl LineRenderer {
         let cfg = &self.config;
         let mut y = 0.0_f32;
         for header in headers {
-            rect_renderer.draw_rect(0.0, y, editor_width, cfg.line_height, cfg.sticky_header_bg, 0.0);
+            rect_renderer.draw_rect(
+                0.0,
+                y,
+                editor_width,
+                cfg.line_height,
+                cfg.sticky_header_bg,
+                0.0,
+            );
             let spans: Vec<(&str, Color)> = header
                 .line
                 .spans
@@ -386,7 +417,14 @@ impl LineRenderer {
         let cfg = &self.config;
         for lens in lenses {
             let y = line_y_offset(lens.line) - cfg.line_height;
-            text_renderer.draw_line(&lens.text, 0.0, y, cfg.code_lens_color, cfg.code_lens_font_size, ctx);
+            text_renderer.draw_line(
+                &lens.text,
+                0.0,
+                y,
+                cfg.code_lens_color,
+                cfg.code_lens_font_size,
+                ctx,
+            );
         }
     }
 
@@ -405,8 +443,22 @@ impl LineRenderer {
         for hint in hints {
             let hx = hint.column as f32 * char_width;
             let hw = hint.text.len() as f32 * cfg.inlay_hint_font_size * 0.55 + 6.0;
-            rect_renderer.draw_rect(hx, y + 1.0, hw, cfg.line_height - 2.0, cfg.inlay_hint_bg_color, 3.0);
-            text_renderer.draw_line(&hint.text, hx + 3.0, y, cfg.inlay_hint_color, cfg.inlay_hint_font_size, ctx);
+            rect_renderer.draw_rect(
+                hx,
+                y + 1.0,
+                hw,
+                cfg.line_height - 2.0,
+                cfg.inlay_hint_bg_color,
+                3.0,
+            );
+            text_renderer.draw_line(
+                &hint.text,
+                hx + 3.0,
+                y,
+                cfg.inlay_hint_color,
+                cfg.inlay_hint_font_size,
+                ctx,
+            );
         }
     }
 

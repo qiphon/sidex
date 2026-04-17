@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SideX</title>
+  <link rel="stylesheet" href="fonts/codicon.css">
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <div id="workbench">
+    <div id="titlebar">
+      <div class="titlebar-drag-region"></div>
+      <div class="window-appicon">
+        <div class="codicon codicon-code"></div>
+      </div>
+      <div class="titlebar-title">SideX</div>
+      <div class="window-controls-container">
+        <div class="window-control minimize"><div class="codicon codicon-chrome-minimize"></div></div>
+        <div class="window-control maximize"><div class="codicon codicon-chrome-maximize"></div></div>
+        <div class="window-control close"><div class="codicon codicon-chrome-close"></div></div>
+      </div>
+    </div>
+    <div id="main-content">
+      <div id="activitybar"></div>
+      <div id="sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">EXPLORER</span>
+        </div>
+        <div class="sidebar-content" id="sidebar-content"></div>
+      </div>
+      <div id="sash-sidebar" class="sash vertical"></div>
+      <div id="editor-area">
+        <div id="tabs-container"></div>
+        <div id="editor-container">
+          <div class="editor-welcome" id="editor-welcome">
+            <div class="welcome-content">
+              <h1>SideX</h1>
+              <p>Start</p>
+              <div class="welcome-actions">
+                <a class="welcome-link" id="btn-new-file"><span class="codicon codicon-new-file"></span> New File</a>
+                <a class="welcome-link" id="btn-open-file"><span class="codicon codicon-folder-opened"></span> Open File...</a>
+                <a class="welcome-link" id="btn-open-folder"><span class="codicon codicon-folder"></span> Open Folder...</a>
+              </div>
+            </div>
+          </div>
+          <div class="editor-content" id="editor-content" style="display:none">
+            <div class="editor-gutter" id="editor-gutter"></div>
+            <div class="editor-lines" id="editor-lines"></div>
+            <div class="editor-cursor" id="editor-cursor"></div>
+            <textarea class="editor-input" id="editor-input" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="sash-panel" class="sash horizontal"></div>
+    <div id="panel">
+      <div class="panel-tabs">
+        <div class="panel-tab active" data-panel="terminal">TERMINAL</div>
+        <div class="panel-tab" data-panel="problems">PROBLEMS</div>
+        <div class="panel-tab" data-panel="output">OUTPUT</div>
+      </div>
+      <div class="panel-content" id="panel-content">
+        <div class="terminal-content" id="terminal-content"></div>
+      </div>
+    </div>
+    <div id="statusbar">
+      <div class="statusbar-left" id="statusbar-left"></div>
+      <div class="statusbar-right" id="statusbar-right"></div>
+    </div>
+  </div>
+  <script>
+    window.__SIDEX_READY__ = new Promise((resolve) => {
+      if (window.__TAURI__) { resolve(); return; }
+      const check = setInterval(() => {
+        if (window.__TAURI__) { clearInterval(check); resolve(); }
+      }, 50);
+      setTimeout(() => { clearInterval(check); resolve(); }, 3000);
+    });
+  </script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

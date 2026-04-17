@@ -112,29 +112,32 @@ impl FileWatcher {
             .watch(root, RecursiveMode::Recursive)
             .map_err(WorkspaceError::Watcher)?;
 
-        let debounce_handle = std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(debounce);
+        let debounce_handle = std::thread::spawn(move || loop {
+            std::thread::sleep(debounce);
 
-                if *stop_rx.lock().unwrap_or_else(std::sync::PoisonError::into_inner) {
-                    break;
+            if *stop_rx
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+            {
+                break;
+            }
+
+            let batch: Vec<FileEvent> = {
+                let mut map = pending
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if map.is_empty() {
+                    continue;
                 }
+                let events = map
+                    .drain()
+                    .map(|(path, kind)| FileEvent { path, kind })
+                    .collect();
+                events
+            };
 
-                let batch: Vec<FileEvent> = {
-                    let mut map = pending.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if map.is_empty() {
-                        continue;
-                    }
-                    let events = map
-                        .drain()
-                        .map(|(path, kind)| FileEvent { path, kind })
-                        .collect();
-                    events
-                };
-
-                if !batch.is_empty() {
-                    handler(batch);
-                }
+            if !batch.is_empty() {
+                handler(batch);
             }
         });
 

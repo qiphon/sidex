@@ -8,6 +8,7 @@
 pub mod codespaces;
 pub mod container;
 pub mod manager;
+pub mod port_forwarding;
 pub mod server;
 pub mod ssh;
 pub mod transport;
@@ -15,4 +16,5 @@ pub mod tunnel;
 pub mod wsl;
 
 pub use manager::{ConnectionId, ConnectionInfo, ConnectionKind, RemoteManager};
+pub use port_forwarding::{ForwardedPort, PortForwardingService, PortProtocol, PortPrivacy};
 pub use transport::{DirEntry, ExecOutput, FileStat, RemotePty, RemoteTransport};

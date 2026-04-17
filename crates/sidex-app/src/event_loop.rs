@@ -2,14 +2,12 @@
 //! event handling.
 
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::EventLoop;
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::Window;
 
-use sidex_keymap::keybinding::{
-    Key as KmKey, KeyCombo, Modifiers as KmModifiers,
-};
+use sidex_keymap::keybinding::{Key as KmKey, KeyCombo, Modifiers as KmModifiers};
 use sidex_text::Position;
 
 use crate::app::App;
@@ -26,6 +24,8 @@ struct AppHandler<'a> {
     click_count: u32,
     /// Whether the left mouse button is currently held (for drag selection).
     dragging: bool,
+    /// Tracks current modifier state reported by winit.
+    modifiers: ModifiersState,
 }
 
 impl<'a> AppHandler<'a> {
@@ -38,7 +38,12 @@ impl<'a> AppHandler<'a> {
             last_click_time: std::time::Instant::now(),
             click_count: 0,
             dragging: false,
+            modifiers: ModifiersState::empty(),
         }
+    }
+
+    fn km_modifiers(&self) -> KmModifiers {
+        winit_modifiers_to_km(self.modifiers)
     }
 }
 
@@ -52,6 +57,11 @@ impl ApplicationHandler for AppHandler<'_> {
         event: WindowEvent,
     ) {
         match event {
+            // ── Modifier tracking ─────────────────────────────────
+            WindowEvent::ModifiersChanged(new_mods) => {
+                self.modifiers = new_mods.state();
+            }
+
             // ── Window lifecycle ──────────────────────────────────
             WindowEvent::CloseRequested => {
                 if self.app.has_unsaved_changes() {
@@ -68,17 +78,43 @@ impl ApplicationHandler for AppHandler<'_> {
             }
 
             WindowEvent::Resized(size) => {
-                self.app.renderer.resize(size.width, size.height);
-                self.app.layout_rects = self.app.layout.compute(size.width, size.height);
-                self.app.needs_render = true;
+                if size.width > 0 && size.height > 0 {
+                    self.app.renderer.resize(size.width, size.height);
+                    self.app.layout_rects = self.app.layout.compute(size.width, size.height);
+                    self.app.needs_render = true;
+                }
             }
 
             WindowEvent::Focused(focused) => {
-                self.app
-                    .context_keys
-                    .set_bool("editorTextFocus", focused);
-                self.app.needs_render = true;
+                self.app.context_keys.set_bool("editorTextFocus", focused);
+                if focused {
+                    self.app.needs_render = true;
+                }
             }
+
+            WindowEvent::DroppedFile(path) => {
+                log::info!("file dropped: {}", path.display());
+                self.app.open_file(&path);
+            }
+
+            // ── IME text input (covers CJK, emoji, accented chars) ─
+            WindowEvent::Ime(ime) => match ime {
+                Ime::Commit(text) => {
+                    if let Some(doc) = self.app.active_document_mut() {
+                        doc.document.insert_text(&text);
+                        doc.on_edit();
+                    }
+                    self.app.reset_cursor_blink();
+                    self.app.update_context_keys();
+                    self.app.needs_render = true;
+                }
+                Ime::Preedit(text, _cursor) => {
+                    if !text.is_empty() {
+                        self.app.needs_render = true;
+                    }
+                }
+                _ => {}
+            },
 
             // ── Keyboard ─────────────────────────────────────────
             WindowEvent::KeyboardInput {
@@ -88,8 +124,10 @@ impl ApplicationHandler for AppHandler<'_> {
                     return;
                 }
 
-                let mods = winit_mods_to_km(&key_event.logical_key, &self.window);
+                let mods = self.km_modifiers();
                 let km_key = winit_key_to_km(&key_event.logical_key);
+                let shift_held = self.modifiers.shift_key();
+                let ctrl_or_meta = self.modifiers.control_key() || self.modifiers.super_key();
 
                 if let Some(km_key) = km_key {
                     let combo = KeyCombo::new(km_key, mods);
@@ -97,11 +135,11 @@ impl ApplicationHandler for AppHandler<'_> {
                     // Chord handling: if we have a pending first chord key,
                     // try to resolve as two-key chord first.
                     if let Some(first) = self.app.pending_chord.take() {
-                        if let Some(cmd_id) = self.app.keymap.resolve_chord(
-                            &first,
-                            &combo,
-                            &self.app.context_keys,
-                        ) {
+                        if let Some(cmd_id) =
+                            self.app
+                                .keymap
+                                .resolve_chord(&first, &combo, &self.app.context_keys)
+                        {
                             let id = cmd_id.to_owned();
                             if let Some(action) = self.app.commands.get_action(&id) {
                                 action(self.app);
@@ -113,10 +151,7 @@ impl ApplicationHandler for AppHandler<'_> {
                     }
 
                     // Try single-key resolution
-                    match self.app.keymap.resolve(
-                        &combo,
-                        &self.app.context_keys,
-                    ) {
+                    match self.app.keymap.resolve(&combo, &self.app.context_keys) {
                         Some(cmd_id) => {
                             let id = cmd_id.to_owned();
                             if let Some(action) = self.app.commands.get_action(&id) {
@@ -126,11 +161,11 @@ impl ApplicationHandler for AppHandler<'_> {
                             return;
                         }
                         None => {
-                            // Check if this could be the start of a chord
-                            if self.app.keymap.is_chord_prefix(
-                                &combo,
-                                &self.app.context_keys,
-                            ) {
+                            if self
+                                .app
+                                .keymap
+                                .is_chord_prefix(&combo, &self.app.context_keys)
+                            {
                                 self.app.pending_chord = Some(combo);
                                 return;
                             }
@@ -138,153 +173,26 @@ impl ApplicationHandler for AppHandler<'_> {
                     }
                 }
 
-                // If no keybinding matched, handle as text input
+                // If no keybinding matched, handle as text input (only
+                // when no command-level modifier is held).
                 if let Key::Character(ch) = &key_event.logical_key {
-                    let text = ch.as_str();
-                    // Don't insert text if Ctrl/Meta is held (those are shortcuts)
-                    let has_cmd_mod = {
-                        #[cfg(target_os = "macos")]
-                        { self.window.has_focus() && key_event.logical_key != Key::Character(ch.clone()) }
-                        #[cfg(not(target_os = "macos"))]
-                        { false }
-                    };
-                    let _ = has_cmd_mod;
-
-                    if !text.is_empty() {
-                        if let Some(doc) = self.app.active_document_mut() {
-                            doc.document.insert_text(text);
-                            doc.on_edit();
+                    if !ctrl_or_meta {
+                        let text = ch.as_str();
+                        if !text.is_empty() {
+                            if let Some(doc) = self.app.active_document_mut() {
+                                doc.document.insert_text(text);
+                                doc.on_edit();
+                            }
+                            self.app.reset_cursor_blink();
+                            self.app.update_context_keys();
+                            self.app.needs_render = true;
                         }
-                        self.app.reset_cursor_blink();
-                        self.app.update_context_keys();
-                        self.app.needs_render = true;
                     }
                 }
 
                 // Handle special named keys that aren't bound to commands
                 if let Key::Named(named) = &key_event.logical_key {
-                    match named {
-                        NamedKey::Backspace => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.delete_left();
-                                doc.on_edit();
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::Delete => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.delete_right();
-                                doc.on_edit();
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::Enter => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.new_line_with_indent();
-                                doc.on_edit();
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::Tab => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.indent();
-                                doc.on_edit();
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::Escape => {
-                            self.app.show_quick_open = false;
-                            self.app.show_command_palette = false;
-                            self.app.show_goto_line = false;
-                            self.app.show_find_widget = false;
-                            self.app.find_replace_mode = false;
-                            self.app.show_search_panel = false;
-                            self.app.pending_chord = None;
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::ArrowUp => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.cursors.move_all_up(&doc.document.buffer, false);
-                                doc.viewport.ensure_visible(
-                                    doc.document.cursors.primary().position(),
-                                );
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.update_context_keys();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::ArrowDown => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.cursors.move_all_down(&doc.document.buffer, false);
-                                doc.viewport.ensure_visible(
-                                    doc.document.cursors.primary().position(),
-                                );
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.update_context_keys();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::ArrowLeft => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.cursors.move_all_left(&doc.document.buffer, false);
-                                doc.viewport.ensure_visible(
-                                    doc.document.cursors.primary().position(),
-                                );
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.update_context_keys();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::ArrowRight => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.document.cursors.move_all_right(&doc.document.buffer, false);
-                                doc.viewport.ensure_visible(
-                                    doc.document.cursors.primary().position(),
-                                );
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.update_context_keys();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::Home => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                let pos = doc.document.cursors.primary().position();
-                                let new_pos = Position::new(pos.line, 0);
-                                doc.document.cursors = sidex_editor::MultiCursor::new(new_pos);
-                                doc.viewport.ensure_visible(new_pos);
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::End => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                let pos = doc.document.cursors.primary().position();
-                                let line_len = doc.document.buffer.line_content_len(pos.line as usize) as u32;
-                                let new_pos = Position::new(pos.line, line_len);
-                                doc.document.cursors = sidex_editor::MultiCursor::new(new_pos);
-                                doc.viewport.ensure_visible(new_pos);
-                            }
-                            self.app.reset_cursor_blink();
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::PageUp => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.viewport.page_up();
-                            }
-                            self.app.needs_render = true;
-                        }
-                        NamedKey::PageDown => {
-                            if let Some(doc) = self.app.active_document_mut() {
-                                doc.viewport.page_down();
-                            }
-                            self.app.needs_render = true;
-                        }
-                        _ => {}
-                    }
+                    self.handle_named_key(named, shift_held);
                 }
             }
 
@@ -294,11 +202,7 @@ impl ApplicationHandler for AppHandler<'_> {
                 self.mouse_y = position.y;
 
                 if self.dragging {
-                    if let Some(target) = pixel_to_position(
-                        self.mouse_x,
-                        self.mouse_y,
-                        self.app,
-                    ) {
+                    if let Some(target) = pixel_to_position(self.mouse_x, self.mouse_y, self.app) {
                         if let Some(doc) = self.app.active_document_mut() {
                             let anchor = doc.document.cursors.primary().selection.anchor;
                             doc.document.cursors.set_primary_selection(
@@ -313,6 +217,7 @@ impl ApplicationHandler for AppHandler<'_> {
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
+                let mods = self.km_modifiers();
                 match (button, state) {
                     (MouseButton::Left, ElementState::Pressed) => {
                         let now = std::time::Instant::now();
@@ -325,28 +230,43 @@ impl ApplicationHandler for AppHandler<'_> {
                         }
                         self.last_click_time = now;
 
-                        if let Some(target) = pixel_to_position(
-                            self.mouse_x,
-                            self.mouse_y,
-                            self.app,
-                        ) {
+                        if let Some(target) =
+                            pixel_to_position(self.mouse_x, self.mouse_y, self.app)
+                        {
+                            let add_cursor =
+                                mods.contains(KmModifiers::CTRL) || mods.contains(KmModifiers::META);
+
                             match self.click_count {
                                 1 => {
-                                    // Single click — set cursor
-                                    if let Some(doc) = self.app.active_document_mut() {
-                                        doc.document.cursors =
-                                            sidex_editor::MultiCursor::new(target);
-                                        doc.viewport.ensure_visible(target);
+                                    if add_cursor {
+                                        // Ctrl/Cmd + Click: add extra cursor
+                                        if let Some(doc) = self.app.active_document_mut() {
+                                            doc.document.cursors.add_cursor(target);
+                                        }
+                                    } else if mods.contains(KmModifiers::SHIFT) {
+                                        // Shift + Click: extend selection
+                                        if let Some(doc) = self.app.active_document_mut() {
+                                            let anchor =
+                                                doc.document.cursors.primary().selection.anchor;
+                                            doc.document.cursors.set_primary_selection(
+                                                sidex_editor::Selection::new(anchor, target),
+                                            );
+                                        }
+                                    } else {
+                                        // Regular click — set cursor
+                                        if let Some(doc) = self.app.active_document_mut() {
+                                            doc.document.cursors =
+                                                sidex_editor::MultiCursor::new(target);
+                                            doc.viewport.ensure_visible(target);
+                                        }
                                     }
                                     self.dragging = true;
                                 }
                                 2 => {
                                     // Double click — select word
                                     if let Some(doc) = self.app.active_document_mut() {
-                                        let word_range = sidex_editor::word_at(
-                                            &doc.document.buffer,
-                                            target,
-                                        );
+                                        let word_range =
+                                            sidex_editor::word_at(&doc.document.buffer, target);
                                         doc.document.cursors.set_primary_selection(
                                             sidex_editor::Selection::new(
                                                 word_range.start,
@@ -370,14 +290,26 @@ impl ApplicationHandler for AppHandler<'_> {
                             self.app.needs_render = true;
                         }
 
-                        // Check tab bar clicks
-                        self.handle_tab_click();
+                        // Check UI region clicks (tabs, activity bar, sidebar)
+                        self.handle_ui_click();
                     }
                     (MouseButton::Left, ElementState::Released) => {
                         self.dragging = false;
                     }
                     (MouseButton::Right, ElementState::Pressed) => {
+                        self.app.context_menu_position =
+                            Some((self.mouse_x as f32, self.mouse_y as f32));
+                        self.app.needs_render = true;
                         log::debug!("context menu at ({}, {})", self.mouse_x, self.mouse_y);
+                    }
+                    (MouseButton::Middle, ElementState::Pressed) => {
+                        // Middle-click: paste from primary selection (Linux)
+                        // or could be used for column selection in the future.
+                        log::debug!(
+                            "middle click at ({}, {})",
+                            self.mouse_x,
+                            self.mouse_y
+                        );
                     }
                     _ => {}
                 }
@@ -390,7 +322,16 @@ impl ApplicationHandler for AppHandler<'_> {
                     }
                     MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y),
                 };
-                if let Some(doc) = self.app.active_document_mut() {
+                let ctrl_held =
+                    self.modifiers.control_key() || self.modifiers.super_key();
+                if ctrl_held {
+                    // Ctrl+Scroll → zoom
+                    if dy > 0.0 {
+                        self.app.zoom_in();
+                    } else if dy < 0.0 {
+                        self.app.zoom_out();
+                    }
+                } else if let Some(doc) = self.app.active_document_mut() {
                     doc.viewport.scroll_by(-dy, -dx);
                 }
                 self.app.needs_render = true;
@@ -403,19 +344,189 @@ impl ApplicationHandler for AppHandler<'_> {
 }
 
 impl AppHandler<'_> {
-    /// Check if the mouse click was on a tab in the tab bar area.
-    fn handle_tab_click(&mut self) {
-        let title_rect = &self.app.layout_rects.title_bar;
+    /// Handle named keys (arrows, home/end, etc.) with shift-awareness
+    /// for selection extension.
+    fn handle_named_key(&mut self, named: &NamedKey, shift: bool) {
+        match named {
+            NamedKey::Backspace => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    doc.document.delete_left();
+                    doc.on_edit();
+                }
+                self.app.reset_cursor_blink();
+                self.app.needs_render = true;
+            }
+            NamedKey::Delete => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    doc.document.delete_right();
+                    doc.on_edit();
+                }
+                self.app.reset_cursor_blink();
+                self.app.needs_render = true;
+            }
+            NamedKey::Enter => {
+                if self.app.show_quick_open || self.app.show_command_palette {
+                    self.app.confirm_quick_pick();
+                } else if self.app.show_goto_line {
+                    self.app.confirm_goto_line();
+                } else if let Some(doc) = self.app.active_document_mut() {
+                    doc.document.new_line_with_indent();
+                    doc.on_edit();
+                }
+                self.app.reset_cursor_blink();
+                self.app.needs_render = true;
+            }
+            NamedKey::Tab => {
+                if self.app.context_keys.is_true("suggestWidgetVisible") {
+                    self.app.accept_suggest();
+                } else if shift {
+                    if let Some(doc) = self.app.active_document_mut() {
+                        doc.document.outdent();
+                        doc.on_edit();
+                    }
+                } else if let Some(doc) = self.app.active_document_mut() {
+                    doc.document.indent();
+                    doc.on_edit();
+                }
+                self.app.reset_cursor_blink();
+                self.app.needs_render = true;
+            }
+            NamedKey::Escape => {
+                self.app.dismiss_overlays();
+                self.app.pending_chord = None;
+                self.app.needs_render = true;
+            }
+            NamedKey::ArrowUp => {
+                if self.app.show_quick_open || self.app.show_command_palette {
+                    self.app.quick_pick_move(-1);
+                } else if self.app.context_keys.is_true("suggestWidgetVisible") {
+                    self.app.suggest_move(-1);
+                } else if let Some(doc) = self.app.active_document_mut() {
+                    doc.document
+                        .cursors
+                        .move_all_up(&doc.document.buffer, shift);
+                    doc.viewport
+                        .ensure_visible(doc.document.cursors.primary().position());
+                }
+                self.app.reset_cursor_blink();
+                self.app.update_context_keys();
+                self.app.needs_render = true;
+            }
+            NamedKey::ArrowDown => {
+                if self.app.show_quick_open || self.app.show_command_palette {
+                    self.app.quick_pick_move(1);
+                } else if self.app.context_keys.is_true("suggestWidgetVisible") {
+                    self.app.suggest_move(1);
+                } else if let Some(doc) = self.app.active_document_mut() {
+                    doc.document
+                        .cursors
+                        .move_all_down(&doc.document.buffer, shift);
+                    doc.viewport
+                        .ensure_visible(doc.document.cursors.primary().position());
+                }
+                self.app.reset_cursor_blink();
+                self.app.update_context_keys();
+                self.app.needs_render = true;
+            }
+            NamedKey::ArrowLeft => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    doc.document
+                        .cursors
+                        .move_all_left(&doc.document.buffer, shift);
+                    doc.viewport
+                        .ensure_visible(doc.document.cursors.primary().position());
+                }
+                self.app.reset_cursor_blink();
+                self.app.update_context_keys();
+                self.app.needs_render = true;
+            }
+            NamedKey::ArrowRight => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    doc.document
+                        .cursors
+                        .move_all_right(&doc.document.buffer, shift);
+                    doc.viewport
+                        .ensure_visible(doc.document.cursors.primary().position());
+                }
+                self.app.reset_cursor_blink();
+                self.app.update_context_keys();
+                self.app.needs_render = true;
+            }
+            NamedKey::Home => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    let pos = doc.document.cursors.primary().position();
+                    let new_pos = Position::new(pos.line, 0);
+                    if shift {
+                        let anchor = doc.document.cursors.primary().selection.anchor;
+                        doc.document
+                            .cursors
+                            .set_primary_selection(sidex_editor::Selection::new(anchor, new_pos));
+                    } else {
+                        doc.document.cursors = sidex_editor::MultiCursor::new(new_pos);
+                    }
+                    doc.viewport.ensure_visible(new_pos);
+                }
+                self.app.reset_cursor_blink();
+                self.app.needs_render = true;
+            }
+            NamedKey::End => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    let pos = doc.document.cursors.primary().position();
+                    let line_len =
+                        doc.document.buffer.line_content_len(pos.line as usize) as u32;
+                    let new_pos = Position::new(pos.line, line_len);
+                    if shift {
+                        let anchor = doc.document.cursors.primary().selection.anchor;
+                        doc.document
+                            .cursors
+                            .set_primary_selection(sidex_editor::Selection::new(anchor, new_pos));
+                    } else {
+                        doc.document.cursors = sidex_editor::MultiCursor::new(new_pos);
+                    }
+                    doc.viewport.ensure_visible(new_pos);
+                }
+                self.app.reset_cursor_blink();
+                self.app.needs_render = true;
+            }
+            NamedKey::PageUp => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    doc.viewport.page_up();
+                }
+                self.app.needs_render = true;
+            }
+            NamedKey::PageDown => {
+                if let Some(doc) = self.app.active_document_mut() {
+                    doc.viewport.page_down();
+                }
+                self.app.needs_render = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// Check if the mouse click was on a UI region (tab bar, activity bar, sidebar).
+    fn handle_ui_click(&mut self) {
         let mx = self.mouse_x as f32;
         let my = self.mouse_y as f32;
 
+        // Tab bar (inside the title_bar rect, after sidebar)
+        let title_rect = &self.app.layout_rects.title_bar;
         if my >= title_rect.y && my < title_rect.y + title_rect.height {
             let tab_width = 150.0_f32;
             let start_x = self.app.layout_rects.editor_area.x;
             let tab_index = ((mx - start_x) / tab_width) as usize;
             if tab_index < self.app.documents.len() {
                 self.app.switch_to_document(tab_index);
+                return;
             }
+        }
+
+        // Activity bar click → toggle sidebar panels
+        let activity_rect = &self.app.layout_rects.activity_bar;
+        if activity_rect.contains(mx, my) {
+            self.app.layout.sidebar_visible = !self.app.layout.sidebar_visible;
+            self.app.needs_relayout = true;
+            self.app.update_context_keys();
         }
     }
 }
@@ -437,9 +548,9 @@ fn pixel_to_position(px: f64, py: f64, app: &App) -> Option<Position> {
     let rel_y = f64::from(fy - editor_rect.y) + doc.viewport.scroll_top;
     let line = (rel_y / line_height).floor() as u32;
 
-    let char_width = 8.0_f64;
+    let char_width = f64::from(app.editor_view_config.char_width);
+    let gutter_width = f64::from(app.editor_view_config.gutter_width);
     let rel_x = f64::from(fx - editor_rect.x) + doc.viewport.scroll_left;
-    let gutter_width = 60.0_f64;
     let col = ((rel_x - gutter_width).max(0.0) / char_width).round() as u32;
 
     let max_line = doc.document.buffer.len_lines().saturating_sub(1) as u32;
@@ -450,15 +561,22 @@ fn pixel_to_position(px: f64, py: f64, app: &App) -> Option<Position> {
     Some(Position::new(clamped_line, clamped_col))
 }
 
-/// Convert winit modifiers state to sidex-keymap Modifiers.
-fn winit_mods_to_km(
-    _key: &Key,
-    _window: &Window,
-) -> KmModifiers {
-    // In a real implementation this would inspect the modifiers state
-    // from the window. For now, return NONE — the keymap resolver
-    // will still match unmodified keys.
-    KmModifiers::NONE
+/// Convert winit `ModifiersState` to `sidex_keymap::Modifiers`.
+fn winit_modifiers_to_km(state: ModifiersState) -> KmModifiers {
+    let mut mods = KmModifiers::NONE;
+    if state.control_key() {
+        mods = mods.union(KmModifiers::CTRL);
+    }
+    if state.shift_key() {
+        mods = mods.union(KmModifiers::SHIFT);
+    }
+    if state.alt_key() {
+        mods = mods.union(KmModifiers::ALT);
+    }
+    if state.super_key() {
+        mods = mods.union(KmModifiers::META);
+    }
+    mods
 }
 
 /// Map a winit logical key to sidex-keymap Key.

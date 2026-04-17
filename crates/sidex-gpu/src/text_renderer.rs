@@ -74,9 +74,7 @@ impl TextRenderer {
 
         for run in buffer.layout_runs() {
             for glyph in run.glyphs {
-                let span_color = spans
-                    .get(glyph.metadata)
-                    .map_or(Color::WHITE, |(_, c)| *c);
+                let span_color = spans.get(glyph.metadata).map_or(Color::WHITE, |(_, c)| *c);
 
                 let physical = glyph.physical((x, y), 1.0);
 
@@ -102,6 +100,11 @@ impl TextRenderer {
                 }
             }
         }
+    }
+
+    /// Returns `true` if there is queued geometry to flush.
+    pub fn has_data(&self) -> bool {
+        !self.indices.is_empty()
     }
 
     /// Submits all batched text to the given render pass.

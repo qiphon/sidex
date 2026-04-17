@@ -87,10 +87,7 @@ impl Color {
         if self.a == 255 {
             format!("#{:02x}{:02x}{:02x}", self.r, self.g, self.b)
         } else {
-            format!(
-                "#{:02x}{:02x}{:02x}{:02x}",
-                self.r, self.g, self.b, self.a
-            )
+            format!("#{:02x}{:02x}{:02x}{:02x}", self.r, self.g, self.b, self.a)
         }
     }
 
@@ -162,6 +159,33 @@ impl<'de> Deserialize<'de> for Color {
         let s = String::deserialize(deserializer)?;
         Self::from_hex(&s).map_err(serde::de::Error::custom)
     }
+}
+
+// ── Free-standing convenience functions ─────────────────────────────────────
+
+/// Parse a hex color string, returning `None` on failure.
+pub fn hex_to_color(hex: &str) -> Option<Color> {
+    Color::from_hex(hex).ok()
+}
+
+/// Convert a color to a hex string.
+pub fn color_to_hex(color: &Color) -> String {
+    color.to_hex()
+}
+
+/// Linearly blend two colors. `factor` 0.0 = all `a`, 1.0 = all `b`.
+pub fn blend_colors(a: &Color, b: &Color, factor: f32) -> Color {
+    a.blend(*b, factor)
+}
+
+/// Lighten a color by blending toward white.
+pub fn lighten(color: &Color, amount: f32) -> Color {
+    color.lighten(amount)
+}
+
+/// Darken a color by blending toward black.
+pub fn darken(color: &Color, amount: f32) -> Color {
+    color.darken(amount)
 }
 
 #[cfg(test)]

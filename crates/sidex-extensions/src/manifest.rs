@@ -689,7 +689,10 @@ mod tests {
 
     #[test]
     fn sanitize_ids() {
-        assert_eq!(sanitize_ext_id("rust-lang.rust-analyzer").unwrap(), "rust-lang.rust-analyzer");
+        assert_eq!(
+            sanitize_ext_id("rust-lang.rust-analyzer").unwrap(),
+            "rust-lang.rust-analyzer"
+        );
         assert!(sanitize_ext_id("..").is_err());
         assert!(sanitize_ext_id("").is_err());
     }

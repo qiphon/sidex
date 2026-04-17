@@ -415,7 +415,11 @@ impl Document {
             ch
         };
 
-        let all_empty = self.cursors.cursors().iter().all(|c| c.selection.is_empty());
+        let all_empty = self
+            .cursors
+            .cursors()
+            .iter()
+            .all(|c| c.selection.is_empty());
         if !all_empty {
             return false;
         }
@@ -426,8 +430,10 @@ impl Document {
             let chars: Vec<char> = line_content.chars().collect();
             let col = pos.column as usize;
 
-            if is_open_quote && self.config.auto_closing_quotes != AutoClosingStrategy::Always
-                && col > 0 && chars[col - 1].is_alphanumeric()
+            if is_open_quote
+                && self.config.auto_closing_quotes != AutoClosingStrategy::Always
+                && col > 0
+                && chars[col - 1].is_alphanumeric()
             {
                 return false;
             }
@@ -479,9 +485,15 @@ impl Document {
             return false;
         }
 
-        let Some(close) = surround_close(ch) else { return false };
+        let Some(close) = surround_close(ch) else {
+            return false;
+        };
 
-        let any_has_selection = self.cursors.cursors().iter().any(|c| !c.selection.is_empty());
+        let any_has_selection = self
+            .cursors
+            .cursors()
+            .iter()
+            .any(|c| !c.selection.is_empty());
         if !any_has_selection {
             return false;
         }
@@ -650,7 +662,9 @@ impl Document {
             }
             let before = chars[col - 1];
             let after = chars[col];
-            AUTO_CLOSE_PAIRS.iter().any(|(o, c)| *o == before && *c == after)
+            AUTO_CLOSE_PAIRS
+                .iter()
+                .any(|(o, c)| *o == before && *c == after)
                 || (is_quote(before) && before == after)
         });
 
@@ -932,7 +946,11 @@ impl Document {
             let spaces: usize = if first_char == Some('\t') {
                 1
             } else {
-                content.chars().take(tab_size).take_while(|c| *c == ' ').count()
+                content
+                    .chars()
+                    .take(tab_size)
+                    .take_while(|c| *c == ' ')
+                    .count()
             };
             if spaces > 0 {
                 let start = self.buffer.line_to_char(line as usize);
@@ -2542,13 +2560,11 @@ mod tests {
     fn enter_indent_outdent_braces() {
         let mut doc = Document::from_str("fn main() {}");
         doc.cursors = MultiCursor::new(Position::new(0, 12));
-        doc.cursors.primary_mut().selection =
-            Selection::caret(Position::new(0, 12));
+        doc.cursors.primary_mut().selection = Selection::caret(Position::new(0, 12));
         let mut doc2 = Document::from_str("fn main() {}");
         doc2.cursors = MultiCursor::new(Position::new(0, 12));
         // Place cursor between { and }
-        doc2.cursors.cursors_mut()[0].selection =
-            Selection::caret(Position::new(0, 12));
+        doc2.cursors.cursors_mut()[0].selection = Selection::caret(Position::new(0, 12));
         // Manually set cursor between braces
         let mut doc3 = Document::from_str("{}");
         doc3.cursors = MultiCursor::new(Position::new(0, 1));
@@ -2556,7 +2572,10 @@ mod tests {
         let text = doc3.text();
         assert!(text.contains("{\n"), "Should have newline after open brace");
         let lines: Vec<_> = text.lines().collect();
-        assert!(lines.len() >= 3, "Should have at least 3 lines for indent-outdent");
+        assert!(
+            lines.len() >= 3,
+            "Should have at least 3 lines for indent-outdent"
+        );
         assert_eq!(lines[2].trim(), "}", "Last line should have closing brace");
     }
 
@@ -2568,7 +2587,10 @@ mod tests {
         let text = doc.text();
         let lines: Vec<_> = text.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert!(lines[1].starts_with("    "), "Second line should have same indent");
+        assert!(
+            lines[1].starts_with("    "),
+            "Second line should have same indent"
+        );
     }
 
     #[test]
@@ -2579,7 +2601,10 @@ mod tests {
         let text = doc.text();
         let lines: Vec<_> = text.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert!(lines[1].starts_with("    "), "Should have extra indent after {{");
+        assert!(
+            lines[1].starts_with("    "),
+            "Should have extra indent after {{"
+        );
     }
 
     // ── Tab handling tests ────────────────────────────────────────

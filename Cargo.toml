@@ -17,6 +17,8 @@ members = [
     "crates/sidex-settings",
     "crates/sidex-db",
     "crates/sidex-remote",
+    "crates/sidex-dap",
+    "crates/sidex-tasks",
     "crates/sidex-app",
     "src-tauri",
     "sidex-extension-sdk",
@@ -51,6 +53,7 @@ sidex-settings = { path = "crates/sidex-settings" }
 sidex-db = { path = "crates/sidex-db" }
 sidex-remote = { path = "crates/sidex-remote" }
 sidex-extension-sdk = { path = "sidex-extension-sdk" }
+sidex-tasks = { path = "crates/sidex-tasks" }
 
 # Core
 tokio = { version = "1", features = ["full"] }
@@ -88,7 +91,7 @@ vte = "0.13"
 gix = { version = "0.68", default-features = false }
 
 # Database
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 
 # Remote
 russh = "0.46"

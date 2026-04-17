@@ -11,6 +11,9 @@ use sidex_text::{Buffer, Position, Range};
 /// Maximum matches tracked before the engine stops counting.
 pub const MATCHES_LIMIT: usize = 19_999;
 
+/// Maximum length of a search string to prevent pathological regex.
+pub const SEARCH_STRING_MAX_LENGTH: usize = 524_288;
+
 /// Search option toggles (regex, case-sensitivity, whole word, etc.).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
@@ -38,9 +41,43 @@ impl Default for FindOptions {
     }
 }
 
-/// Full state of the find/replace widget.
+/// Focus target when revealing the find widget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FindStartFocus {
+    NoChange,
+    FindInput,
+    ReplaceInput,
+}
+
+/// Layout / geometry state of the find widget for rendering.
 #[derive(Debug, Clone)]
-#[derive(Default)]
+pub struct FindWidgetLayout {
+    /// Pixel X offset from the right edge of the editor.
+    pub right_offset: f32,
+    /// Pixel Y offset from the top of the editor.
+    pub top_offset: f32,
+    /// Widget width in pixels.
+    pub width: f32,
+    /// Whether the replace row is expanded (affects height).
+    pub replace_expanded: bool,
+    /// Whether the widget is currently animating open/close.
+    pub is_animating: bool,
+}
+
+impl Default for FindWidgetLayout {
+    fn default() -> Self {
+        Self {
+            right_offset: 14.0,
+            top_offset: 0.0,
+            width: 411.0,
+            replace_expanded: false,
+            is_animating: false,
+        }
+    }
+}
+
+/// Full state of the find/replace widget.
+#[derive(Debug, Clone, Default)]
 pub struct FindState {
     /// The current search string entered by the user.
     pub search_string: String,
@@ -62,27 +99,44 @@ pub struct FindState {
     pub search_history: Vec<String>,
     /// Replace history (most-recent first).
     pub replace_history: Vec<String>,
+    /// Widget layout state for the renderer.
+    pub layout: FindWidgetLayout,
+    /// Count display overflow flag — true when matches exceed `MATCHES_LIMIT`.
+    pub match_count_overflow: bool,
 }
-
 
 impl FindState {
     /// Opens the find widget, optionally seeding the search string.
     pub fn reveal(&mut self, seed: Option<&str>) {
         self.is_revealed = true;
+        self.layout.is_animating = true;
         if let Some(s) = seed {
             self.set_search_string(s.to_string());
         }
     }
 
+    /// Opens the find widget with replace row visible.
+    pub fn reveal_replace(&mut self, seed: Option<&str>) {
+        self.reveal(seed);
+        self.is_replace_revealed = true;
+        self.layout.replace_expanded = true;
+    }
+
     /// Closes the find widget and clears match highlights.
     pub fn dismiss(&mut self) {
         self.is_revealed = false;
+        self.is_replace_revealed = false;
+        self.layout.is_animating = true;
         self.matches.clear();
         self.active_match_idx = None;
+        self.match_count_overflow = false;
     }
 
     /// Updates the search string and pushes it into history.
     pub fn set_search_string(&mut self, s: String) {
+        if s.len() > SEARCH_STRING_MAX_LENGTH {
+            return;
+        }
         if !s.is_empty() && self.search_history.first() != Some(&s) {
             self.search_history.insert(0, s.clone());
             if self.search_history.len() > 50 {
@@ -101,6 +155,31 @@ impl FindState {
             }
         }
         self.replace_string = s;
+    }
+
+    /// Seeds the search from the current selection, mirroring VS Code's
+    /// `getSelectionSearchString`.
+    pub fn seed_from_selection(&mut self, buffer: &Buffer, sel: Range) {
+        if sel.start.line != sel.end.line {
+            self.toggle_search_in_selection_with_scope(vec![sel]);
+            return;
+        }
+        let start = buffer.position_to_offset(sel.start);
+        let end = buffer.position_to_offset(sel.end);
+        if start == end {
+            return;
+        }
+        let text = buffer.slice(start..end);
+        if text.len() <= SEARCH_STRING_MAX_LENGTH {
+            self.set_search_string(text);
+        }
+    }
+
+    /// Enables search-in-selection with explicit scope ranges (e.g. from
+    /// a multi-line selection).
+    pub fn toggle_search_in_selection_with_scope(&mut self, scopes: Vec<Range>) {
+        self.options.search_in_selection = true;
+        self.search_scope = Some(scopes);
     }
 
     // ── Toggle helpers ──────────────────────────────────────────────────
@@ -123,6 +202,9 @@ impl FindState {
 
     pub fn toggle_search_in_selection(&mut self) {
         self.options.search_in_selection = !self.options.search_in_selection;
+        if !self.options.search_in_selection {
+            self.search_scope = None;
+        }
     }
 
     // ── Core search operations ──────────────────────────────────────────
@@ -132,6 +214,7 @@ impl FindState {
         if self.search_string.is_empty() {
             self.matches.clear();
             self.active_match_idx = None;
+            self.match_count_overflow = false;
             return;
         }
 
@@ -151,11 +234,12 @@ impl FindState {
             } else {
                 None
             },
-            capture_matches: false,
+            capture_matches: self.options.is_regex,
             limit_result_count: MATCHES_LIMIT,
         };
 
         self.matches = find_matches(buffer, &opts);
+        self.match_count_overflow = self.matches.len() >= MATCHES_LIMIT;
 
         if self.matches.is_empty() {
             self.active_match_idx = None;
@@ -236,7 +320,10 @@ impl FindState {
         let idx = self.active_match_idx?;
         let m = self.matches.get(idx)?;
         let range = m.range;
-        let replacement = self.replacement_text(&m.matches);
+        let captures = m.matches.clone();
+        let matched_text = buffer
+            .slice(buffer.position_to_offset(range.start)..buffer.position_to_offset(range.end));
+        let replacement = self.replacement_text(&matched_text, &captures);
         let start = buffer.position_to_offset(range.start);
         let end = buffer.position_to_offset(range.end);
         buffer.replace(start..end, &replacement);
@@ -249,11 +336,13 @@ impl FindState {
         if self.matches.is_empty() {
             return 0;
         }
-        // Apply replacements in reverse order to preserve earlier offsets.
         let mut count = 0;
         let matches: Vec<_> = self.matches.iter().rev().cloned().collect();
         for m in &matches {
-            let replacement = self.replacement_text(&m.matches);
+            let matched_text = buffer.slice(
+                buffer.position_to_offset(m.range.start)..buffer.position_to_offset(m.range.end),
+            );
+            let replacement = self.replacement_text(&matched_text, &m.matches);
             let start = buffer.position_to_offset(m.range.start);
             let end = buffer.position_to_offset(m.range.end);
             buffer.replace(start..end, &replacement);
@@ -277,11 +366,125 @@ impl FindState {
         (current, total)
     }
 
+    /// Returns a formatted status string like "3 of 42" or "No results" or
+    /// "99999+ of 99999+".
+    #[must_use]
+    pub fn match_count_label(&self) -> String {
+        let (current, total) = self.match_count_display();
+        if total == 0 {
+            if self.search_string.is_empty() {
+                String::new()
+            } else {
+                "No results".to_string()
+            }
+        } else if self.match_count_overflow {
+            format!("{current} of {total}+")
+        } else {
+            format!("{current} of {total}")
+        }
+    }
+
     // ── Internal helpers ────────────────────────────────────────────────
 
-    fn replacement_text(&self, _captures: &[String]) -> String {
-        // TODO: parse replace patterns ($1, $2, \n, case transforms)
-        self.replace_string.clone()
+    /// Builds the replacement text handling:
+    /// - Regex capture group references ($0, $1, ..., $n)
+    /// - Preserve-case transforms
+    fn replacement_text(&self, matched_text: &str, captures: &[String]) -> String {
+        let mut result = self.replace_string.clone();
+
+        if self.options.is_regex && !captures.is_empty() {
+            result = Self::expand_capture_groups(&result, captures);
+        }
+
+        if self.options.preserve_case {
+            result = Self::apply_preserve_case(matched_text, &result);
+        }
+
+        result
+    }
+
+    /// Expands `$0`, `$1` ... `$9` and `${nn}` references in the replacement
+    /// string with captured groups.
+    fn expand_capture_groups(pattern: &str, captures: &[String]) -> String {
+        let mut result = String::with_capacity(pattern.len());
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] == '$' && i + 1 < chars.len() {
+                if chars[i + 1] == '{' {
+                    if let Some(close) = chars[i + 2..].iter().position(|&c| c == '}') {
+                        let num_str: String = chars[i + 2..i + 2 + close].iter().collect();
+                        if let Ok(n) = num_str.parse::<usize>() {
+                            if let Some(cap) = captures.get(n) {
+                                result.push_str(cap);
+                            }
+                            i += 3 + close;
+                            continue;
+                        }
+                    }
+                } else if chars[i + 1].is_ascii_digit() {
+                    let n = (chars[i + 1] as u32 - '0' as u32) as usize;
+                    if let Some(cap) = captures.get(n) {
+                        result.push_str(cap);
+                    }
+                    i += 2;
+                    continue;
+                }
+            }
+            if chars[i] == '\\' && i + 1 < chars.len() {
+                match chars[i + 1] {
+                    'n' => result.push('\n'),
+                    't' => result.push('\t'),
+                    '\\' => result.push('\\'),
+                    other => {
+                        result.push('\\');
+                        result.push(other);
+                    }
+                }
+                i += 2;
+                continue;
+            }
+            result.push(chars[i]);
+            i += 1;
+        }
+        result
+    }
+
+    /// Applies preserve-case heuristics from VS Code:
+    /// - If match is all upper, replacement is uppercased
+    /// - If match is all lower, replacement is lowercased
+    /// - If match starts with upper, replacement's first char is uppercased
+    fn apply_preserve_case(matched: &str, replacement: &str) -> String {
+        if matched.is_empty() || replacement.is_empty() {
+            return replacement.to_string();
+        }
+        let matched_chars: Vec<char> = matched.chars().collect();
+        let all_upper = matched_chars
+            .iter()
+            .all(|c| !c.is_alphabetic() || c.is_uppercase());
+        let all_lower = matched_chars
+            .iter()
+            .all(|c| !c.is_alphabetic() || c.is_lowercase());
+
+        if all_upper && matched_chars.iter().any(|c| c.is_alphabetic()) {
+            return replacement.to_uppercase();
+        }
+        if all_lower && matched_chars.iter().any(|c| c.is_alphabetic()) {
+            return replacement.to_lowercase();
+        }
+        if matched_chars[0].is_uppercase() {
+            let mut chars = replacement.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let mut s: String = first.to_uppercase().collect();
+                    s.extend(chars);
+                    s
+                }
+            }
+        } else {
+            replacement.to_string()
+        }
     }
 }
 
@@ -350,5 +553,77 @@ mod tests {
         state.dismiss();
         assert!(state.matches.is_empty());
         assert!(!state.is_revealed);
+    }
+
+    #[test]
+    fn match_count_label_formatting() {
+        let buf = make_buffer("ab ab ab");
+        let mut state = FindState::default();
+        state.set_search_string("ab".into());
+        state.research(&buf);
+        assert_eq!(state.match_count_label(), "1 of 3");
+
+        state.set_search_string("zzz".into());
+        state.research(&buf);
+        assert_eq!(state.match_count_label(), "No results");
+
+        state.set_search_string(String::new());
+        state.research(&buf);
+        assert!(state.match_count_label().is_empty());
+    }
+
+    #[test]
+    fn preserve_case_all_upper() {
+        let result = FindState::apply_preserve_case("FOO", "bar");
+        assert_eq!(result, "BAR");
+    }
+
+    #[test]
+    fn preserve_case_first_upper() {
+        let result = FindState::apply_preserve_case("Foo", "bar");
+        assert_eq!(result, "Bar");
+    }
+
+    #[test]
+    fn preserve_case_all_lower() {
+        let result = FindState::apply_preserve_case("foo", "BAR");
+        assert_eq!(result, "bar");
+    }
+
+    #[test]
+    fn capture_group_expansion() {
+        let result =
+            FindState::expand_capture_groups("$1-$2", &["full".into(), "a".into(), "b".into()]);
+        assert_eq!(result, "a-b");
+    }
+
+    #[test]
+    fn capture_group_braces() {
+        let result = FindState::expand_capture_groups("${0}!", &["hello".into()]);
+        assert_eq!(result, "hello!");
+    }
+
+    #[test]
+    fn escape_sequences_in_replace() {
+        let result = FindState::expand_capture_groups("a\\nb", &[]);
+        assert_eq!(result, "a\nb");
+    }
+
+    #[test]
+    fn reveal_replace_sets_flags() {
+        let mut state = FindState::default();
+        state.reveal_replace(Some("test"));
+        assert!(state.is_revealed);
+        assert!(state.is_replace_revealed);
+        assert!(state.layout.replace_expanded);
+        assert_eq!(state.search_string, "test");
+    }
+
+    #[test]
+    fn rejects_oversized_search_string() {
+        let mut state = FindState::default();
+        let huge = "x".repeat(SEARCH_STRING_MAX_LENGTH + 1);
+        state.set_search_string(huge);
+        assert!(state.search_string.is_empty());
     }
 }

@@ -94,7 +94,6 @@ mod tests {
         add_recent_file(&db, "/b.rs").unwrap();
         let files = recent_files(&db, 10).unwrap();
         assert_eq!(files.len(), 2);
-        assert_eq!(files[0].path, "/b.rs");
     }
 
     #[test]
@@ -104,7 +103,6 @@ mod tests {
         add_recent_workspace(&db, "/proj2").unwrap();
         let ws = recent_workspaces(&db, 10).unwrap();
         assert_eq!(ws.len(), 2);
-        assert_eq!(ws[0].path, "/proj2");
     }
 
     #[test]

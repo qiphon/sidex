@@ -147,9 +147,7 @@ impl ProductIconTheme {
         self.overrides
             .get(id)
             .cloned()
-            .unwrap_or_else(|| ProductIcon {
-                id: id.to_owned(),
-            })
+            .unwrap_or_else(|| ProductIcon { id: id.to_owned() })
     }
 
     /// Set an override for an icon id.

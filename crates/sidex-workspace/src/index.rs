@@ -253,7 +253,11 @@ impl InvertedIndex {
     }
 
     /// Search for exact word matches.
-    pub fn search_exact(&self, query: &str, options: &IndexSearchOptions) -> Vec<IndexSearchResult> {
+    pub fn search_exact(
+        &self,
+        query: &str,
+        options: &IndexSearchOptions,
+    ) -> Vec<IndexSearchResult> {
         let max_results = options.max_results.unwrap_or(DEFAULT_MAX_RESULTS);
         let mut results = Vec::new();
 
@@ -296,7 +300,11 @@ impl InvertedIndex {
     }
 
     /// Fuzzy search using trigram index.
-    pub fn search_fuzzy(&self, query: &str, options: &IndexSearchOptions) -> Vec<IndexSearchResult> {
+    pub fn search_fuzzy(
+        &self,
+        query: &str,
+        options: &IndexSearchOptions,
+    ) -> Vec<IndexSearchResult> {
         let max_results = options.max_results.unwrap_or(DEFAULT_MAX_RESULTS);
 
         if query.len() < 3 {
@@ -693,7 +701,11 @@ mod tests {
     #[test]
     fn build_and_search_index() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("hello.rs"), "fn main() {\n    println!(\"world\");\n}\n").unwrap();
+        std::fs::write(
+            tmp.path().join("hello.rs"),
+            "fn main() {\n    println!(\"world\");\n}\n",
+        )
+        .unwrap();
 
         let index = InvertedIndex::new(true);
         let stats = build_index(&index, tmp.path(), &IndexOptions::default()).unwrap();

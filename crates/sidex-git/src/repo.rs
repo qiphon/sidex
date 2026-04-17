@@ -42,7 +42,11 @@ pub fn current_branch(repo_root: &Path) -> GitResult<String> {
 /// List remote names (e.g. `["origin"]`).
 pub fn remotes(repo_root: &Path) -> GitResult<Vec<String>> {
     let output = run_git(repo_root, &["remote"])?;
-    Ok(output.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    Ok(output
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
 }
 
 #[cfg(test)]

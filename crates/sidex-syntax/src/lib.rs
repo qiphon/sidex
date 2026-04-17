@@ -28,18 +28,38 @@ pub mod indent;
 pub mod language;
 pub mod parser;
 pub mod scope;
+pub mod scope_resolver;
 pub mod semantic_tokens;
 pub mod textmate;
+pub mod tree_sitter_parser;
 
 pub use bracket::find_matching_bracket;
 pub use folding::{compute_folding_ranges, FoldingKind, FoldingRange};
-pub use highlight::{Highlight, HighlightConfig, HighlightError, HighlightEvent, Highlighter};
+pub use highlight::{
+    Highlight, HighlightConfig, HighlightError, HighlightEvent, HighlightToken, HighlightedLine,
+    Highlighter, SyntaxHighlighter, TokenModifiers, TokenScope,
+};
 pub use indent::{compute_indent, default_indent_rules, IndentAction, IndentRule};
-pub use language::{Language, LanguageRegistry};
+pub use language::{
+    builtin_language_configs, builtin_language_configurations, AutoClosingPair, CommentConfig,
+    EnterAction, FoldingConfig, FoldingMarkers, IndentRules, Language, LanguageConfig,
+    LanguageConfiguration, LanguageRegistry, OnEnterRuleConfig,
+};
 pub use parser::{to_input_edit, DocumentParser};
 pub use scope::{resolve_highlight_name, HighlightName};
+pub use scope_resolver::{resolve_scope, FontStyle, TextStyle, TokenColorRule};
 pub use semantic_tokens::{
-    decode_semantic_tokens, encode_semantic_tokens, merge_semantic_tokens, SemanticToken,
-    SemanticTokenLegend, StyledSpan,
+    apply_semantic_token_delta, decode_semantic_tokens, encode_semantic_tokens,
+    merge_highlights, merge_semantic_tokens, semantic_type_to_scope,
+    standard_semantic_token_legend, SemanticToken, SemanticTokenEdit, SemanticTokenLegend,
+    SemanticTokensDelta, SemanticTokensManager, StyledSpan, STANDARD_TOKEN_MODIFIERS,
+    STANDARD_TOKEN_TYPES,
 };
-pub use textmate::{TextMateGrammar, TextMateTokenizer, TokenInfo, TokenizerState};
+pub use textmate::{
+    RuleStack, TextMateGrammar, TextMateTokenizer, Token, TokenInfo, TokenizeResult,
+    TokenizerState,
+};
+pub use tree_sitter_parser::{
+    get_fold_ranges, get_indent_hints, get_injections, get_local_bindings, InjectionRange,
+    LocalBinding, TreeSitterError, TreeSitterManager, TreeSitterParserState, TreeSitterQueries,
+};

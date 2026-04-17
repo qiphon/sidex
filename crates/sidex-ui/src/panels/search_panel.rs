@@ -1,5 +1,8 @@
-//! Workspace-wide search panel with regex, case, and word match toggles.
+//! Workspace-wide search panel with regex, case, and word match toggles,
+//! results streaming, replace preview, collapse/expand all, search history,
+//! context lines, progress indicator, and individual result dismissal.
 
+use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 
 use sidex_gpu::color::Color;
@@ -16,6 +19,7 @@ pub struct SearchOptions {
     pub regex: bool,
     pub case_sensitive: bool,
     pub whole_word: bool,
+    pub include_ignored: bool,
 }
 
 // ── Search result model ──────────────────────────────────────────────────────
@@ -27,9 +31,18 @@ pub struct SearchMatch {
     pub column: u32,
     pub length: u32,
     pub line_text: String,
+    pub match_start: u32,
+    pub match_end: u32,
     pub preview_before: String,
     pub preview_match: String,
     pub preview_after: String,
+}
+
+/// A context line shown around a search match.
+#[derive(Clone, Debug)]
+pub struct SearchContextLine {
+    pub line_number: u32,
+    pub text: String,
 }
 
 /// All matches within a single file.
@@ -56,12 +69,68 @@ pub struct SearchGlobs {
     pub show_globs: bool,
 }
 
+impl SearchGlobs {
+    /// Parse the include pattern into individual glob strings.
+    pub fn include_patterns(&self) -> Vec<String> {
+        parse_glob_string(&self.include)
+    }
+
+    /// Parse the exclude pattern into individual glob strings.
+    pub fn exclude_patterns(&self) -> Vec<String> {
+        parse_glob_string(&self.exclude)
+    }
+}
+
+fn parse_glob_string(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+// ── Search progress ──────────────────────────────────────────────────────────
+
+/// Progress information during an active search.
+#[derive(Clone, Debug, Default)]
+pub struct SearchProgressInfo {
+    pub files_searched: u32,
+    pub total_files: u32,
+    pub matches_found: u32,
+}
+
+impl SearchProgressInfo {
+    /// Returns a fraction 0.0..=1.0 representing search progress.
+    #[must_use]
+    pub fn fraction(&self) -> f32 {
+        if self.total_files == 0 {
+            0.0
+        } else {
+            (self.files_searched as f32 / self.total_files as f32).min(1.0)
+        }
+    }
+
+    /// Returns a formatted progress string.
+    #[must_use]
+    pub fn label(&self) -> String {
+        if self.total_files == 0 {
+            "Searching...".to_string()
+        } else {
+            format!(
+                "Searched {}/{} files ({} matches)",
+                self.files_searched, self.total_files, self.matches_found
+            )
+        }
+    }
+}
+
 // ── Search panel ─────────────────────────────────────────────────────────────
 
 /// The Search sidebar panel.
 ///
 /// Provides workspace-wide text search with regex/case/word toggles,
-/// replace mode, results grouped by file, and include/exclude glob patterns.
+/// replace mode, results grouped by file, include/exclude glob patterns,
+/// context lines, progress indicator, and individual result dismissal.
 #[allow(dead_code)]
 pub struct SearchPanel<OnSearch, OnReplace>
 where
@@ -76,6 +145,26 @@ where
     pub replace_mode: bool,
     pub on_search: OnSearch,
     pub on_replace: OnReplace,
+
+    // Streaming
+    stream_state: SearchStreamState,
+
+    // Progress
+    progress: SearchProgressInfo,
+
+    // History
+    history: SearchHistory,
+
+    // Replace previews
+    replace_previews: Vec<ReplacePreview>,
+    show_replace_preview: bool,
+
+    // Dismissed files and individual matches
+    dismissed_files: HashSet<PathBuf>,
+    dismissed_matches: HashSet<(PathBuf, u32, u32)>,
+
+    // Context lines
+    context_lines: usize,
 
     selected_file: Option<usize>,
     selected_match: Option<(usize, usize)>,
@@ -102,6 +191,12 @@ where
     badge_bg: Color,
     badge_fg: Color,
     foreground: Color,
+    replace_add_bg: Color,
+    replace_remove_bg: Color,
+    streaming_indicator: Color,
+    dismiss_fg: Color,
+    progress_bar_bg: Color,
+    progress_bar_fg: Color,
 }
 
 /// Which input field is focused in the search panel.
@@ -119,7 +214,130 @@ pub enum SearchField {
 pub enum ReplaceScope {
     All,
     File(PathBuf),
-    Single { file: PathBuf, line: u32, column: u32 },
+    Single {
+        file: PathBuf,
+        line: u32,
+        column: u32,
+    },
+}
+
+// ── Search history ───────────────────────────────────────────────────────────
+
+/// Maintains recent search and replace history.
+#[derive(Clone, Debug)]
+pub struct SearchHistory {
+    pub search_entries: VecDeque<String>,
+    pub replace_entries: VecDeque<String>,
+    pub max_entries: usize,
+    current_search_index: Option<usize>,
+    current_replace_index: Option<usize>,
+}
+
+impl Default for SearchHistory {
+    fn default() -> Self {
+        Self {
+            search_entries: VecDeque::new(),
+            replace_entries: VecDeque::new(),
+            max_entries: 50,
+            current_search_index: None,
+            current_replace_index: None,
+        }
+    }
+}
+
+impl SearchHistory {
+    pub fn push_search(&mut self, query: &str) {
+        if query.is_empty() {
+            return;
+        }
+        let q = query.to_string();
+        self.search_entries.retain(|e| *e != q);
+        self.search_entries.push_front(q);
+        if self.search_entries.len() > self.max_entries {
+            self.search_entries.pop_back();
+        }
+        self.current_search_index = None;
+    }
+
+    pub fn push_replace(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let t = text.to_string();
+        self.replace_entries.retain(|e| *e != t);
+        self.replace_entries.push_front(t);
+        if self.replace_entries.len() > self.max_entries {
+            self.replace_entries.pop_back();
+        }
+        self.current_replace_index = None;
+    }
+
+    pub fn prev_search(&mut self) -> Option<&str> {
+        if self.search_entries.is_empty() {
+            return None;
+        }
+        let idx = match self.current_search_index {
+            Some(i) => (i + 1).min(self.search_entries.len() - 1),
+            None => 0,
+        };
+        self.current_search_index = Some(idx);
+        self.search_entries.get(idx).map(String::as_str)
+    }
+
+    pub fn next_search(&mut self) -> Option<&str> {
+        let idx = self.current_search_index?.checked_sub(1)?;
+        self.current_search_index = Some(idx);
+        self.search_entries.get(idx).map(String::as_str)
+    }
+
+    pub fn prev_replace(&mut self) -> Option<&str> {
+        if self.replace_entries.is_empty() {
+            return None;
+        }
+        let idx = match self.current_replace_index {
+            Some(i) => (i + 1).min(self.replace_entries.len() - 1),
+            None => 0,
+        };
+        self.current_replace_index = Some(idx);
+        self.replace_entries.get(idx).map(String::as_str)
+    }
+
+    pub fn next_replace(&mut self) -> Option<&str> {
+        let idx = self.current_replace_index?.checked_sub(1)?;
+        self.current_replace_index = Some(idx);
+        self.replace_entries.get(idx).map(String::as_str)
+    }
+}
+
+// ── Streaming state ──────────────────────────────────────────────────────────
+
+/// State of the search result streaming.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SearchStreamState {
+    #[default]
+    Idle,
+    Streaming,
+    Completed,
+    Cancelled,
+}
+
+// ── Replace preview ──────────────────────────────────────────────────────────
+
+/// A preview of what a replace operation would change.
+#[derive(Clone, Debug)]
+pub struct ReplacePreview {
+    pub original_line: String,
+    pub replaced_line: String,
+    pub match_range: (u32, u32),
+}
+
+/// Whether file-level results are preserved or dismissed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileResultAction {
+    Replace,
+    Dismiss,
+    Expand,
+    Collapse,
 }
 
 impl<OnSearch, OnReplace> SearchPanel<OnSearch, OnReplace>
@@ -137,6 +355,15 @@ where
             replace_mode: false,
             on_search,
             on_replace,
+
+            stream_state: SearchStreamState::Idle,
+            progress: SearchProgressInfo::default(),
+            history: SearchHistory::default(),
+            replace_previews: Vec::new(),
+            show_replace_preview: false,
+            dismissed_files: HashSet::new(),
+            dismissed_matches: HashSet::new(),
+            context_lines: 0,
 
             selected_file: None,
             selected_match: None,
@@ -163,6 +390,12 @@ where
             badge_bg: Color::from_hex("#4d4d4d").unwrap_or(Color::BLACK),
             badge_fg: Color::WHITE,
             foreground: Color::from_hex("#cccccc").unwrap_or(Color::WHITE),
+            replace_add_bg: Color::from_hex("#9bb95533").unwrap_or(Color::BLACK),
+            replace_remove_bg: Color::from_hex("#ff000033").unwrap_or(Color::BLACK),
+            streaming_indicator: Color::from_hex("#007fd4").unwrap_or(Color::WHITE),
+            dismiss_fg: Color::from_hex("#969696").unwrap_or(Color::WHITE),
+            progress_bar_bg: Color::from_hex("#3c3c3c").unwrap_or(Color::BLACK),
+            progress_bar_fg: Color::from_hex("#007fd4").unwrap_or(Color::WHITE),
         }
     }
 
@@ -197,7 +430,11 @@ where
 
     pub fn replace_all(&mut self) {
         if !self.query.is_empty() {
-            (self.on_replace)(ReplaceScope::All, &self.query.clone(), &self.replace_text.clone());
+            (self.on_replace)(
+                ReplaceScope::All,
+                &self.query.clone(),
+                &self.replace_text.clone(),
+            );
         }
     }
 
@@ -210,6 +447,214 @@ where
         }
     }
 
+    // ── Streaming results ────────────────────────────────────────────────
+
+    pub fn begin_streaming(&mut self) {
+        self.stream_state = SearchStreamState::Streaming;
+        self.results.clear();
+        self.total_match_count = 0;
+        self.total_file_count = 0;
+    }
+
+    pub fn append_streaming_result(&mut self, result: FileSearchResult) {
+        self.total_match_count += result.matches.len() as u32;
+        self.total_file_count += 1;
+        self.results.push(result);
+    }
+
+    pub fn finish_streaming(&mut self) {
+        self.stream_state = SearchStreamState::Completed;
+    }
+
+    pub fn cancel_streaming(&mut self) {
+        self.stream_state = SearchStreamState::Cancelled;
+    }
+
+    pub fn stream_state(&self) -> SearchStreamState {
+        self.stream_state
+    }
+
+    pub fn is_streaming(&self) -> bool {
+        self.stream_state == SearchStreamState::Streaming
+    }
+
+    // ── Collapse / expand all ────────────────────────────────────────────
+
+    pub fn collapse_all(&mut self) {
+        for file in &mut self.results {
+            file.expanded = false;
+        }
+    }
+
+    pub fn expand_all(&mut self) {
+        for file in &mut self.results {
+            file.expanded = true;
+        }
+    }
+
+    pub fn all_collapsed(&self) -> bool {
+        self.results.iter().all(|f| !f.expanded)
+    }
+
+    pub fn all_expanded(&self) -> bool {
+        self.results.iter().all(|f| f.expanded)
+    }
+
+    // ── File-level actions ───────────────────────────────────────────────
+
+    pub fn dismiss_file(&mut self, index: usize) {
+        if let Some(file) = self.results.get(index) {
+            self.dismissed_files.insert(file.path.clone());
+        }
+        self.results
+            .retain(|f| !self.dismissed_files.contains(&f.path));
+        self.total_file_count = self.results.len() as u32;
+        self.total_match_count = self.results.iter().map(|f| f.matches.len() as u32).sum();
+    }
+
+    pub fn undismiss_all(&mut self) {
+        self.dismissed_files.clear();
+        self.dismissed_matches.clear();
+    }
+
+    /// Dismiss an individual match within a file.
+    pub fn dismiss_match(&mut self, file_index: usize, match_index: usize) {
+        if let Some(file) = self.results.get_mut(file_index) {
+            if let Some(m) = file.matches.get(match_index) {
+                self.dismissed_matches
+                    .insert((file.path.clone(), m.line_number, m.match_start));
+            }
+            file.matches.retain(|m| {
+                !self.dismissed_matches
+                    .contains(&(file.path.clone(), m.line_number, m.match_start))
+            });
+            if file.matches.is_empty() {
+                self.dismissed_files.insert(file.path.clone());
+                self.results
+                    .retain(|f| !self.dismissed_files.contains(&f.path));
+            }
+        }
+        self.recount_totals();
+    }
+
+    fn recount_totals(&mut self) {
+        self.total_file_count = self.results.len() as u32;
+        self.total_match_count = self.results.iter().map(|f| f.matches.len() as u32).sum();
+    }
+
+    // ── Context lines ─────────────────────────────────────────────────────
+
+    /// Set the number of context lines to show before/after each match.
+    pub fn set_context_lines(&mut self, n: usize) {
+        self.context_lines = n;
+    }
+
+    /// Returns the current context lines setting.
+    pub fn context_lines(&self) -> usize {
+        self.context_lines
+    }
+
+    // ── Progress ──────────────────────────────────────────────────────────
+
+    /// Update progress information during an active search.
+    pub fn set_progress(&mut self, progress: SearchProgressInfo) {
+        self.progress = progress;
+    }
+
+    /// Returns the current search progress.
+    pub fn progress(&self) -> &SearchProgressInfo {
+        &self.progress
+    }
+
+    /// Returns true if a search is currently in progress.
+    pub fn is_searching(&self) -> bool {
+        self.stream_state == SearchStreamState::Streaming
+    }
+
+    /// Returns the include/exclude glob patterns.
+    pub fn include_pattern(&self) -> &str {
+        &self.globs.include
+    }
+
+    /// Returns the exclude pattern.
+    pub fn exclude_pattern(&self) -> &str {
+        &self.globs.exclude
+    }
+
+    /// Set the include glob pattern.
+    pub fn set_include_pattern(&mut self, pattern: String) {
+        self.globs.include = pattern;
+    }
+
+    /// Set the exclude glob pattern.
+    pub fn set_exclude_pattern(&mut self, pattern: String) {
+        self.globs.exclude = pattern;
+    }
+
+    /// Replace a single match at a specific file/line/column.
+    pub fn replace_single(&mut self, file_index: usize, match_index: usize) {
+        if let Some(file) = self.results.get(file_index) {
+            if let Some(m) = file.matches.get(match_index) {
+                let path = file.path.clone();
+                let q = self.query.clone();
+                let r = self.replace_text.clone();
+                (self.on_replace)(
+                    ReplaceScope::Single {
+                        file: path,
+                        line: m.line_number,
+                        column: m.match_start,
+                    },
+                    &q,
+                    &r,
+                );
+            }
+        }
+    }
+
+    // ── Replace preview ──────────────────────────────────────────────────
+
+    pub fn toggle_replace_preview(&mut self) {
+        self.show_replace_preview = !self.show_replace_preview;
+    }
+
+    pub fn set_replace_previews(&mut self, previews: Vec<ReplacePreview>) {
+        self.replace_previews = previews;
+    }
+
+    pub fn showing_replace_preview(&self) -> bool {
+        self.show_replace_preview
+    }
+
+    // ── Search history ───────────────────────────────────────────────────
+
+    pub fn history(&self) -> &SearchHistory {
+        &self.history
+    }
+
+    pub fn history_prev_search(&mut self) {
+        if let Some(q) = self.history.prev_search().map(str::to_string) {
+            self.query = q;
+        }
+    }
+
+    pub fn history_next_search(&mut self) {
+        if let Some(q) = self.history.next_search().map(str::to_string) {
+            self.query = q;
+        }
+    }
+
+    pub fn history_prev_replace(&mut self) {
+        if let Some(r) = self.history.prev_replace().map(str::to_string) {
+            self.replace_text = r;
+        }
+    }
+
+    pub fn history_next_replace(&mut self) {
+        if let Some(r) = self.history.next_replace().map(str::to_string) {
+            self.replace_text = r;
+        }
+    }
+
     pub fn result_count_label(&self) -> String {
         format!(
             "{} results in {} files",
@@ -219,6 +664,7 @@ where
 
     fn trigger_search(&mut self) {
         if !self.query.is_empty() {
+            self.history.push_search(&self.query);
             let q = self.query.clone();
             let opts = self.options.clone();
             let globs = self.globs.clone();
@@ -261,7 +707,14 @@ where
     #[allow(clippy::cast_precision_loss)]
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let mut rr = sidex_gpu::RectRenderer::new();
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
 
         let mut y = rect.y + 8.0;
         let input_x = rect.x + 8.0;
@@ -279,7 +732,11 @@ where
         // Toggle buttons (regex, case, word)
         let toggle_y = y + (self.input_height - self.toggle_size) / 2.0;
         let mut tx = input_x + input_w + 4.0;
-        for active in [self.options.regex, self.options.case_sensitive, self.options.whole_word] {
+        for active in [
+            self.options.regex,
+            self.options.case_sensitive,
+            self.options.whole_word,
+        ] {
             let bg = if active {
                 self.toggle_active_bg
             } else {
@@ -297,8 +754,22 @@ where
             } else {
                 self.input_border
             };
-            rr.draw_rect(input_x, y, input_w + (self.toggle_size + 2.0) * 3.0, self.input_height, self.input_bg, 2.0);
-            rr.draw_border(input_x, y, input_w + (self.toggle_size + 2.0) * 3.0, self.input_height, rborder, 1.0);
+            rr.draw_rect(
+                input_x,
+                y,
+                input_w + (self.toggle_size + 2.0) * 3.0,
+                self.input_height,
+                self.input_bg,
+                2.0,
+            );
+            rr.draw_border(
+                input_x,
+                y,
+                input_w + (self.toggle_size + 2.0) * 3.0,
+                self.input_height,
+                rborder,
+                1.0,
+            );
             y += self.input_height + 4.0;
         }
 
@@ -318,7 +789,7 @@ where
         }
 
         // Result count badge
-        if self.total_match_count > 0 {
+        if self.total_match_count > 0 || self.is_searching() {
             let badge_w = 60.0;
             rr.draw_rect(
                 rect.x + rect.width - badge_w - 8.0,
@@ -331,6 +802,15 @@ where
         }
         y += self.row_height;
 
+        // Progress bar when searching
+        if self.is_searching() {
+            let bar_h = 2.0;
+            rr.draw_rect(rect.x, y, rect.width, bar_h, self.progress_bar_bg, 0.0);
+            let fill_w = rect.width * self.progress.fraction();
+            rr.draw_rect(rect.x, y, fill_w, bar_h, self.progress_bar_fg, 0.0);
+            y += bar_h + 2.0;
+        }
+
         // Results tree
         for (fi, file) in self.results.iter().enumerate() {
             if y > rect.y + rect.height {
@@ -339,9 +819,23 @@ where
             // File header
             let is_sel_file = self.selected_file == Some(fi);
             if is_sel_file {
-                rr.draw_rect(rect.x, y, rect.width, self.row_height, self.selected_bg, 0.0);
+                rr.draw_rect(
+                    rect.x,
+                    y,
+                    rect.width,
+                    self.row_height,
+                    self.selected_bg,
+                    0.0,
+                );
             }
-            rr.draw_rect(rect.x, y, rect.width, self.row_height, self.file_row_bg, 0.0);
+            rr.draw_rect(
+                rect.x,
+                y,
+                rect.width,
+                self.row_height,
+                self.file_row_bg,
+                0.0,
+            );
 
             // Match count badge per file
             let mc = file.match_count();
@@ -442,11 +936,15 @@ where
                 self.scroll_offset = (self.scroll_offset - dy * 40.0).clamp(0.0, max);
                 EventResult::Handled
             }
-            UiEvent::KeyPress { key: Key::Enter, .. } if self.focused => {
+            UiEvent::KeyPress {
+                key: Key::Enter, ..
+            } if self.focused => {
                 self.trigger_search();
                 EventResult::Handled
             }
-            UiEvent::KeyPress { key: Key::Escape, .. } if self.focused => {
+            UiEvent::KeyPress {
+                key: Key::Escape, ..
+            } if self.focused => {
                 self.query.clear();
                 self.results.clear();
                 self.total_match_count = 0;

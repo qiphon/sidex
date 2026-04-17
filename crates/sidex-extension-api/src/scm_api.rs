@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::RwLock;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -145,14 +145,8 @@ impl ScmApi {
     pub fn handle(&self, action: &str, params: &Value) -> Result<Value> {
         match action {
             "createSourceControl" => {
-                let id = params
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let label = params
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let id = params.get("id").and_then(Value::as_str).unwrap_or("");
+                let label = params.get("label").and_then(Value::as_str).unwrap_or("");
                 let root_uri = params
                     .get("rootUri")
                     .and_then(Value::as_str)
@@ -166,14 +160,8 @@ impl ScmApi {
                     .and_then(Value::as_u64)
                     .map(|n| SourceControlId(u32::try_from(n).unwrap_or(0)))
                     .ok_or_else(|| anyhow::anyhow!("missing sourceControlId"))?;
-                let group_id = params
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let label = params
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let group_id = params.get("id").and_then(Value::as_str).unwrap_or("");
+                let label = params.get("label").and_then(Value::as_str).unwrap_or("");
                 let rg_id = self.create_resource_group(sc_id, group_id, label)?;
                 Ok(serde_json::to_value(rg_id)?)
             }
@@ -201,10 +189,7 @@ impl ScmApi {
                     .and_then(Value::as_u64)
                     .map(|n| SourceControlId(u32::try_from(n).unwrap_or(0)))
                     .ok_or_else(|| anyhow::anyhow!("missing sourceControlId"))?;
-                let value = params
-                    .get("value")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let value = params.get("value").and_then(Value::as_str).unwrap_or("");
                 let placeholder = params
                     .get("placeholder")
                     .and_then(Value::as_str)
@@ -232,10 +217,7 @@ impl ScmApi {
                     .and_then(Value::as_u64)
                     .map(|n| SourceControlId(u32::try_from(n).unwrap_or(0)))
                     .ok_or_else(|| anyhow::anyhow!("missing sourceControlId"))?;
-                let template = params
-                    .get("template")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let template = params.get("template").and_then(Value::as_str).unwrap_or("");
                 self.set_commit_template(sc_id, template)?;
                 Ok(Value::Bool(true))
             }
@@ -265,9 +247,7 @@ impl ScmApi {
     ) -> SourceControlId {
         let raw = self.next_id.fetch_add(1, Ordering::Relaxed);
         let id = SourceControlId(raw);
-        log::debug!(
-            "[ext] createSourceControl({provider_id}, {label}) -> {raw}"
-        );
+        log::debug!("[ext] createSourceControl({provider_id}, {label}) -> {raw}");
         self.source_controls
             .write()
             .expect("scm lock poisoned")
@@ -301,19 +281,14 @@ impl ScmApi {
         group_id: &str,
         label: &str,
     ) -> Result<ResourceGroupId> {
-        let mut controls = self
-            .source_controls
-            .write()
-            .expect("scm lock poisoned");
+        let mut controls = self.source_controls.write().expect("scm lock poisoned");
         let sc = controls
             .get_mut(&sc_id)
             .ok_or_else(|| anyhow::anyhow!("source control {} not found", sc_id.0))?;
 
         let raw = sc.next_group.fetch_add(1, Ordering::Relaxed);
         let rg_id = ResourceGroupId(raw);
-        log::debug!(
-            "[ext] createResourceGroup({group_id}, {label}) -> {raw}"
-        );
+        log::debug!("[ext] createResourceGroup({group_id}, {label}) -> {raw}");
         sc.resource_groups.insert(
             rg_id,
             ResourceGroupEntry {
@@ -334,10 +309,7 @@ impl ScmApi {
         rg_id: ResourceGroupId,
         states: Vec<SourceControlResourceState>,
     ) -> Result<()> {
-        let mut controls = self
-            .source_controls
-            .write()
-            .expect("scm lock poisoned");
+        let mut controls = self.source_controls.write().expect("scm lock poisoned");
         let sc = controls
             .get_mut(&sc_id)
             .ok_or_else(|| anyhow::anyhow!("source control {} not found", sc_id.0))?;
@@ -356,10 +328,7 @@ impl ScmApi {
         value: &str,
         placeholder: Option<&str>,
     ) -> Result<()> {
-        let mut controls = self
-            .source_controls
-            .write()
-            .expect("scm lock poisoned");
+        let mut controls = self.source_controls.write().expect("scm lock poisoned");
         let sc = controls
             .get_mut(&sc_id)
             .ok_or_else(|| anyhow::anyhow!("source control {} not found", sc_id.0))?;
@@ -372,10 +341,7 @@ impl ScmApi {
 
     /// Sets the badge count for a source control.
     pub fn set_count(&self, sc_id: SourceControlId, count: u32) -> Result<()> {
-        let mut controls = self
-            .source_controls
-            .write()
-            .expect("scm lock poisoned");
+        let mut controls = self.source_controls.write().expect("scm lock poisoned");
         let sc = controls
             .get_mut(&sc_id)
             .ok_or_else(|| anyhow::anyhow!("source control {} not found", sc_id.0))?;
@@ -384,15 +350,8 @@ impl ScmApi {
     }
 
     /// Sets the commit template for a source control.
-    pub fn set_commit_template(
-        &self,
-        sc_id: SourceControlId,
-        template: &str,
-    ) -> Result<()> {
-        let mut controls = self
-            .source_controls
-            .write()
-            .expect("scm lock poisoned");
+    pub fn set_commit_template(&self, sc_id: SourceControlId, template: &str) -> Result<()> {
+        let mut controls = self.source_controls.write().expect("scm lock poisoned");
         let sc = controls
             .get_mut(&sc_id)
             .ok_or_else(|| anyhow::anyhow!("source control {} not found", sc_id.0))?;

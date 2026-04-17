@@ -1,285 +1,294 @@
-//! Terminal instance manager.
-//!
-//! Manages multiple terminal instances, each combining a PTY process
-//! with a terminal emulator. Provides creation, lookup, resize, output
-//! streaming, and removal with proper process-tree cleanup.
+//! Terminal instance manager — profiles, split groups, focus navigation,
+//! and process-tree cleanup.
 
 use crate::emulator::TerminalEmulator;
 use crate::grid::TerminalGrid;
 use crate::pty::{PtyError, PtyProcess, PtySpawnConfig, ReadResult, TermHandle, TermInfo, TerminalSize};
+use crate::shell;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
-/// Unique identifier for a terminal instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TerminalId(pub u32);
 
 impl From<TermHandle> for TerminalId {
-    fn from(h: TermHandle) -> Self {
-        Self(h.0)
-    }
+    fn from(h: TermHandle) -> Self { Self(h.0) }
 }
-
 impl From<TerminalId> for TermHandle {
-    fn from(id: TerminalId) -> Self {
-        Self(id.0)
-    }
+    fn from(id: TerminalId) -> Self { Self(id.0) }
 }
 
-/// Errors from the terminal manager.
 #[derive(Debug, Error)]
 pub enum ManagerError {
     #[error("terminal not found: {0:?}")]
     NotFound(TerminalId),
     #[error("PTY error: {0}")]
     Pty(#[from] PtyError),
+    #[error("profile not found: {0}")]
+    ProfileNotFound(String),
     #[error("lock poisoned")]
     LockPoisoned,
 }
-
 type ManagerResult<T> = Result<T, ManagerError>;
 
-/// Events emitted by terminal instances.
-#[derive(Debug, Clone)]
-pub enum TerminalEvent {
-    /// New data available from the terminal.
+#[derive(Debug, Clone)]pub enum TerminalEvent {
     Data { id: TerminalId, text: String },
-    /// Terminal process exited.
     Exit { id: TerminalId, exit_code: i32 },
-    /// Terminal started.
-    Started {
-        id: TerminalId,
-        shell: String,
-        pid: u32,
-        cwd: String,
-    },
+    Started { id: TerminalId, shell: String, pid: u32, cwd: String },
 }
 
-/// A single terminal instance: PTY process + terminal emulator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TerminalState { Running, Exited(i32), Disconnected }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TerminalProfile {
+    pub name: String,
+    pub shell_path: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    pub icon: String,
+    pub color: Option<String>,
+}
+
 pub struct TerminalInstance {
     pub pty: PtyProcess,
     pub emulator: TerminalEmulator,
+    pub id: u32,
+    pub name: String,
     pub shell: String,
+    pub pid: u32,
+    pub state: TerminalState,
     pub cwd: PathBuf,
+    pub profile: TerminalProfile,
     pub size: TerminalSize,
     handle: TermHandle,
 }
 
 impl TerminalInstance {
-    /// Returns the handle for this instance.
-    pub fn handle(&self) -> TermHandle {
-        self.handle
-    }
+    pub fn handle(&self) -> TermHandle { self.handle }
+    pub fn info(&self) -> TermInfo { self.pty.info(self.handle) }
+}
 
-    /// Returns a `TermInfo` snapshot.
-    pub fn info(&self) -> TermInfo {
-        self.pty.info(self.handle)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SplitOrientation { Horizontal, Vertical }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SplitGroup {
+    pub terminals: Vec<u32>,
+    pub orientation: SplitOrientation,
+    pub ratios: Vec<f32>,
+}
+
+impl SplitGroup {
+    fn new(first: u32) -> Self {
+        Self { terminals: vec![first], orientation: SplitOrientation::Horizontal, ratios: vec![1.0] }
+    }
+    fn add(&mut self, id: u32) { self.terminals.push(id); self.rebalance(); }
+    fn remove(&mut self, id: u32) {
+        if let Some(pos) = self.terminals.iter().position(|&t| t == id) {
+            self.terminals.remove(pos); self.rebalance();
+        }
+    }
+    fn rebalance(&mut self) {
+        let n = self.terminals.len().max(1) as f32;
+        self.ratios = vec![1.0 / n; self.terminals.len()];
     }
 }
 
-/// Manages a collection of terminal instances.
+/// Detect available terminal profiles from installed shells.
+pub fn detect_profiles() -> Vec<TerminalProfile> {
+    shell::available_shells().into_iter().map(|s| {
+        let icon = match s.name.as_str() {
+            "zsh" => "terminal-zsh", "bash" => "terminal-bash", "fish" => "terminal-fish",
+            n if n.contains("owerShell") || n.contains("owershell") => "terminal-powershell",
+            n if n.contains("cmd") || n.contains("Command") => "terminal-cmd",
+            _ => "terminal",
+        };
+        TerminalProfile {
+            name: s.name, shell_path: s.path, args: s.args,
+            env: HashMap::new(), icon: icon.to_string(), color: None,
+        }
+    }).collect()
+}
+
+fn default_profile() -> TerminalProfile {
+    let ds = shell::detect_default_shell();
+    let base = Path::new(&ds).file_name().and_then(|n| n.to_str()).unwrap_or("sh").to_string();
+    detect_profiles().into_iter()
+        .find(|p| p.shell_path == ds || p.name == base)
+        .unwrap_or(TerminalProfile {
+            name: base, shell_path: ds, args: vec![],
+            env: HashMap::new(), icon: "terminal".to_string(), color: None,
+        })
+}
+
+fn lock<T>(m: &Mutex<T>) -> ManagerResult<std::sync::MutexGuard<'_, T>> {
+    m.lock().map_err(|_| ManagerError::LockPoisoned)
+}
+
 pub struct TerminalManager {
     terminals: HashMap<TerminalId, Arc<Mutex<TerminalInstance>>>,
+    order: Vec<TerminalId>,
+    active_instance: Option<TerminalId>,
+    split_groups: Vec<SplitGroup>,
     default_size: TerminalSize,
     event_tx: Option<crossbeam::channel::Sender<TerminalEvent>>,
 }
 
 impl TerminalManager {
-    /// Creates a new, empty terminal manager.
     pub fn new() -> Self {
         Self {
-            terminals: HashMap::new(),
-            default_size: TerminalSize::default(),
-            event_tx: None,
+            terminals: HashMap::new(), order: Vec::new(), active_instance: None,
+            split_groups: Vec::new(), default_size: TerminalSize::default(), event_tx: None,
         }
     }
 
-    /// Creates a manager with a custom default terminal size.
     pub fn with_default_size(size: TerminalSize) -> Self {
-        Self {
-            terminals: HashMap::new(),
-            default_size: size,
-            event_tx: None,
-        }
+        Self { default_size: size, ..Self::new() }
     }
 
-    /// Sets up an event channel. Returns the receiver.
-    pub fn set_event_channel(
-        &mut self,
-    ) -> crossbeam::channel::Receiver<TerminalEvent> {
+    pub fn set_event_channel(&mut self) -> crossbeam::channel::Receiver<TerminalEvent> {
         let (tx, rx) = crossbeam::channel::unbounded();
         self.event_tx = Some(tx);
         rx
     }
 
-    /// Creates a new terminal instance with full config and returns its ID.
-    pub fn create_with_config(
-        &mut self,
-        config: &PtySpawnConfig,
-    ) -> ManagerResult<TerminalId> {
-        let size = config.size;
-        let mut pty = PtyProcess::spawn(config)?;
+    fn get_inst(&self, id: TerminalId) -> ManagerResult<&Arc<Mutex<TerminalInstance>>> {
+        self.terminals.get(&id).ok_or(ManagerError::NotFound(id))
+    }
 
-        let grid = TerminalGrid::new(size.rows, size.cols);
-        let emulator = TerminalEmulator::new(grid);
-
+    fn spawn_instance(&mut self, profile: &TerminalProfile, cwd: Option<&Path>, size: TerminalSize) -> ManagerResult<TerminalId> {
+        let config = PtySpawnConfig {
+            shell: Some(profile.shell_path.clone()),
+            args: if profile.args.is_empty() { None } else { Some(profile.args.clone()) },
+            cwd: cwd.map(Path::to_path_buf), env: profile.env.clone(), size,
+        };
+        let mut pty = PtyProcess::spawn(&config)?;
         let handle = TermHandle::next();
         let id = TerminalId::from(handle);
-
-        let shell = pty.shell().to_string();
-        let cwd = pty.cwd().to_path_buf();
         let pid = pty.pid().unwrap_or(0);
-
-        // Wire up output -> emulator feeding if no event channel is set,
-        // or use the event channel for external consumers.
+        let cwd_path = pty.cwd().to_path_buf();
+        let shell_str = pty.shell().to_string();
         if let Some(ref tx) = self.event_tx {
-            let tx_output = tx.clone();
-            let tx_start = tx.clone();
-            let term_id = id;
+            let tx_c = tx.clone();
+            let tid = id;
             pty.on_output(move |data| {
-                let text = String::from_utf8_lossy(data).to_string();
-                let _ = tx_output.send(TerminalEvent::Data {
-                    id: term_id,
-                    text,
-                });
+                let _ = tx_c.send(TerminalEvent::Data { id: tid, text: String::from_utf8_lossy(data).to_string() });
             })?;
-
-            let _ = tx_start.send(TerminalEvent::Started {
-                id,
-                shell: shell.clone(),
-                pid,
-                cwd: cwd.to_string_lossy().to_string(),
-            });
+            let _ = tx.send(TerminalEvent::Started { id, shell: shell_str.clone(), pid, cwd: cwd_path.to_string_lossy().to_string() });
         }
-
         let instance = TerminalInstance {
-            pty,
-            emulator,
-            shell,
-            cwd,
-            size,
-            handle,
+            emulator: TerminalEmulator::new(TerminalGrid::new(size.rows, size.cols)),
+            pty, id: id.0, name: format!("{} {}", profile.name, id.0),
+            shell: shell_str, pid, state: TerminalState::Running, cwd: cwd_path,
+            profile: profile.clone(), size, handle,
         };
-
         self.terminals.insert(id, Arc::new(Mutex::new(instance)));
+        self.order.push(id);
+        self.active_instance = Some(id);
         Ok(id)
     }
 
-    /// Creates a new terminal instance and returns its ID.
-    pub fn create(
-        &mut self,
-        shell: Option<&str>,
-        cwd: Option<&Path>,
-    ) -> ManagerResult<TerminalId> {
-        self.create_with_size(shell, cwd, self.default_size)
-    }
-
-    /// Creates a new terminal with a specific size.
-    pub fn create_with_size(
-        &mut self,
-        shell: Option<&str>,
-        cwd: Option<&Path>,
-        size: TerminalSize,
-    ) -> ManagerResult<TerminalId> {
-        let config = PtySpawnConfig {
-            shell: shell.map(String::from),
-            args: None,
-            cwd: cwd.map(Path::to_path_buf),
-            env: HashMap::new(),
-            size,
+    pub fn create_terminal(&mut self, profile_name: Option<&str>) -> ManagerResult<u32> {
+        let profile = match profile_name {
+            Some(name) => detect_profiles().into_iter().find(|p| p.name.eq_ignore_ascii_case(name))
+                .ok_or_else(|| ManagerError::ProfileNotFound(name.to_string()))?,
+            None => default_profile(),
         };
-        self.create_with_config(&config)
+        self.spawn_instance(&profile, None, self.default_size).map(|id| id.0)
     }
 
-    /// Returns a shared handle to a terminal instance.
-    pub fn get(&self, id: TerminalId) -> Option<Arc<Mutex<TerminalInstance>>> {
-        self.terminals.get(&id).cloned()
+    pub fn create(&mut self, shell: Option<&str>, cwd: Option<&Path>) -> ManagerResult<TerminalId> {
+        let mut p = default_profile();
+        if let Some(s) = shell { p.shell_path = s.to_string(); }
+        self.spawn_instance(&p, cwd, self.default_size)
     }
 
-    /// Removes and kills a terminal instance, including its process tree.
-    pub fn remove(&mut self, id: TerminalId) -> ManagerResult<()> {
-        let instance = self
-            .terminals
-            .remove(&id)
-            .ok_or(ManagerError::NotFound(id))?;
-        if let Ok(inst) = instance.lock() {
-            let exit_code = inst.pty.exit_code().unwrap_or(0);
-            let _ = inst.pty.kill_tree();
+    pub fn create_with_config(&mut self, config: &PtySpawnConfig) -> ManagerResult<TerminalId> {
+        let mut p = default_profile();
+        if let Some(ref s) = config.shell { p.shell_path = s.clone(); }
+        if let Some(ref a) = config.args { p.args = a.clone(); }
+        p.env.clone_from(&config.env);
+        self.spawn_instance(&p, config.cwd.as_deref(), config.size)
+    }
+
+    pub fn split_terminal(&mut self, source_id: u32) -> ManagerResult<u32> {
+        let prof = lock(self.get_inst(TerminalId(source_id))?)?.profile.clone();
+        let new_id = self.spawn_instance(&prof, None, self.default_size)?.0;
+        match self.split_groups.iter_mut().find(|g| g.terminals.contains(&source_id)) {
+            Some(g) => g.add(new_id),
+            None => { let mut g = SplitGroup::new(source_id); g.add(new_id); self.split_groups.push(g); }
+        }
+        Ok(new_id)
+    }
+
+    pub fn close_terminal(&mut self, id: u32) -> ManagerResult<()> {
+        let tid = TerminalId(id);
+        let inst = self.terminals.remove(&tid).ok_or(ManagerError::NotFound(tid))?;
+        if let Ok(l) = inst.lock() {
+            let _ = l.pty.kill_tree();
             if let Some(ref tx) = self.event_tx {
-                let _ = tx.send(TerminalEvent::Exit { id, exit_code });
+                let _ = tx.send(TerminalEvent::Exit { id: tid, exit_code: l.pty.exit_code().unwrap_or(0) });
             }
         }
+        self.order.retain(|&t| t != tid);
+        for g in &mut self.split_groups { g.remove(id); }
+        self.split_groups.retain(|g| !g.terminals.is_empty());
+        if self.active_instance == Some(tid) { self.active_instance = self.order.last().copied(); }
         Ok(())
     }
 
-    /// Lists all active terminal IDs.
-    pub fn list(&self) -> Vec<TerminalId> {
-        self.terminals.keys().copied().collect()
+    pub fn remove(&mut self, id: TerminalId) -> ManagerResult<()> { self.close_terminal(id.0) }
+
+    pub fn rename_terminal(&self, id: u32, name: &str) {
+        if let Some(inst) = self.terminals.get(&TerminalId(id)) {
+            if let Ok(mut l) = inst.lock() { l.name = name.to_string(); }
+        }
     }
 
-    /// Returns the number of active terminals.
-    pub fn count(&self) -> usize {
-        self.terminals.len()
+    pub fn focus_terminal(&mut self, id: u32) {
+        let tid = TerminalId(id);
+        if self.terminals.contains_key(&tid) { self.active_instance = Some(tid); }
     }
 
-    /// Reads output from a specific terminal (poll-based).
-    pub fn read_output(
-        &self,
-        id: TerminalId,
-        max_lines: Option<usize>,
-    ) -> ManagerResult<ReadResult> {
-        let instance = self
-            .terminals
-            .get(&id)
-            .ok_or(ManagerError::NotFound(id))?;
-        let inst = instance.lock().map_err(|_| ManagerError::LockPoisoned)?;
-        inst.pty.read_output(max_lines).map_err(ManagerError::Pty)
+    pub fn focus_next(&mut self) { self.active_instance = self.adjacent(1); }
+    pub fn focus_previous(&mut self) { self.active_instance = self.adjacent(-1); }
+
+    fn adjacent(&self, delta: isize) -> Option<TerminalId> {
+        let cur = self.active_instance?;
+        let pos = self.order.iter().position(|&t| t == cur)?;
+        let len = self.order.len() as isize;
+        Some(self.order[((pos as isize + delta).rem_euclid(len)) as usize])
     }
 
-    /// Writes input to a specific terminal.
+    pub fn list_terminals(&self) -> Vec<TerminalId> { self.order.clone() }
+    pub fn list(&self) -> Vec<TerminalId> { self.order.clone() }
+    pub fn get(&self, id: TerminalId) -> Option<Arc<Mutex<TerminalInstance>>> { self.terminals.get(&id).cloned() }
+    pub fn count(&self) -> usize { self.terminals.len() }
+    pub fn active(&self) -> Option<TerminalId> { self.active_instance }
+    pub fn split_groups(&self) -> &[SplitGroup] { &self.split_groups }
+
+    pub fn read_output(&self, id: TerminalId, max: Option<usize>) -> ManagerResult<ReadResult> {
+        lock(self.get_inst(id)?)?.pty.read_output(max).map_err(ManagerError::Pty)
+    }
     pub fn write(&self, id: TerminalId, data: &str) -> ManagerResult<()> {
-        let instance = self
-            .terminals
-            .get(&id)
-            .ok_or(ManagerError::NotFound(id))?;
-        let inst = instance.lock().map_err(|_| ManagerError::LockPoisoned)?;
-        inst.pty.write_str(data).map_err(ManagerError::Pty)
+        lock(self.get_inst(id)?)?.pty.write_str(data).map_err(ManagerError::Pty)
     }
-
-    /// Resizes a specific terminal.
     pub fn resize(&self, id: TerminalId, size: TerminalSize) -> ManagerResult<()> {
-        let instance = self
-            .terminals
-            .get(&id)
-            .ok_or(ManagerError::NotFound(id))?;
-        let mut inst = instance.lock().map_err(|_| ManagerError::LockPoisoned)?;
-        inst.pty.resize(size)?;
-        inst.emulator.grid_mut().resize(size.rows, size.cols);
-        inst.size = size;
+        let mut l = lock(self.get_inst(id)?)?;
+        l.pty.resize(size)?;
+        l.emulator.grid_mut().resize(size.rows, size.cols);
+        l.size = size;
         Ok(())
     }
-
-    /// Returns info about a specific terminal.
     pub fn info(&self, id: TerminalId) -> ManagerResult<TermInfo> {
-        let instance = self
-            .terminals
-            .get(&id)
-            .ok_or(ManagerError::NotFound(id))?;
-        let inst = instance.lock().map_err(|_| ManagerError::LockPoisoned)?;
-        Ok(inst.info())
+        Ok(lock(self.get_inst(id)?)?.info())
     }
-
-    /// Sends a signal to a terminal's process (Unix only).
     pub fn send_signal(&self, id: TerminalId, signal: i32) -> ManagerResult<()> {
-        let instance = self
-            .terminals
-            .get(&id)
-            .ok_or(ManagerError::NotFound(id))?;
-        let inst = instance.lock().map_err(|_| ManagerError::LockPoisoned)?;
-        if let Some(pid) = inst.pty.pid() {
+        if let Some(pid) = lock(self.get_inst(id)?)?.pty.pid() {
             crate::pty::send_signal(pid, signal).map_err(ManagerError::Pty)?;
         }
         Ok(())
@@ -287,7 +296,5 @@ impl TerminalManager {
 }
 
 impl Default for TerminalManager {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }

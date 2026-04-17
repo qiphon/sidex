@@ -17,18 +17,17 @@ use std::sync::Arc;
 
 use crate::color::Color;
 use crate::cursor_renderer::{CursorPosition, CursorRenderer, CursorStyle};
-use crate::gutter::{
-    Breakpoint, FoldMarker, GutterDiagnostic, GutterDiffMark, GutterRenderer,
-};
+use crate::gutter::{Breakpoint, FoldMarker, GutterDiagnostic, GutterDiffMark, GutterRenderer};
 use crate::line_renderer::{
-    CodeLens, InlayHint, IndentGuide, LineRenderConfig, LineRenderer, StyledLine,
-    StickyHeader, Viewport, WrapIndicator,
+    CodeLens, IndentGuide, InlayHint, LineRenderConfig, LineRenderer, StickyHeader, StyledLine,
+    Viewport, WrapIndicator,
 };
 use crate::minimap::{
     DiagnosticMark, GitChange, LineRange, MinimapConfig, MinimapRenderer, MinimapViewport,
     StyledLine as MinimapStyledLine,
 };
 use crate::rect_renderer::RectRenderer;
+use crate::renderer::GpuRenderer;
 use crate::scene::{Layer, Scene};
 use crate::scroll::{OverviewRulerMark, ScrollbarRenderer};
 use crate::selection_renderer::{
@@ -199,6 +198,7 @@ impl EditorView {
         doc: &DocumentSnapshot,
         highlight: &HighlightResult,
         input: &FrameInput<'_>,
+        gpu: &GpuRenderer,
     ) {
         let cfg = input.config;
         let vp = &input.viewport;
@@ -217,17 +217,27 @@ impl EditorView {
             let first = vp.first_line;
             if input.active_line >= first && input.active_line < first + vp.visible_lines {
                 let ly = (input.active_line - first) as f32 * cfg.line_height;
-                self.selection_renderer
-                    .draw_current_line_highlight(rects, ly, cfg.line_height, vp.width);
+                self.selection_renderer.draw_current_line_highlight(
+                    rects,
+                    ly,
+                    cfg.line_height,
+                    vp.width,
+                );
             }
         }
 
         // 3. Selections
-        self.selection_renderer.draw_selections(rects, input.selections);
+        self.selection_renderer
+            .draw_selections(rects, input.selections);
 
         // 4. Word highlights & find matches
-        self.selection_renderer.draw_word_highlights(rects, input.word_highlights);
-        self.selection_renderer.draw_find_matches(rects, input.find_matches, input.find_current_index);
+        self.selection_renderer
+            .draw_word_highlights(rects, input.word_highlights);
+        self.selection_renderer.draw_find_matches(
+            rects,
+            input.find_matches,
+            input.find_current_index,
+        );
 
         // 5. Render text lines
         let lines_to_draw = if highlight.lines.is_empty() {
@@ -250,21 +260,24 @@ impl EditorView {
             }
 
             // 6. Indent guides
-            self.line_renderer.render_indent_guides(rects, input.indent_guides);
+            self.line_renderer
+                .render_indent_guides(rects, input.indent_guides);
 
             // 7. Inlay hints
             let char_width = cfg.font_size * 0.6;
             for (i, hints) in input.inlay_hints.iter().enumerate() {
                 if !hints.is_empty() {
                     let y = i as f32 * cfg.line_height;
-                    self.line_renderer.render_inlay_hints(text, rects, &mut ctx, hints, y, char_width);
+                    self.line_renderer
+                        .render_inlay_hints(text, rects, &mut ctx, hints, y, char_width);
                 }
             }
 
             // 8. Code lenses
-            self.line_renderer.render_code_lens(text, &mut ctx, input.code_lenses, |line| {
-                (line - vp.first_line) as f32 * cfg.line_height
-            });
+            self.line_renderer
+                .render_code_lens(text, &mut ctx, input.code_lenses, |line| {
+                    (line - vp.first_line) as f32 * cfg.line_height
+                });
 
             // 9. Sticky headers
             self.line_renderer.render_sticky_headers(
@@ -276,13 +289,15 @@ impl EditorView {
             );
 
             // 10. Wrap indicators
-            self.line_renderer.render_wrap_indicators(rects, input.wrap_indicators);
+            self.line_renderer
+                .render_wrap_indicators(rects, input.wrap_indicators);
 
             // 11. Cursors
             self.cursor_renderer.render(rects, input.cursor_positions);
 
             // 12. Bracket highlights
-            self.selection_renderer.draw_bracket_highlights(rects, input.bracket_highlights);
+            self.selection_renderer
+                .draw_bracket_highlights(rects, input.bracket_highlights);
 
             // 13. Gutter
             if cfg.line_numbers {
@@ -305,7 +320,8 @@ impl EditorView {
 
         // 14. Minimap
         if cfg.minimap_enabled {
-            let minimap_x = vp.width - self.minimap_renderer.config_mut().width
+            let minimap_x = vp.width
+                - self.minimap_renderer.config_mut().width
                 - self.scrollbar_renderer.config_mut().vertical_width;
             self.minimap_renderer.set_origin(minimap_x, 0.0);
             let mvp = MinimapViewport {
@@ -330,37 +346,55 @@ impl EditorView {
         let sb_x = vp.width - self.scrollbar_renderer.config_mut().vertical_width;
         let sb_y = vp.height - self.scrollbar_renderer.config_mut().horizontal_height;
 
-        self.scrollbar_renderer.render_vertical(rects, vp.height, content_height, sb_x);
-        self.scrollbar_renderer.render_horizontal(rects, vp.width, content_width, sb_y);
-        self.scrollbar_renderer.render_overview_ruler(rects, input.overview_marks, vp.height, sb_x);
+        self.scrollbar_renderer
+            .render_vertical(rects, vp.height, content_height, sb_x);
+        self.scrollbar_renderer
+            .render_horizontal(rects, vp.width, content_width, sb_y);
+        self.scrollbar_renderer
+            .render_overview_ruler(rects, input.overview_marks, vp.height, sb_x);
 
         // 16. Scroll shadow
-        self.scrollbar_renderer.render_scroll_shadow(rects, vp.width);
+        self.scrollbar_renderer
+            .render_scroll_shadow(rects, vp.width);
 
         // -- Flush all batched geometry to the GPU --
         {
-            let mut pass = frame.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("editor_view_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &frame.view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: f64::from(cfg.background_color.r),
-                            g: f64::from(cfg.background_color.g),
-                            b: f64::from(cfg.background_color.b),
-                            a: f64::from(cfg.background_color.a),
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
+            let mut pass = frame
+                .encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("editor_view_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &frame.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: f64::from(cfg.background_color.r),
+                                g: f64::from(cfg.background_color.g),
+                                b: f64::from(cfg.background_color.b),
+                                a: f64::from(cfg.background_color.a),
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
 
-            rects.flush(&self.device, &self.queue, &mut pass);
-            text.flush(&self.device, &self.queue, &mut pass);
+            pass.set_bind_group(0, &gpu.uniform_bind_group, &[]);
+
+            if rects.has_data() {
+                pass.set_pipeline(&gpu.rect_pipeline);
+                rects.flush(&self.device, &self.queue, &mut pass);
+            }
+
+            if text.has_data() {
+                pass.set_pipeline(&gpu.text_pipeline);
+                let mask_bind_group =
+                    self.text_atlas.create_mask_bind_group(&self.device, &gpu.atlas_bgl);
+                pass.set_bind_group(1, &mask_bind_group, &[]);
+                text.flush(&self.device, &self.queue, &mut pass);
+            }
         }
     }
 
@@ -377,7 +411,8 @@ impl EditorView {
 
         // Layer 0: Background
         self.scene.push_layer(Layer::Background);
-        self.scene.insert_rect(0.0, 0.0, vp.width, vp.height, cfg.background_color, 0.0);
+        self.scene
+            .insert_rect(0.0, 0.0, vp.width, vp.height, cfg.background_color, 0.0);
         self.scene.pop_layer();
 
         // Layer 1: Line highlight
@@ -387,7 +422,14 @@ impl EditorView {
             if input.active_line >= first && input.active_line < first + vp.visible_lines {
                 let ly = (input.active_line - first) as f32 * cfg.line_height;
                 let sr_cfg = self.selection_renderer.config_mut();
-                self.scene.insert_rect(0.0, ly, vp.width, cfg.line_height, sr_cfg.current_line_color, 0.0);
+                self.scene.insert_rect(
+                    0.0,
+                    ly,
+                    vp.width,
+                    cfg.line_height,
+                    sr_cfg.current_line_color,
+                    0.0,
+                );
             }
         }
         self.scene.pop_layer();
@@ -404,7 +446,14 @@ impl EditorView {
                 } else {
                     0.0
                 };
-                self.scene.insert_rect(sel.x, sel.y, sel.width, sel.height, sel_cfg.selection_color, radius);
+                self.scene.insert_rect(
+                    sel.x,
+                    sel.y,
+                    sel.width,
+                    sel.height,
+                    sel_cfg.selection_color,
+                    radius,
+                );
             }
         }
         self.scene.pop_layer();

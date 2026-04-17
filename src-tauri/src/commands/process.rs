@@ -336,6 +336,36 @@ impl ProcessStore {
     fn handles(&self) -> Vec<TermHandle> {
         self.terminals.lock().unwrap().keys().copied().collect()
     }
+
+    /// Drain pending output and return the full buffer text for a terminal.
+    /// Used by `sidex_terminal` find-in-buffer integration.
+    pub fn buffer_text(&self, handle: TermHandle) -> Result<String, String> {
+        let mut terminals = self.terminals.lock().map_err(|e| e.to_string())?;
+        let terminal = terminals
+            .get_mut(&handle)
+            .ok_or_else(|| format!("Terminal {handle:?} not found"))?;
+
+        if let Ok(receivers) = self.output_receivers.try_lock() {
+            if let Some(receiver) = receivers.get(&handle) {
+                loop {
+                    match receiver.try_recv() {
+                        Ok(OutputMessage::Data(line)) => {
+                            terminal.output.lock().unwrap().push(line);
+                        }
+                        Ok(OutputMessage::Shutdown) => {
+                            terminal.is_alive.store(false, Ordering::SeqCst);
+                            break;
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+        }
+
+        let output = terminal.output.lock().map_err(|e| e.to_string())?;
+        let lines = output.get_lines(Some(DEFAULT_RING_BUFFER_CAPACITY));
+        Ok(lines.into_iter().map(|l| l.text).collect::<Vec<_>>().join("\n"))
+    }
 }
 
 // ============================================================================

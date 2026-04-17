@@ -1,8 +1,9 @@
-//! Collapsible tree widget with indent guides and lazy loading.
+//! Collapsible tree widget with indent guides, icons, and virtual scrolling.
 
 use sidex_gpu::color::Color;
 use sidex_gpu::GpuRenderer;
 
+use crate::draw::{DrawContext, IconId};
 use crate::layout::{LayoutNode, Rect, Size};
 use crate::widget::{EventResult, Key, MouseButton, UiEvent, Widget};
 
@@ -10,7 +11,6 @@ use crate::widget::{EventResult, Key, MouseButton, UiEvent, Widget};
 pub struct TreeNode<T> {
     pub data: T,
     pub children: Vec<TreeNode<T>>,
-    /// Whether children have been loaded (for lazy loading).
     pub children_loaded: bool,
 }
 
@@ -46,7 +46,6 @@ impl<T> TreeNode<T> {
 
 /// Flat representation of a visible tree row for rendering.
 struct FlatRow {
-    /// Index path from root (e.g. `[0, 2, 1]`).
     path: Vec<usize>,
     depth: usize,
     has_children: bool,
@@ -79,10 +78,16 @@ where
     indent_width: f32,
     scroll_offset: f32,
     focused: bool,
+    hovered_index: Option<usize>,
+    font_size: f32,
 
     guide_color: Color,
     selected_bg: Color,
+    selected_fg: Color,
     hover_bg: Color,
+    foreground: Color,
+    chevron_color: Color,
+    scrollbar_thumb: Color,
 }
 
 impl<T, R, E, S> Tree<T, R, E, S>
@@ -103,9 +108,15 @@ where
             indent_width: 16.0,
             scroll_offset: 0.0,
             focused: false,
+            hovered_index: None,
+            font_size: 13.0,
             guide_color: Color::from_hex("#404040").unwrap_or(Color::WHITE),
             selected_bg: Color::from_hex("#04395e").unwrap_or(Color::BLACK),
+            selected_fg: Color::WHITE,
             hover_bg: Color::from_hex("#2a2d2e").unwrap_or(Color::BLACK),
+            foreground: Color::from_hex("#cccccc").unwrap_or(Color::WHITE),
+            chevron_color: Color::from_hex("#cccccc").unwrap_or(Color::WHITE),
+            scrollbar_thumb: Color::from_hex("#79797966").unwrap_or(Color::WHITE),
         }
     }
 
@@ -127,14 +138,12 @@ where
             let path = parent_path.clone();
             let has_children = !node.is_leaf();
             let is_expanded = self.expanded.contains(&path);
-
             out.push(FlatRow {
                 path: path.clone(),
                 depth,
                 has_children,
                 is_expanded,
             });
-
             if is_expanded && has_children {
                 self.flatten_children(&node.children, parent_path, depth + 1, out);
             }
@@ -162,6 +171,109 @@ where
         }
         (self.on_toggle)(path);
     }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub fn render_draw(&self, ctx: &mut DrawContext, rect: Rect) {
+        ctx.save();
+        ctx.clip(rect);
+
+        let rows = self.flatten();
+        let total_height = rows.len() as f32 * self.row_height;
+
+        let first = (self.scroll_offset / self.row_height).floor() as usize;
+        let count = (rect.height / self.row_height).ceil() as usize + 1;
+        let last = (first + count).min(rows.len());
+
+        for i in first..last {
+            let row = &rows[i];
+            let y = rect.y + i as f32 * self.row_height - self.scroll_offset;
+            let row_rect = Rect::new(rect.x, y, rect.width, self.row_height);
+
+            if y + self.row_height < rect.y || y > rect.y + rect.height {
+                continue;
+            }
+
+            let is_selected = self.selected_path.as_deref() == Some(&row.path);
+            let is_hovered = self.hovered_index == Some(i);
+
+            // Row background
+            if is_selected {
+                ctx.draw_rect(row_rect, self.selected_bg, 0.0);
+            } else if is_hovered {
+                ctx.draw_rect(row_rect, self.hover_bg, 0.0);
+            }
+
+            // Indent guide lines
+            for d in 0..row.depth {
+                let guide_x = rect.x + d as f32 * self.indent_width + self.indent_width / 2.0;
+                let guide_rect = Rect::new(guide_x, y, 1.0, self.row_height);
+                ctx.draw_rect(guide_rect, self.guide_color, 0.0);
+            }
+
+            let content_x = rect.x + row.depth as f32 * self.indent_width;
+
+            // Chevron icon for expandable nodes
+            if row.has_children {
+                let chevron = if row.is_expanded {
+                    IconId::ChevronDown
+                } else {
+                    IconId::ChevronRight
+                };
+                let cy = y + (self.row_height - 12.0) / 2.0;
+                ctx.draw_icon(chevron, (content_x, cy), 12.0, self.chevron_color);
+            }
+
+            let text_x = content_x + 16.0;
+
+            // File/folder icon
+            if let Some(node) = self.node_at_path(&row.path) {
+                let rendered = (self.render_item)(&node.data, row.depth);
+                let icon = if row.has_children {
+                    if row.is_expanded {
+                        IconId::FolderOpen
+                    } else {
+                        IconId::Folder
+                    }
+                } else {
+                    IconId::File
+                };
+                let iy = y + (self.row_height - 14.0) / 2.0;
+                ctx.draw_icon(icon, (text_x, iy), 14.0, self.foreground);
+
+                // Text label
+                let text_color = if is_selected {
+                    self.selected_fg
+                } else {
+                    self.foreground
+                };
+                let ty = y + (self.row_height - self.font_size) / 2.0;
+                ctx.draw_text(
+                    &rendered.text,
+                    (text_x + 18.0, ty),
+                    text_color,
+                    self.font_size,
+                    false,
+                    false,
+                );
+            }
+        }
+
+        // Scrollbar
+        if total_height > rect.height {
+            let thumb_ratio = rect.height / total_height;
+            let thumb_h = (rect.height * thumb_ratio).max(20.0);
+            let scroll_ratio = if total_height - rect.height > 0.0 {
+                self.scroll_offset / (total_height - rect.height)
+            } else {
+                0.0
+            };
+            let thumb_y = rect.y + scroll_ratio * (rect.height - thumb_h);
+            let sb_rect = Rect::new(rect.x + rect.width - 10.0, thumb_y, 10.0, thumb_h);
+            ctx.draw_rect(sb_rect, self.scrollbar_thumb, 3.0);
+        }
+
+        ctx.restore();
+    }
 }
 
 impl<T, R, E, S> Widget for Tree<T, R, E, S>
@@ -181,23 +293,26 @@ where
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let rows = self.flatten();
         let mut rr = sidex_gpu::RectRenderer::new();
-
         for (i, row) in rows.iter().enumerate() {
             let y = rect.y + i as f32 * self.row_height - self.scroll_offset;
             if y + self.row_height < rect.y || y > rect.y + rect.height {
                 continue;
             }
-
             let is_selected = self.selected_path.as_deref() == Some(&row.path);
             if is_selected {
-                rr.draw_rect(rect.x, y, rect.width, self.row_height, self.selected_bg, 0.0);
+                rr.draw_rect(
+                    rect.x,
+                    y,
+                    rect.width,
+                    self.row_height,
+                    self.selected_bg,
+                    0.0,
+                );
             }
-
             for d in 0..row.depth {
                 let guide_x = rect.x + d as f32 * self.indent_width + self.indent_width / 2.0;
                 rr.draw_rect(guide_x, y, 1.0, self.row_height, self.guide_color, 0.0);
             }
-
             if let Some(node) = self.node_at_path(&row.path) {
                 let _rendered = (self.render_item)(&node.data, row.depth);
             }
@@ -215,6 +330,17 @@ where
             UiEvent::Blur => {
                 self.focused = false;
                 EventResult::Handled
+            }
+            UiEvent::MouseMove { x, y } => {
+                if rect.contains(*x, *y) {
+                    let rows = self.flatten();
+                    let idx =
+                        ((y - rect.y + self.scroll_offset) / self.row_height).floor() as usize;
+                    self.hovered_index = if idx < rows.len() { Some(idx) } else { None };
+                } else {
+                    self.hovered_index = None;
+                }
+                EventResult::Ignored
             }
             UiEvent::MouseDown {
                 x,
@@ -248,7 +374,6 @@ where
                     .as_ref()
                     .and_then(|p| rows.iter().position(|r| r.path == *p))
                     .unwrap_or(0);
-
                 match key {
                     Key::ArrowDown => {
                         let next = (current_idx + 1).min(rows.len().saturating_sub(1));

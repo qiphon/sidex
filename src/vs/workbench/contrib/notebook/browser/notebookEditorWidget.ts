@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/notebook.css';
-import './media/notebookCellChat.css';
 import './media/notebookCellEditorHint.css';
 import './media/notebookCellInsertToolbar.css';
 import './media/notebookCellStatusBar.css';
@@ -17,8 +16,6 @@ import './media/notebookCellOutput.css';
 import './media/notebookEditorStickyScroll.css';
 import './media/notebookKernelActionViewItem.css';
 import './media/notebookOutline.css';
-import './media/notebookChatEditController.css';
-import './media/notebookChatEditorOverlay.css';
 import * as DOM from '../../../../base/browser/dom.js';
 import * as domStylesheets from '../../../../base/browser/domStylesheets.js';
 import { IMouseWheelEvent, StandardMouseEvent } from '../../../../base/browser/mouseEvent.js';

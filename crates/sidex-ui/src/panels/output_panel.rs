@@ -206,7 +206,14 @@ where
     #[allow(clippy::cast_precision_loss)]
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let mut rr = sidex_gpu::RectRenderer::new();
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
 
         // Channel selector bar
         rr.draw_rect(
@@ -242,7 +249,14 @@ where
         if self.dropdown_open {
             let menu_y = rect.y + self.selector_height;
             let menu_h = self.channels.len() as f32 * 24.0;
-            rr.draw_rect(dd_x, menu_y, self.dropdown_width, menu_h, self.dropdown_bg, 2.0);
+            rr.draw_rect(
+                dd_x,
+                menu_y,
+                self.dropdown_width,
+                menu_h,
+                self.dropdown_bg,
+                2.0,
+            );
             for (i, _ch) in self.channels.iter().enumerate() {
                 let item_y = menu_y + i as f32 * 24.0;
                 if i == self.active_channel {
@@ -262,26 +276,17 @@ where
         if let Some(channel) = self.active() {
             let content_top = rect.y + self.selector_height;
             let content_h = rect.height - self.selector_height;
-            let first_line =
-                (self.scroll_offset / self.line_height).floor() as usize;
+            let first_line = (self.scroll_offset / self.line_height).floor() as usize;
             let visible_lines = (content_h / self.line_height).ceil() as usize + 1;
 
             for i in first_line..first_line + visible_lines {
                 if let Some(line) = channel.lines.get(i) {
-                    let ly =
-                        content_top + i as f32 * self.line_height - self.scroll_offset;
+                    let ly = content_top + i as f32 * self.line_height - self.scroll_offset;
                     if ly + self.line_height < content_top || ly > rect.y + rect.height {
                         continue;
                     }
                     // Level color indicator
-                    rr.draw_rect(
-                        rect.x,
-                        ly,
-                        3.0,
-                        self.line_height,
-                        line.level.color(),
-                        0.0,
-                    );
+                    rr.draw_rect(rect.x, ly, 3.0, self.line_height, line.level.color(), 0.0);
                 }
             }
         }

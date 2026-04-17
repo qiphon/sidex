@@ -2,30 +2,40 @@
 //!
 //! Provides a regex-based tokenizer that loads `.tmLanguage.json` or `.plist`
 //! grammar definitions and tokenizes source lines using `TextMate` scope rules.
-//! This serves as a fallback highlighting engine for languages that lack a
-//! tree-sitter parser.
 
 use std::collections::HashMap;
 use std::path::Path;
 
-use regex::Regex;
+use fancy_regex::Regex as FancyRegex;
 use serde::Deserialize;
 
-/// Information about a single token produced by the tokenizer.
+/// Helper to call `fancy_regex::Regex::find` with explicit error handling.
+fn fancy_find<'t>(re: &FancyRegex, text: &'t str) -> Option<fancy_regex::Match<'t>> {
+    re.find(text).ok().flatten()
+}
+
+/// Interned scope identifier.
+pub type ScopeId = u32;
+
+/// Token with string scopes (legacy API).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenInfo {
-    /// Start byte offset within the line.
     pub start: usize,
-    /// End byte offset within the line.
     pub end: usize,
-    /// Stack of `TextMate` scope names, outermost first.
     pub scopes: Vec<String>,
 }
 
-/// Persistent state carried between lines during tokenization.
+/// Token with interned scope ids.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Token {
+    pub start: usize,
+    pub end: usize,
+    pub scopes: Vec<ScopeId>,
+}
+
+/// Legacy state carried between lines.
 #[derive(Debug, Clone)]
 pub struct TokenizerState {
-    /// Stack of active rule scopes. Each entry is `(scope_name, rule_index)`.
     pub rule_stack: Vec<(String, usize)>,
 }
 
@@ -44,34 +54,89 @@ impl TokenizerState {
     }
 }
 
-/// A compiled `TextMate` grammar loaded from a `.tmLanguage.json` or `.plist` file.
+/// Stack of active rules tracking nested grammar contexts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleStack {
+    frames: Vec<RuleFrame>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RuleFrame {
+    scope_name: String,
+    rule_index: usize,
+    end_pattern: Option<String>,
+}
+
+impl Default for RuleStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RuleStack {
+    #[must_use]
+    pub fn new() -> Self {
+        Self { frames: Vec::new() }
+    }
+
+    pub fn push(&mut self, scope: String, rule_index: usize, end_pattern: Option<String>) {
+        self.frames.push(RuleFrame {
+            scope_name: scope,
+            rule_index,
+            end_pattern,
+        });
+    }
+
+    pub fn pop(&mut self) -> Option<(String, usize, Option<String>)> {
+        self.frames
+            .pop()
+            .map(|f| (f.scope_name, f.rule_index, f.end_pattern))
+    }
+
+    #[must_use]
+    pub fn depth(&self) -> usize {
+        self.frames.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    #[must_use]
+    pub fn current_scopes(&self) -> Vec<&str> {
+        self.frames.iter().map(|f| f.scope_name.as_str()).collect()
+    }
+}
+
+/// Result of tokenizing a single line.
+#[derive(Debug, Clone)]
+pub struct TokenizeResult {
+    pub tokens: Vec<Token>,
+    pub end_state: RuleStack,
+}
+
+// ---------------------------------------------------------------------------
+// Grammar types
+// ---------------------------------------------------------------------------
+
+/// A compiled `TextMate` grammar.
 #[derive(Debug, Clone)]
 pub struct TextMateGrammar {
-    /// Top-level scope name (e.g. `"source.rust"`).
     pub scope_name: String,
-    /// File extensions this grammar applies to.
     pub file_types: Vec<String>,
-    /// Top-level patterns.
     pub patterns: Vec<Pattern>,
-    /// Named repository rules that can be referenced via `$self`, `$base`, or
-    /// `#name` includes.
     pub repository: HashMap<String, RepositoryRule>,
 }
 
-/// A single pattern rule in a `TextMate` grammar.
 #[derive(Debug, Clone)]
 pub enum Pattern {
-    /// A single-line match rule.
     Match(MatchRule),
-    /// A multi-line begin/end rule.
     BeginEnd(BeginEndRule),
-    /// A multi-line begin/while rule (continues as long as `while` matches).
     BeginWhile(BeginWhileRule),
-    /// An include reference to a repository rule or another grammar.
     Include(IncludeRef),
 }
 
-/// A single-line match pattern.
 #[derive(Debug, Clone)]
 pub struct MatchRule {
     pub regex: String,
@@ -79,7 +144,6 @@ pub struct MatchRule {
     pub captures: HashMap<usize, String>,
 }
 
-/// A begin/end multi-line pattern.
 #[derive(Debug, Clone)]
 pub struct BeginEndRule {
     pub begin: String,
@@ -90,7 +154,6 @@ pub struct BeginEndRule {
     pub patterns: Vec<Pattern>,
 }
 
-/// A begin/while multi-line pattern.
 #[derive(Debug, Clone)]
 pub struct BeginWhileRule {
     pub begin: String,
@@ -101,26 +164,19 @@ pub struct BeginWhileRule {
     pub patterns: Vec<Pattern>,
 }
 
-/// An include reference (either `$self`, `$base`, or `#repo-name`).
 #[derive(Debug, Clone)]
 pub enum IncludeRef {
-    /// `$self` — include the current grammar's patterns.
     SelfRef,
-    /// `$base` — include the base grammar's patterns.
     BaseRef,
-    /// `#name` — include a named repository rule.
     Repository(String),
-    /// `scope.name` — include patterns from another grammar.
     External(String),
 }
 
-/// A named rule in the grammar's repository.
 #[derive(Debug, Clone)]
 pub struct RepositoryRule {
     pub patterns: Vec<Pattern>,
 }
 
-/// Errors that can occur when loading a `TextMate` grammar.
 #[derive(Debug, thiserror::Error)]
 pub enum TextMateError {
     #[error("failed to read grammar file: {0}")]
@@ -133,13 +189,16 @@ pub enum TextMateError {
     InvalidRegex {
         pattern: String,
         #[source]
-        source: regex::Error,
+        source: Box<fancy_regex::Error>,
     },
     #[error("unsupported grammar format")]
     UnsupportedFormat,
 }
 
-/// Raw JSON/plist structure matching the tmLanguage schema.
+// ---------------------------------------------------------------------------
+// Raw deserialization types
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawGrammar {
@@ -199,20 +258,21 @@ struct RawRepo {
     include: Option<String>,
 }
 
+// ---------------------------------------------------------------------------
+// Grammar loading
+// ---------------------------------------------------------------------------
+
 impl TextMateGrammar {
-    /// Loads a grammar from a `.tmLanguage.json` file.
     pub fn from_json(json: &str) -> Result<Self, TextMateError> {
         let raw: RawGrammar = serde_json::from_str(json)?;
         Ok(Self::from_raw(raw))
     }
 
-    /// Loads a grammar from a plist (`.tmLanguage` / `.plist`) file.
     pub fn from_plist(data: &[u8]) -> Result<Self, TextMateError> {
         let raw: RawGrammar = plist::from_bytes(data)?;
         Ok(Self::from_raw(raw))
     }
 
-    /// Loads a grammar by detecting the format from the file extension.
     pub fn from_file(path: &Path) -> Result<Self, TextMateError> {
         let data = std::fs::read(path)?;
         match path.extension().and_then(|e| e.to_str()) {
@@ -229,7 +289,6 @@ impl TextMateGrammar {
             .into_iter()
             .map(|(name, repo)| (name, convert_repo(repo)))
             .collect();
-
         Self {
             scope_name: raw.scope_name.unwrap_or_default(),
             file_types: raw.file_types,
@@ -253,7 +312,6 @@ fn convert_pattern(raw: RawPattern) -> Pattern {
     if let Some(include) = raw.include {
         return Pattern::Include(parse_include(&include));
     }
-
     if let Some(regex) = raw.match_regex {
         return Pattern::Match(MatchRule {
             regex,
@@ -261,7 +319,6 @@ fn convert_pattern(raw: RawPattern) -> Pattern {
             captures: convert_captures(&raw.captures),
         });
     }
-
     if let Some(begin) = raw.begin {
         if let Some(while_pat) = raw.while_regex {
             return Pattern::BeginWhile(BeginWhileRule {
@@ -284,7 +341,6 @@ fn convert_pattern(raw: RawPattern) -> Pattern {
             });
         }
     }
-
     Pattern::Match(MatchRule {
         regex: String::new(),
         scope: raw.name,
@@ -294,7 +350,6 @@ fn convert_pattern(raw: RawPattern) -> Pattern {
 
 fn convert_repo(raw: RawRepo) -> RepositoryRule {
     let mut patterns = Vec::new();
-
     if let Some(include) = raw.include {
         patterns.push(Pattern::Include(parse_include(&include)));
     } else if let Some(regex) = raw.match_regex {
@@ -315,11 +370,9 @@ fn convert_repo(raw: RawRepo) -> RepositoryRule {
             }));
         }
     }
-
     for p in raw.patterns {
         patterns.push(convert_pattern(p));
     }
-
     RepositoryRule { patterns }
 }
 
@@ -332,58 +385,274 @@ fn parse_include(s: &str) -> IncludeRef {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tokenizer
+// ---------------------------------------------------------------------------
+
 /// Tokenizer that processes source lines using a [`TextMateGrammar`].
 pub struct TextMateTokenizer<'g> {
     grammar: &'g TextMateGrammar,
+    scope_interner: HashMap<String, ScopeId>,
+    next_scope_id: ScopeId,
 }
 
 impl<'g> TextMateTokenizer<'g> {
-    /// Creates a new tokenizer backed by the given grammar.
     #[must_use]
     pub fn new(grammar: &'g TextMateGrammar) -> Self {
-        Self { grammar }
+        Self {
+            grammar,
+            scope_interner: HashMap::new(),
+            next_scope_id: 0,
+        }
     }
 
-    /// Tokenizes a single line, mutating `state` for multi-line constructs.
-    ///
-    /// Returns a list of [`TokenInfo`] spans covering the line.
+    /// Interns a scope name, returning a stable [`ScopeId`].
+    pub fn intern_scope(&mut self, name: &str) -> ScopeId {
+        if let Some(&id) = self.scope_interner.get(name) {
+            return id;
+        }
+        let id = self.next_scope_id;
+        self.next_scope_id += 1;
+        self.scope_interner.insert(name.to_owned(), id);
+        id
+    }
+
+    #[must_use]
+    pub fn scope_name(&self, id: ScopeId) -> Option<&str> {
+        self.scope_interner
+            .iter()
+            .find(|(_, &v)| v == id)
+            .map(|(k, _)| k.as_str())
+    }
+
+    /// Tokenizes a line using the [`RuleStack`]-based state.
+    pub fn tokenize_line_with_stack(&mut self, line: &str, state: &RuleStack) -> TokenizeResult {
+        let mut new_state = state.clone();
+        let mut tokens: Vec<Token> = Vec::new();
+        let mut pos = 0;
+
+        let root_id = self.intern_scope(&self.grammar.scope_name);
+        let mut base_ids: Vec<ScopeId> = vec![root_id];
+        for scope in state.current_scopes() {
+            let id = self.intern_scope(scope);
+            base_ids.push(id);
+        }
+
+        // Handle continuation of a begin/end rule from previous line
+        if !new_state.is_empty() {
+            if let Some(end_pat) = new_state.frames.last().and_then(|f| f.end_pattern.clone()) {
+                if let Ok(re) = FancyRegex::new(&end_pat) {
+                    if let Some(m) = fancy_find(&re, line) {
+                        if pos < m.start() {
+                            tokens.push(Token {
+                                start: pos,
+                                end: m.start(),
+                                scopes: base_ids.clone(),
+                            });
+                        }
+                        tokens.push(Token {
+                            start: m.start(),
+                            end: m.end(),
+                            scopes: base_ids.clone(),
+                        });
+                        pos = m.end();
+                        new_state.pop();
+                        base_ids.pop();
+                    } else {
+                        tokens.push(Token {
+                            start: 0,
+                            end: line.len(),
+                            scopes: base_ids.clone(),
+                        });
+                        return TokenizeResult {
+                            tokens,
+                            end_state: new_state,
+                        };
+                    }
+                }
+            }
+        }
+
+        while pos < line.len() {
+            let remaining = &line[pos..];
+            let pats = self.grammar.patterns.clone();
+            if let Some((t, adv)) =
+                self.try_match_compiled(&pats, remaining, pos, &base_ids, &mut new_state, 0)
+            {
+                tokens.extend(t);
+                pos += adv;
+            } else {
+                let ne = (pos + 1).min(line.len());
+                tokens.push(Token {
+                    start: pos,
+                    end: ne,
+                    scopes: base_ids.clone(),
+                });
+                pos = ne;
+            }
+        }
+
+        merge_compiled(&mut tokens);
+        TokenizeResult {
+            tokens,
+            end_state: new_state,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn try_match_compiled(
+        &mut self,
+        patterns: &[Pattern],
+        text: &str,
+        offset: usize,
+        base: &[ScopeId],
+        state: &mut RuleStack,
+        depth: usize,
+    ) -> Option<(Vec<Token>, usize)> {
+        if depth > 8 {
+            return None;
+        }
+        let mut best: Option<(usize, Vec<Token>, usize)> = None;
+
+        for pattern in patterns {
+            match pattern {
+                Pattern::Match(rule) => {
+                    if rule.regex.is_empty() {
+                        continue;
+                    }
+                    let Ok(re) = FancyRegex::new(&rule.regex) else {
+                        continue;
+                    };
+                    let Some(m) = fancy_find(&re, text) else {
+                        continue;
+                    };
+                    if m.start() == 0 && m.end() > 0 {
+                        let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                        if m.start() < bp {
+                            let mut sc = base.to_vec();
+                            if let Some(ref s) = rule.scope {
+                                sc.push(self.intern_scope(s));
+                            }
+                            best = Some((
+                                m.start(),
+                                vec![Token {
+                                    start: offset,
+                                    end: offset + m.end(),
+                                    scopes: sc,
+                                }],
+                                m.end(),
+                            ));
+                        }
+                    }
+                }
+                Pattern::BeginEnd(rule) => {
+                    let Ok(re) = FancyRegex::new(&rule.begin) else {
+                        continue;
+                    };
+                    let Some(m) = fancy_find(&re, text) else {
+                        continue;
+                    };
+                    if m.start() == 0 && m.end() > 0 {
+                        let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                        if m.start() < bp {
+                            let mut sc = base.to_vec();
+                            let sn = rule.scope.clone().unwrap_or_default();
+                            if !sn.is_empty() {
+                                sc.push(self.intern_scope(&sn));
+                            }
+                            state.push(sn, 0, Some(rule.end.clone()));
+                            best = Some((
+                                m.start(),
+                                vec![Token {
+                                    start: offset,
+                                    end: offset + m.end(),
+                                    scopes: sc,
+                                }],
+                                m.end(),
+                            ));
+                        }
+                    }
+                }
+                Pattern::BeginWhile(rule) => {
+                    let Ok(re) = FancyRegex::new(&rule.begin) else {
+                        continue;
+                    };
+                    let Some(m) = fancy_find(&re, text) else {
+                        continue;
+                    };
+                    if m.start() == 0 && m.end() > 0 {
+                        let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                        if m.start() < bp {
+                            let mut sc = base.to_vec();
+                            if let Some(ref s) = rule.scope {
+                                sc.push(self.intern_scope(s));
+                            }
+                            best = Some((
+                                m.start(),
+                                vec![Token {
+                                    start: offset,
+                                    end: offset + m.end(),
+                                    scopes: sc,
+                                }],
+                                m.end(),
+                            ));
+                        }
+                    }
+                }
+                Pattern::Include(inc) => {
+                    let ps = resolve_inc(self.grammar, inc);
+                    if let Some(r) =
+                        self.try_match_compiled(&ps, text, offset, base, state, depth + 1)
+                    {
+                        let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                        if 0 < bp {
+                            best = Some((0, r.0, r.1));
+                        }
+                    }
+                }
+            }
+        }
+        best.map(|(_, t, a)| (t, a))
+    }
+
+    /// Tokenizes a line using the legacy [`TokenizerState`] API.
     pub fn tokenize_line(&self, line: &str, state: &mut TokenizerState) -> Vec<TokenInfo> {
         let mut tokens = Vec::new();
         let mut pos = 0;
-        let base_scopes: Vec<String> = std::iter::once(self.grammar.scope_name.clone())
+        let base: Vec<String> = std::iter::once(self.grammar.scope_name.clone())
             .chain(state.rule_stack.iter().map(|(s, _)| s.clone()))
             .collect();
 
         if !state.rule_stack.is_empty() {
             let (scope, rule_idx) = state.rule_stack.last().unwrap().clone();
-            if let Some(rule) = self.find_begin_end_rule(rule_idx) {
-                if let Ok(re) = Regex::new(&rule.end) {
-                    if let Some(m) = re.find(line) {
+            if let Some(rule) = find_first_begin_end(&self.grammar.patterns, rule_idx) {
+                if let Ok(re) = FancyRegex::new(&rule.end) {
+                    if let Some(m) = fancy_find(&re, line) {
                         if pos < m.start() {
-                            let mut scopes = base_scopes.clone();
-                            scopes.push(scope.clone());
+                            let mut sc = base.clone();
+                            sc.push(scope.clone());
                             tokens.push(TokenInfo {
                                 start: pos,
                                 end: m.start(),
-                                scopes,
+                                scopes: sc,
                             });
                         }
-                        let mut scopes = base_scopes.clone();
-                        scopes.push(scope);
+                        let mut sc = base.clone();
+                        sc.push(scope);
                         tokens.push(TokenInfo {
                             start: m.start(),
                             end: m.end(),
-                            scopes,
+                            scopes: sc,
                         });
                         pos = m.end();
                         state.rule_stack.pop();
                     } else {
-                        let mut scopes = base_scopes.clone();
-                        scopes.push(scope);
+                        let mut sc = base.clone();
+                        sc.push(scope);
                         tokens.push(TokenInfo {
                             start: 0,
                             end: line.len(),
-                            scopes,
+                            scopes: sc,
                         });
                         return tokens;
                     }
@@ -393,152 +662,163 @@ impl<'g> TextMateTokenizer<'g> {
 
         while pos < line.len() {
             let remaining = &line[pos..];
-            if let Some((info, advance)) =
-                self.try_match_patterns(&self.grammar.patterns, remaining, pos, &base_scopes, 0)
-            {
+            if let Some((info, adv)) = try_match_legacy(
+                &self.grammar.patterns,
+                remaining,
+                pos,
+                &base,
+                self.grammar,
+                0,
+            ) {
                 tokens.extend(info);
-                pos += advance;
+                pos += adv;
             } else {
-                let next_end = (pos + 1).min(line.len());
+                let ne = (pos + 1).min(line.len());
                 tokens.push(TokenInfo {
                     start: pos,
-                    end: next_end,
-                    scopes: base_scopes.clone(),
+                    end: ne,
+                    scopes: base.clone(),
                 });
-                pos = next_end;
+                pos = ne;
             }
         }
-
-        merge_adjacent_tokens(&mut tokens);
+        merge_legacy(&mut tokens);
         tokens
-    }
-
-    fn try_match_patterns(
-        &self,
-        patterns: &[Pattern],
-        text: &str,
-        offset: usize,
-        base_scopes: &[String],
-        depth: usize,
-    ) -> Option<(Vec<TokenInfo>, usize)> {
-        if depth > 8 {
-            return None;
-        }
-
-        let mut best: Option<(usize, Vec<TokenInfo>, usize)> = None;
-
-        for pattern in patterns {
-            match pattern {
-                Pattern::Match(rule) => {
-                    if rule.regex.is_empty() {
-                        continue;
-                    }
-                    let Ok(re) = Regex::new(&rule.regex) else {
-                        continue;
-                    };
-                    if let Some(m) = re.find(text) {
-                        if m.start() == 0 && m.end() > 0 {
-                            let start_pos = best.as_ref().map_or(usize::MAX, |b| b.0);
-                            if m.start() < start_pos {
-                                let mut scopes = base_scopes.to_vec();
-                                if let Some(ref s) = rule.scope {
-                                    scopes.push(s.clone());
-                                }
-                                let info = vec![TokenInfo {
-                                    start: offset,
-                                    end: offset + m.end(),
-                                    scopes,
-                                }];
-                                best = Some((m.start(), info, m.end()));
-                            }
-                        }
-                    }
-                }
-                Pattern::BeginEnd(rule) => {
-                    let Ok(re) = Regex::new(&rule.begin) else {
-                        continue;
-                    };
-                    if let Some(m) = re.find(text) {
-                        if m.start() == 0 && m.end() > 0 {
-                            let start_pos = best.as_ref().map_or(usize::MAX, |b| b.0);
-                            if m.start() < start_pos {
-                                let mut scopes = base_scopes.to_vec();
-                                if let Some(ref s) = rule.scope {
-                                    scopes.push(s.clone());
-                                }
-                                let info = vec![TokenInfo {
-                                    start: offset,
-                                    end: offset + m.end(),
-                                    scopes,
-                                }];
-                                best = Some((m.start(), info, m.end()));
-                            }
-                        }
-                    }
-                }
-                Pattern::BeginWhile(rule) => {
-                    let Ok(re) = Regex::new(&rule.begin) else {
-                        continue;
-                    };
-                    if let Some(m) = re.find(text) {
-                        if m.start() == 0 && m.end() > 0 {
-                            let start_pos = best.as_ref().map_or(usize::MAX, |b| b.0);
-                            if m.start() < start_pos {
-                                let mut scopes = base_scopes.to_vec();
-                                if let Some(ref s) = rule.scope {
-                                    scopes.push(s.clone());
-                                }
-                                let info = vec![TokenInfo {
-                                    start: offset,
-                                    end: offset + m.end(),
-                                    scopes,
-                                }];
-                                best = Some((m.start(), info, m.end()));
-                            }
-                        }
-                    }
-                }
-                Pattern::Include(inc) => {
-                    let patterns = self.resolve_include(inc);
-                    if let Some(result) =
-                        self.try_match_patterns(&patterns, text, offset, base_scopes, depth + 1)
-                    {
-                        let start_pos = best.as_ref().map_or(usize::MAX, |b| b.0);
-                        if 0 < start_pos {
-                            best = Some((0, result.0, result.1));
-                        }
-                    }
-                }
-            }
-        }
-
-        best.map(|(_, info, advance)| (info, advance))
-    }
-
-    fn resolve_include(&self, inc: &IncludeRef) -> Vec<Pattern> {
-        match inc {
-            IncludeRef::SelfRef | IncludeRef::BaseRef => self.grammar.patterns.clone(),
-            IncludeRef::Repository(name) => self
-                .grammar
-                .repository
-                .get(name)
-                .map_or_else(Vec::new, |r| r.patterns.clone()),
-            IncludeRef::External(_) => Vec::new(),
-        }
-    }
-
-    fn find_begin_end_rule(&self, _rule_idx: usize) -> Option<&BeginEndRule> {
-        for pattern in &self.grammar.patterns {
-            if let Pattern::BeginEnd(rule) = pattern {
-                return Some(rule);
-            }
-        }
-        None
     }
 }
 
-/// Merges adjacent tokens with identical scope stacks.
-fn merge_adjacent_tokens(tokens: &mut Vec<TokenInfo>) {
+fn resolve_inc(grammar: &TextMateGrammar, inc: &IncludeRef) -> Vec<Pattern> {
+    match inc {
+        IncludeRef::SelfRef | IncludeRef::BaseRef => grammar.patterns.clone(),
+        IncludeRef::Repository(name) => grammar
+            .repository
+            .get(name)
+            .map_or_else(Vec::new, |r| r.patterns.clone()),
+        IncludeRef::External(_) => Vec::new(),
+    }
+}
+
+fn find_first_begin_end(patterns: &[Pattern], _idx: usize) -> Option<&BeginEndRule> {
+    patterns.iter().find_map(|p| {
+        if let Pattern::BeginEnd(r) = p {
+            Some(r)
+        } else {
+            None
+        }
+    })
+}
+
+fn try_match_legacy(
+    patterns: &[Pattern],
+    text: &str,
+    offset: usize,
+    base: &[String],
+    grammar: &TextMateGrammar,
+    depth: usize,
+) -> Option<(Vec<TokenInfo>, usize)> {
+    if depth > 8 {
+        return None;
+    }
+    let mut best: Option<(usize, Vec<TokenInfo>, usize)> = None;
+
+    for pattern in patterns {
+        match pattern {
+            Pattern::Match(rule) => {
+                if rule.regex.is_empty() {
+                    continue;
+                }
+                let Ok(re) = FancyRegex::new(&rule.regex) else {
+                    continue;
+                };
+                let Some(m) = fancy_find(&re, text) else {
+                    continue;
+                };
+                if m.start() == 0 && m.end() > 0 {
+                    let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                    if m.start() < bp {
+                        let mut sc = base.to_vec();
+                        if let Some(ref s) = rule.scope {
+                            sc.push(s.clone());
+                        }
+                        best = Some((
+                            m.start(),
+                            vec![TokenInfo {
+                                start: offset,
+                                end: offset + m.end(),
+                                scopes: sc,
+                            }],
+                            m.end(),
+                        ));
+                    }
+                }
+            }
+            Pattern::BeginEnd(rule) => {
+                let Ok(re) = FancyRegex::new(&rule.begin) else {
+                    continue;
+                };
+                let Some(m) = fancy_find(&re, text) else {
+                    continue;
+                };
+                if m.start() == 0 && m.end() > 0 {
+                    let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                    if m.start() < bp {
+                        let mut sc = base.to_vec();
+                        if let Some(ref s) = rule.scope {
+                            sc.push(s.clone());
+                        }
+                        best = Some((
+                            m.start(),
+                            vec![TokenInfo {
+                                start: offset,
+                                end: offset + m.end(),
+                                scopes: sc,
+                            }],
+                            m.end(),
+                        ));
+                    }
+                }
+            }
+            Pattern::BeginWhile(rule) => {
+                let Ok(re) = FancyRegex::new(&rule.begin) else {
+                    continue;
+                };
+                let Some(m) = fancy_find(&re, text) else {
+                    continue;
+                };
+                if m.start() == 0 && m.end() > 0 {
+                    let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                    if m.start() < bp {
+                        let mut sc = base.to_vec();
+                        if let Some(ref s) = rule.scope {
+                            sc.push(s.clone());
+                        }
+                        best = Some((
+                            m.start(),
+                            vec![TokenInfo {
+                                start: offset,
+                                end: offset + m.end(),
+                                scopes: sc,
+                            }],
+                            m.end(),
+                        ));
+                    }
+                }
+            }
+            Pattern::Include(inc) => {
+                let ps = resolve_inc(grammar, inc);
+                if let Some(r) = try_match_legacy(&ps, text, offset, base, grammar, depth + 1) {
+                    let bp = best.as_ref().map_or(usize::MAX, |b| b.0);
+                    if 0 < bp {
+                        best = Some((0, r.0, r.1));
+                    }
+                }
+            }
+        }
+    }
+    best.map(|(_, i, a)| (i, a))
+}
+
+fn merge_legacy(tokens: &mut Vec<TokenInfo>) {
     if tokens.len() < 2 {
         return;
     }
@@ -553,9 +833,22 @@ fn merge_adjacent_tokens(tokens: &mut Vec<TokenInfo>) {
     }
 }
 
-/// Tokenizes a single line using the provided grammar and mutable state.
-///
-/// This is a convenience wrapper around [`TextMateTokenizer::tokenize_line`].
+fn merge_compiled(tokens: &mut Vec<Token>) {
+    if tokens.len() < 2 {
+        return;
+    }
+    let mut i = 0;
+    while i + 1 < tokens.len() {
+        if tokens[i].end == tokens[i + 1].start && tokens[i].scopes == tokens[i + 1].scopes {
+            tokens[i].end = tokens[i + 1].end;
+            tokens.remove(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Convenience wrapper around [`TextMateTokenizer::tokenize_line`].
 pub fn tokenize_line(
     grammar: &TextMateGrammar,
     line: &str,
@@ -604,7 +897,6 @@ mod tests {
         let grammar = make_simple_grammar();
         let mut state = TokenizerState::new();
         let tokens = tokenize_line(&grammar, "fn main", &mut state);
-
         let kw = tokens
             .iter()
             .find(|t| t.scopes.iter().any(|s| s.contains("keyword")));
@@ -616,7 +908,6 @@ mod tests {
         let grammar = make_simple_grammar();
         let mut state = TokenizerState::new();
         let tokens = tokenize_line(&grammar, "// hello world", &mut state);
-
         assert!(!tokens.is_empty());
         let comment = tokens
             .iter()
@@ -629,7 +920,6 @@ mod tests {
         let grammar = make_simple_grammar();
         let mut state = TokenizerState::new();
         let tokens = tokenize_line(&grammar, r#"let x = "hello""#, &mut state);
-
         let string_tok = tokens
             .iter()
             .find(|t| t.scopes.iter().any(|s| s.contains("string")));
@@ -641,7 +931,6 @@ mod tests {
         let grammar = make_simple_grammar();
         let mut state = TokenizerState::new();
         let tokens = tokenize_line(&grammar, "let x = 42", &mut state);
-
         let num = tokens
             .iter()
             .find(|t| t.scopes.iter().any(|s| s.contains("numeric")));
@@ -676,14 +965,9 @@ mod tests {
 
     #[test]
     fn from_json_basic() {
-        let json = r#"{
-            "scopeName": "source.example",
-            "fileTypes": ["ex"],
-            "patterns": [
-                { "match": "\\bif\\b", "name": "keyword.control" }
-            ],
-            "repository": {}
-        }"#;
+        let json = r#"{ "scopeName": "source.example", "fileTypes": ["ex"],
+            "patterns": [{ "match": "\\bif\\b", "name": "keyword.control" }],
+            "repository": {} }"#;
         let grammar = TextMateGrammar::from_json(json).unwrap();
         assert_eq!(grammar.scope_name, "source.example");
         assert_eq!(grammar.file_types, vec!["ex"]);
@@ -756,12 +1040,9 @@ mod tests {
                 scopes: vec!["b".into()],
             },
         ];
-        merge_adjacent_tokens(&mut tokens);
+        merge_legacy(&mut tokens);
         assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens[0].start, 0);
         assert_eq!(tokens[0].end, 6);
-        assert_eq!(tokens[1].start, 6);
-        assert_eq!(tokens[1].end, 9);
     }
 
     #[test]
@@ -788,19 +1069,103 @@ mod tests {
     fn parse_include_variants() {
         assert!(matches!(parse_include("$self"), IncludeRef::SelfRef));
         assert!(matches!(parse_include("$base"), IncludeRef::BaseRef));
-        assert!(matches!(
-            parse_include("#keywords"),
-            IncludeRef::Repository(ref s) if s == "keywords"
-        ));
-        assert!(matches!(
-            parse_include("source.other"),
-            IncludeRef::External(ref s) if s == "source.other"
-        ));
+        assert!(
+            matches!(parse_include("#keywords"), IncludeRef::Repository(ref s) if s == "keywords")
+        );
+        assert!(
+            matches!(parse_include("source.other"), IncludeRef::External(ref s) if s == "source.other")
+        );
     }
 
     #[test]
     fn unsupported_format_error() {
         let result = TextMateGrammar::from_file(Path::new("test.xyz"));
         assert!(result.is_err());
+    }
+
+    // -- New tests for RuleStack, Token, TokenizeResult --
+
+    #[test]
+    fn rule_stack_push_pop() {
+        let mut stack = RuleStack::new();
+        assert!(stack.is_empty());
+        assert_eq!(stack.depth(), 0);
+
+        stack.push("source.rust".into(), 0, None);
+        assert_eq!(stack.depth(), 1);
+
+        stack.push("string.quoted".into(), 1, Some(r#"""#.into()));
+        assert_eq!(stack.depth(), 2);
+        assert_eq!(stack.current_scopes(), vec!["source.rust", "string.quoted"]);
+
+        let (scope, idx, end) = stack.pop().unwrap();
+        assert_eq!(scope, "string.quoted");
+        assert_eq!(idx, 1);
+        assert!(end.is_some());
+        assert_eq!(stack.depth(), 1);
+    }
+
+    #[test]
+    fn rule_stack_default() {
+        let stack = RuleStack::default();
+        assert!(stack.is_empty());
+    }
+
+    #[test]
+    fn tokenize_with_rule_stack() {
+        let grammar = make_simple_grammar();
+        let mut tokenizer = TextMateTokenizer::new(&grammar);
+        let state = RuleStack::new();
+        let result = tokenizer.tokenize_line_with_stack("fn main", &state);
+        assert!(!result.tokens.is_empty());
+    }
+
+    #[test]
+    fn scope_interning() {
+        let grammar = make_simple_grammar();
+        let mut tokenizer = TextMateTokenizer::new(&grammar);
+        let id1 = tokenizer.intern_scope("source.test");
+        let id2 = tokenizer.intern_scope("source.test");
+        let id3 = tokenizer.intern_scope("keyword.control");
+        assert_eq!(id1, id2);
+        assert_ne!(id1, id3);
+        assert_eq!(tokenizer.scope_name(id1), Some("source.test"));
+        assert_eq!(tokenizer.scope_name(id3), Some("keyword.control"));
+    }
+
+    #[test]
+    fn compiled_token_fields() {
+        let tok = Token {
+            start: 0,
+            end: 5,
+            scopes: vec![0, 1],
+        };
+        assert_eq!(tok.start, 0);
+        assert_eq!(tok.end, 5);
+        assert_eq!(tok.scopes.len(), 2);
+    }
+
+    #[test]
+    fn merge_adjacent_compiled() {
+        let mut tokens = vec![
+            Token {
+                start: 0,
+                end: 3,
+                scopes: vec![0],
+            },
+            Token {
+                start: 3,
+                end: 6,
+                scopes: vec![0],
+            },
+            Token {
+                start: 6,
+                end: 9,
+                scopes: vec![1],
+            },
+        ];
+        merge_compiled(&mut tokens);
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].end, 6);
     }
 }

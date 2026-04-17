@@ -189,7 +189,9 @@ mod tests {
 
         let entries = get_status(tmp.path()).unwrap();
         assert!(!entries.is_empty());
-        assert!(entries.iter().any(|e| e.path == "new.txt" && e.status == FileStatus::Untracked));
+        assert!(entries
+            .iter()
+            .any(|e| e.path == "new.txt" && e.status == FileStatus::Untracked));
     }
 
     #[test]

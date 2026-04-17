@@ -156,14 +156,12 @@ impl<F: FnMut(&[f32])> Widget for SplitPane<F> {
                     let pane_sizes = self.pane_pixel_sizes(total);
                     let prev_end: f32 = pane_sizes[..drag_idx].iter().sum::<f32>()
                         + drag_idx as f32 * self.divider_thickness;
-                    let combined =
-                        pane_sizes[drag_idx] + pane_sizes[drag_idx + 1];
+                    let combined = pane_sizes[drag_idx] + pane_sizes[drag_idx + 1];
 
-                    let new_left = (pos - prev_end)
-                        .clamp(
-                            self.min_sizes.get(drag_idx).copied().unwrap_or(0.0),
-                            combined - self.min_sizes.get(drag_idx + 1).copied().unwrap_or(0.0),
-                        );
+                    let new_left = (pos - prev_end).clamp(
+                        self.min_sizes.get(drag_idx).copied().unwrap_or(0.0),
+                        combined - self.min_sizes.get(drag_idx + 1).copied().unwrap_or(0.0),
+                    );
                     let new_right = combined - new_left;
 
                     if available > 0.0 {

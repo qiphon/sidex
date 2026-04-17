@@ -304,7 +304,14 @@ where
     #[allow(clippy::cast_precision_loss)]
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let mut rr = sidex_gpu::RectRenderer::new();
-        rr.draw_rect(rect.x, rect.y, rect.width, rect.height, self.background, 0.0);
+        rr.draw_rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            self.background,
+            0.0,
+        );
 
         let cr = self.content_rect(rect);
         let mut y = cr.y + 40.0 - self.scroll_offset;
@@ -337,7 +344,14 @@ where
             let ry = y + i as f32 * self.recent_row_height;
             let is_hover = self.hovered_recent == Some(i);
             if is_hover {
-                rr.draw_rect(cr.x, ry, cr.width, self.recent_row_height, self.recent_hover_bg, 2.0);
+                rr.draw_rect(
+                    cr.x,
+                    ry,
+                    cr.width,
+                    self.recent_row_height,
+                    self.recent_hover_bg,
+                    2.0,
+                );
             }
         }
         y += max_recent as f32 * self.recent_row_height + self.section_spacing;
@@ -462,7 +476,8 @@ where
                 let actions = Self::quick_actions();
                 let actions_y = cr.y + 40.0 - self.scroll_offset + 60.0;
                 if *y >= actions_y && *y < actions_y + self.action_button_height {
-                    let btn_w = (cr.width - 12.0 * (actions.len() as f32 - 1.0)) / actions.len() as f32;
+                    let btn_w =
+                        (cr.width - 12.0 * (actions.len() as f32 - 1.0)) / actions.len() as f32;
                     for (i, _) in actions.iter().enumerate() {
                         let bx = cr.x + i as f32 * (btn_w + 12.0);
                         if *x >= bx && *x < bx + btn_w {
@@ -474,9 +489,11 @@ where
                 self.hovered_action = None;
 
                 // Recent items hover
-                let recent_top = actions_y + self.action_button_height + self.section_spacing + 12.0 + 24.0;
+                let recent_top =
+                    actions_y + self.action_button_height + self.section_spacing + 12.0 + 24.0;
                 let max_recent = self.recent_items.len().min(8);
-                if *y >= recent_top && *y < recent_top + max_recent as f32 * self.recent_row_height {
+                if *y >= recent_top && *y < recent_top + max_recent as f32 * self.recent_row_height
+                {
                     let idx = ((*y - recent_top) / self.recent_row_height) as usize;
                     if idx < max_recent {
                         self.hovered_recent = Some(idx);

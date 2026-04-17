@@ -90,10 +90,7 @@ pub fn best_shell(preferred: Option<&str>) -> (String, String) {
     if let Some(pref) = preferred {
         for shell in &shells {
             if shell.name.eq_ignore_ascii_case(pref)
-                || shell
-                    .path
-                    .to_lowercase()
-                    .contains(&pref.to_lowercase())
+                || shell.path.to_lowercase().contains(&pref.to_lowercase())
             {
                 return (shell.name.clone(), shell.path.clone());
             }
@@ -263,8 +260,7 @@ pub fn check_shell_exists(path: &str) -> bool {
 /// spawning zsh.
 pub fn setup_zsh_dotdir(scripts_dir: &Path, data_dir: &Path) -> Result<PathBuf, String> {
     let zdotdir = data_dir.join("zsh-integration");
-    std::fs::create_dir_all(&zdotdir)
-        .map_err(|e| format!("failed to create zdotdir: {e}"))?;
+    std::fs::create_dir_all(&zdotdir).map_err(|e| format!("failed to create zdotdir: {e}"))?;
 
     let scripts = scripts_dir.to_string_lossy();
 

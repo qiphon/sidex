@@ -3,6 +3,7 @@
 use sidex_gpu::color::Color;
 use sidex_gpu::GpuRenderer;
 
+use crate::draw::DrawContext;
 use crate::layout::{LayoutNode, Rect, Size};
 use crate::widget::{EventResult, Key, MouseButton, UiEvent, Widget};
 
@@ -30,10 +31,16 @@ where
     row_height: f32,
     scroll_offset: f32,
     focused: bool,
+    hovered_index: Option<usize>,
+    font_size: f32,
 
     hover_bg: Color,
     selected_bg: Color,
     selected_fg: Color,
+    foreground: Color,
+    description_fg: Color,
+    scrollbar_thumb: Color,
+    keyboard_focus_outline: Color,
 }
 
 /// Pre-rendered description of a single list row.
@@ -58,9 +65,15 @@ where
             row_height: 22.0,
             scroll_offset: 0.0,
             focused: false,
+            hovered_index: None,
+            font_size: 13.0,
             hover_bg: Color::from_hex("#2a2d2e").unwrap_or(Color::BLACK),
             selected_bg: Color::from_hex("#04395e").unwrap_or(Color::BLACK),
             selected_fg: Color::WHITE,
+            foreground: Color::from_hex("#cccccc").unwrap_or(Color::WHITE),
+            description_fg: Color::from_hex("#aaaaaa").unwrap_or(Color::WHITE),
+            scrollbar_thumb: Color::from_hex("#79797966").unwrap_or(Color::WHITE),
+            keyboard_focus_outline: Color::from_hex("#007fd4").unwrap_or(Color::WHITE),
         }
     }
 
@@ -78,6 +91,7 @@ where
         (first, last)
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn total_height(&self) -> f32 {
         self.items.len() as f32 * self.row_height
     }
@@ -114,6 +128,84 @@ where
         }
         (self.on_select)(index);
     }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub fn render_draw(&self, ctx: &mut DrawContext, rect: Rect) {
+        ctx.save();
+        ctx.clip(rect);
+
+        let (first, last) = self.visible_range(rect);
+
+        for i in first..last {
+            let is_selected = self.selected.contains(&i);
+            let is_hovered = self.hovered_index == Some(i);
+            let y = rect.y + i as f32 * self.row_height - self.scroll_offset;
+            let row_rect = Rect::new(rect.x, y, rect.width, self.row_height);
+
+            // Selection background
+            if is_selected {
+                ctx.draw_rect(row_rect, self.selected_bg, 0.0);
+            } else if is_hovered {
+                ctx.draw_rect(row_rect, self.hover_bg, 0.0);
+            }
+
+            let row = (self.render_item)(&self.items[i], i, is_selected);
+            let text_color = if is_selected {
+                self.selected_fg
+            } else {
+                self.foreground
+            };
+            let text_y = y + (self.row_height - self.font_size) / 2.0;
+            let text_x = rect.x + 8.0;
+
+            // Row text
+            ctx.draw_text(
+                &row.text,
+                (text_x, text_y),
+                text_color,
+                self.font_size,
+                false,
+                false,
+            );
+
+            // Description (right-aligned, dimmed)
+            if let Some(ref desc) = row.description {
+                let desc_w = desc.len() as f32 * self.font_size * 0.6;
+                let desc_x = rect.x + rect.width - desc_w - 8.0;
+                ctx.draw_text(
+                    desc,
+                    (desc_x, text_y),
+                    self.description_fg,
+                    self.font_size,
+                    false,
+                    false,
+                );
+            }
+
+            // Keyboard focus indicator
+            if self.focused && is_selected {
+                ctx.draw_border(row_rect, self.keyboard_focus_outline, 1.0, 0.0);
+            }
+        }
+
+        // Scrollbar when content overflows
+        let total = self.total_height();
+        if total > rect.height {
+            let thumb_ratio = rect.height / total;
+            let thumb_h = (rect.height * thumb_ratio).max(20.0);
+            let scroll_ratio = if total - rect.height > 0.0 {
+                self.scroll_offset / (total - rect.height)
+            } else {
+                0.0
+            };
+            let thumb_y = rect.y + scroll_ratio * (rect.height - thumb_h);
+            let sb_width = 10.0;
+            let sb_rect = Rect::new(rect.x + rect.width - sb_width, thumb_y, sb_width, thumb_h);
+            ctx.draw_rect(sb_rect, self.scrollbar_thumb, 3.0);
+        }
+
+        ctx.restore();
+    }
 }
 
 impl<T, R, S> Widget for List<T, R, S>
@@ -131,15 +223,20 @@ where
     fn render(&self, rect: Rect, renderer: &mut GpuRenderer) {
         let mut rr = sidex_gpu::RectRenderer::new();
         let (first, last) = self.visible_range(rect);
-
         for i in first..last {
             let is_selected = self.selected.contains(&i);
+            #[allow(clippy::cast_precision_loss)]
             let y = rect.y + i as f32 * self.row_height - self.scroll_offset;
-
             if is_selected {
-                rr.draw_rect(rect.x, y, rect.width, self.row_height, self.selected_bg, 0.0);
+                rr.draw_rect(
+                    rect.x,
+                    y,
+                    rect.width,
+                    self.row_height,
+                    self.selected_bg,
+                    0.0,
+                );
             }
-
             let _row = (self.render_item)(&self.items[i], i, is_selected);
         }
         let _ = renderer;
@@ -155,6 +252,20 @@ where
             UiEvent::Blur => {
                 self.focused = false;
                 EventResult::Handled
+            }
+            UiEvent::MouseMove { x, y } => {
+                if rect.contains(*x, *y) {
+                    let idx =
+                        ((y - rect.y + self.scroll_offset) / self.row_height).floor() as usize;
+                    self.hovered_index = if idx < self.items.len() {
+                        Some(idx)
+                    } else {
+                        None
+                    };
+                } else {
+                    self.hovered_index = None;
+                }
+                EventResult::Ignored
             }
             UiEvent::MouseDown {
                 x,

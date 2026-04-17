@@ -1,92 +1,138 @@
-//! Sticky scroll — mirrors VS Code's `StickyScrollController` +
-//! `StickyScrollWidget`.
-//!
-//! Computes which scope headers (function, class, block) should be pinned at
-//! the top of the editor viewport as the user scrolls.
+//! Sticky scroll — pins parent scope headers at the top of the editor viewport
+//! as the user scrolls, mirroring VS Code's sticky scroll feature.
 
-/// A single sticky-scroll header line.
+/// Kind of scope that produced a sticky line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScopeKind {
+    Function,
+    Class,
+    Method,
+    Module,
+    Block,
+    If,
+    For,
+    While,
+    Switch,
+    Try,
+}
+
+/// A single line pinned to the sticky scroll header area.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StickyScrollLine {
-    /// The original document line number (zero-based).
-    pub line: u32,
-    /// The indentation/nesting depth (0 = top-level).
-    pub depth: u32,
-    /// The text content to render.
+pub struct StickyLine {
     pub text: String,
+    pub line_number: u32,
+    pub indent_level: u32,
+    pub scope_kind: ScopeKind,
 }
 
-/// Scope information used to compute sticky headers.
+/// A document symbol (outline entry) used as input for sticky line computation.
 #[derive(Debug, Clone)]
-pub struct ScopeRange {
-    /// First line of the scope (zero-based).
+pub struct DocumentSymbol {
+    pub name: String,
+    pub kind: ScopeKind,
     pub start_line: u32,
-    /// Last line of the scope (zero-based, inclusive).
     pub end_line: u32,
-    /// Nesting depth (0 = top-level).
-    pub depth: u32,
-    /// The text of the scope header line.
-    pub header_text: String,
+    pub indent_level: u32,
+    pub children: Vec<DocumentSymbol>,
 }
 
-/// Full state for the sticky-scroll feature.
-#[derive(Debug, Clone, Default)]
-pub struct StickyScrollState {
-    /// Maximum number of sticky lines to show.
-    pub max_lines: u32,
-    /// Whether sticky scroll is enabled.
-    pub enabled: bool,
-    /// The currently pinned header lines (top to bottom).
-    pub pinned_lines: Vec<StickyScrollLine>,
-    /// All known scopes in the document (from tree-sitter / LSP).
-    pub scopes: Vec<ScopeRange>,
+/// Rendering hint for the sticky scroll widget.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StickyScrollStyle {
+    pub bottom_border_width: f32,
+    pub shadow_opacity: f32,
 }
 
-impl StickyScrollState {
-    pub fn new(max_lines: u32) -> Self {
+impl Default for StickyScrollStyle {
+    fn default() -> Self {
         Self {
-            max_lines,
+            bottom_border_width: 1.0,
+            shadow_opacity: 0.08,
+        }
+    }
+}
+
+/// Top-level sticky scroll state for an editor instance.
+#[derive(Debug, Clone)]
+pub struct StickyScroll {
+    pub enabled: bool,
+    pub max_lines: u32,
+    pub lines: Vec<StickyLine>,
+    pub style: StickyScrollStyle,
+}
+
+impl Default for StickyScroll {
+    fn default() -> Self {
+        Self {
             enabled: true,
-            pinned_lines: Vec::new(),
-            scopes: Vec::new(),
+            max_lines: 5,
+            lines: Vec::new(),
+            style: StickyScrollStyle::default(),
+        }
+    }
+}
+
+impl StickyScroll {
+    pub fn new(enabled: bool, max_lines: u32) -> Self {
+        Self {
+            enabled,
+            max_lines,
+            ..Default::default()
         }
     }
 
-    /// Sets the scopes (typically after a tree-sitter re-parse).
-    pub fn set_scopes(&mut self, scopes: Vec<ScopeRange>) {
-        self.scopes = scopes;
+    /// Recompute pinned lines from the document outline and current scroll position.
+    pub fn update(&mut self, visible_start: u32, outline: &[DocumentSymbol]) {
+        self.lines = if self.enabled {
+            compute_sticky_lines(visible_start, outline, self.max_lines)
+        } else {
+            Vec::new()
+        };
     }
 
-    /// Recomputes which headers should be pinned based on the current first
-    /// visible line in the viewport.
-    pub fn update(&mut self, first_visible_line: u32) {
-        if !self.enabled {
-            self.pinned_lines.clear();
-            return;
-        }
-
-        let mut active: Vec<&ScopeRange> = self
-            .scopes
-            .iter()
-            .filter(|s| s.start_line < first_visible_line && s.end_line >= first_visible_line)
-            .collect();
-
-        active.sort_by_key(|s| s.depth);
-
-        self.pinned_lines = active
-            .into_iter()
-            .take(self.max_lines as usize)
-            .map(|s| StickyScrollLine {
-                line: s.start_line,
-                depth: s.depth,
-                text: s.header_text.clone(),
-            })
-            .collect();
-    }
-
-    /// Returns the number of lines occupied by sticky headers.
+    /// Handle a click on sticky line at `index`. Returns the document line to jump to.
     #[must_use]
-    pub fn header_count(&self) -> usize {
-        self.pinned_lines.len()
+    pub fn click_line(&self, index: usize) -> Option<u32> {
+        self.lines.get(index).map(|l| l.line_number)
+    }
+
+    /// Apply settings from `editor.stickyScroll.enabled` / `editor.stickyScroll.maxLineCount`.
+    pub fn apply_settings(&mut self, enabled: bool, max_line_count: u32) {
+        self.enabled = enabled;
+        self.max_lines = max_line_count.max(1).min(10);
+    }
+}
+
+/// Walk the outline tree and collect every scope that spans `visible_start`,
+/// i.e. scopes whose header has scrolled past but whose body is still visible.
+/// Results are sorted by `indent_level` (outermost first) and capped at `max_lines`.
+pub fn compute_sticky_lines(
+    visible_start: u32,
+    outline: &[DocumentSymbol],
+    max_lines: u32,
+) -> Vec<StickyLine> {
+    let mut buf = Vec::new();
+    collect_active_scopes(visible_start, outline, &mut buf);
+    buf.sort_by_key(|l| l.indent_level);
+    buf.truncate(max_lines as usize);
+    buf
+}
+
+fn collect_active_scopes(
+    visible_start: u32,
+    symbols: &[DocumentSymbol],
+    out: &mut Vec<StickyLine>,
+) {
+    for sym in symbols {
+        if sym.start_line < visible_start && sym.end_line >= visible_start {
+            out.push(StickyLine {
+                text: sym.name.clone(),
+                line_number: sym.start_line,
+                indent_level: sym.indent_level,
+                scope_kind: sym.kind,
+            });
+            collect_active_scopes(visible_start, &sym.children, out);
+        }
     }
 }
 
@@ -94,41 +140,67 @@ impl StickyScrollState {
 mod tests {
     use super::*;
 
-    #[test]
-    fn computes_pinned_headers() {
-        let mut state = StickyScrollState::new(3);
-        state.set_scopes(vec![
-            ScopeRange { start_line: 0, end_line: 50, depth: 0, header_text: "fn main()".into() },
-            ScopeRange { start_line: 5, end_line: 30, depth: 1, header_text: "for i in 0..10".into() },
-            ScopeRange { start_line: 10, end_line: 20, depth: 2, header_text: "if x > 0".into() },
-        ]);
-
-        state.update(15);
-        assert_eq!(state.pinned_lines.len(), 3);
-        assert_eq!(state.pinned_lines[0].text, "fn main()");
-        assert_eq!(state.pinned_lines[1].text, "for i in 0..10");
-        assert_eq!(state.pinned_lines[2].text, "if x > 0");
+    fn sample_outline() -> Vec<DocumentSymbol> {
+        vec![DocumentSymbol {
+            name: "class Foo".into(),
+            kind: ScopeKind::Class,
+            start_line: 0,
+            end_line: 60,
+            indent_level: 0,
+            children: vec![DocumentSymbol {
+                name: "fn bar()".into(),
+                kind: ScopeKind::Method,
+                start_line: 5,
+                end_line: 40,
+                indent_level: 1,
+                children: vec![DocumentSymbol {
+                    name: "if condition".into(),
+                    kind: ScopeKind::If,
+                    start_line: 10,
+                    end_line: 25,
+                    indent_level: 2,
+                    children: vec![],
+                }],
+            }],
+        }]
     }
 
     #[test]
-    fn respects_max_lines() {
-        let mut state = StickyScrollState::new(1);
-        state.set_scopes(vec![
-            ScopeRange { start_line: 0, end_line: 50, depth: 0, header_text: "a".into() },
-            ScopeRange { start_line: 5, end_line: 30, depth: 1, header_text: "b".into() },
-        ]);
-        state.update(10);
-        assert_eq!(state.pinned_lines.len(), 1);
+    fn nested_scopes_produce_stacked_headers() {
+        let lines = compute_sticky_lines(15, &sample_outline(), 5);
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0].scope_kind, ScopeKind::Class);
+        assert_eq!(lines[1].scope_kind, ScopeKind::Method);
+        assert_eq!(lines[2].scope_kind, ScopeKind::If);
+    }
+
+    #[test]
+    fn max_lines_caps_output() {
+        let lines = compute_sticky_lines(15, &sample_outline(), 1);
+        assert_eq!(lines.len(), 1);
     }
 
     #[test]
     fn disabled_shows_nothing() {
-        let mut state = StickyScrollState::new(3);
-        state.enabled = false;
-        state.set_scopes(vec![
-            ScopeRange { start_line: 0, end_line: 50, depth: 0, header_text: "a".into() },
-        ]);
-        state.update(10);
-        assert!(state.pinned_lines.is_empty());
+        let mut ss = StickyScroll::new(false, 5);
+        ss.update(15, &sample_outline());
+        assert!(ss.lines.is_empty());
+    }
+
+    #[test]
+    fn click_returns_scope_start() {
+        let mut ss = StickyScroll::default();
+        ss.update(15, &sample_outline());
+        assert_eq!(ss.click_line(0), Some(0));
+        assert_eq!(ss.click_line(1), Some(5));
+    }
+
+    #[test]
+    fn apply_settings_clamps() {
+        let mut ss = StickyScroll::default();
+        ss.apply_settings(true, 20);
+        assert_eq!(ss.max_lines, 10);
+        ss.apply_settings(true, 0);
+        assert_eq!(ss.max_lines, 1);
     }
 }

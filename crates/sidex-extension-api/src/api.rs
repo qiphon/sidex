@@ -5,11 +5,12 @@
 
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde_json::Value;
 
 use crate::commands_api::CommandRegistry;
 use crate::debug_api::DebugApi;
+use crate::env_api::EnvApi;
 use crate::languages_api::LanguagesApi;
 use crate::scm_api::ScmApi;
 use crate::tasks_api::TasksApi;
@@ -29,6 +30,7 @@ pub struct ExtensionApiHandler {
     tasks: Arc<TasksApi>,
     scm: Arc<ScmApi>,
     tests: Arc<TestApi>,
+    env: Arc<EnvApi>,
 }
 
 impl ExtensionApiHandler {
@@ -43,6 +45,7 @@ impl ExtensionApiHandler {
         tasks: Arc<TasksApi>,
         scm: Arc<ScmApi>,
         tests: Arc<TestApi>,
+        env: Arc<EnvApi>,
     ) -> Self {
         Self {
             window,
@@ -53,6 +56,7 @@ impl ExtensionApiHandler {
             tasks,
             scm,
             tests,
+            env,
         }
     }
 
@@ -61,9 +65,7 @@ impl ExtensionApiHandler {
     /// Method names use the pattern `"namespace/action"`, e.g.
     /// `"window/showInformationMessage"`.
     pub fn dispatch(&self, method: &str, params: &Value) -> Result<Value> {
-        let (namespace, action) = method
-            .split_once('/')
-            .unwrap_or((method, ""));
+        let (namespace, action) = method.split_once('/').unwrap_or((method, ""));
 
         match namespace {
             "window" => self.window.handle(action, params),
@@ -74,6 +76,7 @@ impl ExtensionApiHandler {
             "tasks" => self.tasks.handle(action, params),
             "scm" => self.scm.handle(action, params),
             "tests" | "testing" => self.tests.handle(action, params),
+            "env" => self.env.handle(action, params),
             _ => bail!("unknown API namespace: {namespace}"),
         }
     }
@@ -81,18 +84,13 @@ impl ExtensionApiHandler {
     fn dispatch_commands(&self, action: &str, params: &Value) -> Result<Value> {
         match action {
             "executeCommand" => {
-                let id = params
-                    .get("command")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let id = params.get("command").and_then(Value::as_str).unwrap_or("");
                 let args = params.get("args").cloned().unwrap_or(Value::Null);
                 self.commands.execute(id, args)
             }
             "getCommands" => {
                 let cmds = self.commands.get_commands();
-                Ok(Value::Array(
-                    cmds.into_iter().map(Value::String).collect(),
-                ))
+                Ok(Value::Array(cmds.into_iter().map(Value::String).collect()))
             }
             _ => bail!("unknown commands action: {action}"),
         }
@@ -104,6 +102,7 @@ mod tests {
     use super::*;
     use crate::commands_api::CommandRegistry;
     use crate::debug_api::DebugApi;
+    use crate::env_api::EnvApi;
     use crate::languages_api::LanguagesApi;
     use crate::scm_api::ScmApi;
     use crate::tasks_api::TasksApi;
@@ -125,6 +124,7 @@ mod tests {
             Arc::new(TasksApi::new()),
             Arc::new(ScmApi::new()),
             Arc::new(TestApi::new()),
+            Arc::new(EnvApi::new()),
         )
     }
 
@@ -153,8 +153,7 @@ mod tests {
     #[test]
     fn dispatch_unknown_namespace() {
         let handler = make_handler();
-        let result = handler
-            .dispatch("nonexistent/foo", &Value::Null);
+        let result = handler.dispatch("nonexistent/foo", &Value::Null);
         assert!(result.is_err());
     }
 
@@ -174,10 +173,7 @@ mod tests {
     fn dispatch_tasks_action() {
         let handler = make_handler();
         let result = handler
-            .dispatch(
-                "tasks/registerTaskProvider",
-                &json!({ "type": "npm" }),
-            )
+            .dispatch("tasks/registerTaskProvider", &json!({ "type": "npm" }))
             .unwrap();
         assert!(result.is_number());
     }

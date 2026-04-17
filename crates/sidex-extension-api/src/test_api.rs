@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -202,14 +202,8 @@ impl TestApi {
     pub fn handle(&self, action: &str, params: &Value) -> Result<Value> {
         match action {
             "createTestController" => {
-                let id = params
-                    .get("id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let label = params
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let id = params.get("id").and_then(Value::as_str).unwrap_or("");
+                let label = params.get("label").and_then(Value::as_str).unwrap_or("");
                 let ctrl_id = self.create_test_controller(id, label);
                 Ok(serde_json::to_value(ctrl_id)?)
             }
@@ -219,9 +213,8 @@ impl TestApi {
                     .and_then(Value::as_u64)
                     .map(|n| TestControllerId(u32::try_from(n).unwrap_or(0)))
                     .ok_or_else(|| anyhow::anyhow!("missing controllerId"))?;
-                let item: TestItem = serde_json::from_value(
-                    params.get("item").cloned().unwrap_or(Value::Null),
-                )?;
+                let item: TestItem =
+                    serde_json::from_value(params.get("item").cloned().unwrap_or(Value::Null))?;
                 self.add_test_item(ctrl_id, item)?;
                 Ok(Value::Bool(true))
             }
@@ -231,10 +224,7 @@ impl TestApi {
                     .and_then(Value::as_u64)
                     .map(|n| TestControllerId(u32::try_from(n).unwrap_or(0)))
                     .ok_or_else(|| anyhow::anyhow!("missing controllerId"))?;
-                let item_id = params
-                    .get("itemId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let item_id = params.get("itemId").and_then(Value::as_str).unwrap_or("");
                 self.remove_test_item(ctrl_id, item_id)?;
                 Ok(Value::Bool(true))
             }
@@ -244,9 +234,8 @@ impl TestApi {
                     .and_then(Value::as_u64)
                     .map(|n| TestControllerId(u32::try_from(n).unwrap_or(0)))
                     .ok_or_else(|| anyhow::anyhow!("missing controllerId"))?;
-                let profile: TestRunProfile = serde_json::from_value(
-                    params.get("profile").cloned().unwrap_or(Value::Null),
-                )?;
+                let profile: TestRunProfile =
+                    serde_json::from_value(params.get("profile").cloned().unwrap_or(Value::Null))?;
                 self.add_test_run_profile(ctrl_id, profile)?;
                 Ok(Value::Bool(true))
             }
@@ -269,9 +258,8 @@ impl TestApi {
                     .and_then(Value::as_u64)
                     .map(|n| TestRunId(u32::try_from(n).unwrap_or(0)))
                     .ok_or_else(|| anyhow::anyhow!("missing runId"))?;
-                let result: TestRunResult = serde_json::from_value(
-                    params.get("result").cloned().unwrap_or(Value::Null),
-                )?;
+                let result: TestRunResult =
+                    serde_json::from_value(params.get("result").cloned().unwrap_or(Value::Null))?;
                 self.report_test_result(run_id, result)?;
                 Ok(Value::Bool(true))
             }
@@ -302,16 +290,10 @@ impl TestApi {
     // -----------------------------------------------------------------------
 
     /// Creates a test controller.
-    pub fn create_test_controller(
-        &self,
-        controller_id: &str,
-        label: &str,
-    ) -> TestControllerId {
+    pub fn create_test_controller(&self, controller_id: &str, label: &str) -> TestControllerId {
         let raw = self.next_controller.fetch_add(1, Ordering::Relaxed);
         let id = TestControllerId(raw);
-        log::debug!(
-            "[ext] createTestController({controller_id}, {label}) -> {raw}"
-        );
+        log::debug!("[ext] createTestController({controller_id}, {label}) -> {raw}");
         self.controllers
             .write()
             .expect("test controllers lock poisoned")
@@ -351,11 +333,7 @@ impl TestApi {
     // -----------------------------------------------------------------------
 
     /// Adds a test item to a controller.
-    pub fn add_test_item(
-        &self,
-        ctrl_id: TestControllerId,
-        item: TestItem,
-    ) -> Result<()> {
+    pub fn add_test_item(&self, ctrl_id: TestControllerId, item: TestItem) -> Result<()> {
         let mut controllers = self
             .controllers
             .write()
@@ -368,11 +346,7 @@ impl TestApi {
     }
 
     /// Removes a test item from a controller.
-    pub fn remove_test_item(
-        &self,
-        ctrl_id: TestControllerId,
-        item_id: &str,
-    ) -> Result<()> {
+    pub fn remove_test_item(&self, ctrl_id: TestControllerId, item_id: &str) -> Result<()> {
         let mut controllers = self
             .controllers
             .write()
@@ -422,32 +396,22 @@ impl TestApi {
             controller_id.0,
             profile_kind,
         );
-        self.runs
-            .write()
-            .expect("test runs lock poisoned")
-            .insert(
+        self.runs.write().expect("test runs lock poisoned").insert(
+            id,
+            TestRunEntry {
                 id,
-                TestRunEntry {
-                    id,
-                    controller_id,
-                    profile_kind,
-                    results: Vec::new(),
-                    is_running: true,
-                },
-            );
+                controller_id,
+                profile_kind,
+                results: Vec::new(),
+                is_running: true,
+            },
+        );
         Ok(id)
     }
 
     /// Reports a result for a test within a run.
-    pub fn report_test_result(
-        &self,
-        run_id: TestRunId,
-        result: TestRunResult,
-    ) -> Result<()> {
-        let mut runs = self
-            .runs
-            .write()
-            .expect("test runs lock poisoned");
+    pub fn report_test_result(&self, run_id: TestRunId, result: TestRunResult) -> Result<()> {
+        let mut runs = self.runs.write().expect("test runs lock poisoned");
         let run = runs
             .get_mut(&run_id)
             .ok_or_else(|| anyhow::anyhow!("test run {} not found", run_id.0))?;
@@ -457,10 +421,7 @@ impl TestApi {
 
     /// Ends a test run.
     pub fn end_test_run(&self, run_id: TestRunId) -> Result<()> {
-        let mut runs = self
-            .runs
-            .write()
-            .expect("test runs lock poisoned");
+        let mut runs = self.runs.write().expect("test runs lock poisoned");
         if let Some(run) = runs.get_mut(&run_id) {
             run.is_running = false;
             log::debug!("[ext] endTestRun({})", run_id.0);
