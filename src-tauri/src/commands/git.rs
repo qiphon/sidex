@@ -200,6 +200,13 @@ pub async fn git_checkout(path: String, branch: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn git_restore(path: String, file_path: String) -> Result<(), String> {
+    run_git(&path, &["restore", "--staged", &file_path])?;
+    run_git(&path, &["restore", &file_path])?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn git_branches(path: String) -> Result<Vec<GitBranch>, String> {
     let output = run_git(&path, &["branch", "-a"])?;
 

@@ -526,6 +526,7 @@ pub fn run() {
             commands::git_add,
             commands::git_commit,
             commands::git_checkout,
+            commands::git_restore,
             commands::git_branches,
             commands::git_init,
             commands::git_is_repo,
