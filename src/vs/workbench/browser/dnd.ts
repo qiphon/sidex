@@ -120,10 +120,13 @@ export class ResourcesDropHandler {
 		afterDrop?: (targetGroup: IEditorGroup | undefined) => void,
 		options?: IEditorOptions
 	): Promise<void> {
+		console.log('[DND] handleDrop called in workbench/browser/dnd.ts');
 		const editors = await this.instantiationService.invokeFunction(accessor =>
 			extractEditorsAndFilesDropData(accessor, event)
 		);
+		console.log('[DND] Extracted editors count:', editors.length);
 		if (!editors.length) {
+			console.log('[DND] No editors extracted, returning early');
 			return;
 		}
 

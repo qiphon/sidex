@@ -38,6 +38,23 @@ try {
 	// Tauri not available
 }
 
+// Helper function to get path for file (Electron or Tauri)
+function getPathForFile(file: File): string | null {
+	// Electron: native file path available via (file as any).path
+	if ((file as any).path) {
+		return (file as any).path;
+	}
+	
+	// Tauri: Try to get file path via invoke
+	if (tauriInvoke && file.name) {
+		// In Tauri, we may need to use a different approach
+		// For now, return null and handle via blob URL
+		return null;
+	}
+	
+	return null;
+}
+
 //#region Editor / Resources DND
 
 export const CodeDataTransfers = {
@@ -67,8 +84,12 @@ export interface IDraggedResourceEditorInput extends IBaseTextResourceEditorInpu
 }
 
 export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEditorInput> {
+	console.log('[DND] extractEditorsDropData called');
 	const editors: IDraggedResourceEditorInput[] = [];
 	if (e.dataTransfer && e.dataTransfer.types.length > 0) {
+		console.log('[DND] dataTransfer types:', e.dataTransfer.types);
+		console.log('[DND] dataTransfer files count:', e.dataTransfer.files?.length || 0);
+		
 		// Data Transfer: Code Editors
 		const rawEditorsData = e.dataTransfer.getData(CodeDataTransfers.EDITORS);
 		if (rawEditorsData) {
@@ -91,13 +112,18 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 
 		// Check for native file transfer (Electron or Tauri)
 		if (e.dataTransfer?.files) {
+			console.log('[DND] Processing', e.dataTransfer.files.length, 'files from dataTransfer');
 			for (let i = 0; i < e.dataTransfer.files.length; i++) {
 				const file = e.dataTransfer.files[i];
+				console.log('[DND] File', i, ':', file.name, 'type:', file.type, 'size:', file.size);
 				const filePath = getPathForFile(file);
+				console.log('[DND] File path result:', filePath);
 				if (file && filePath) {
 					try {
+						console.log('[DND] Adding editor with file path:', filePath);
 						editors.push({ resource: URI.file(filePath), isExternal: true, allowWorkspaceOpen: true });
 					} catch (error) {
+						console.error('[DND] Error creating URI from file path:', error);
 						// Invalid URI
 					}
 				} else if (file && tauriInvoke) {
@@ -105,16 +131,21 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 					// Store the file reference and use File API to read content later
 					// Mark as external with a special scheme that we can handle
 					try {
+						console.log('[DND] Creating blob URL for Tauri file:', file.name);
 						// Create a blob URL as a temporary identifier
 						const blobUrl = URL.createObjectURL(file);
+						console.log('[DND] Blob URL created:', blobUrl);
 						editors.push({ 
 							resource: URI.parse(`tauri-file:${encodeURIComponent(file.name)}?blob=${encodeURIComponent(blobUrl)}`), 
 							isExternal: true, 
 							allowWorkspaceOpen: false 
 						});
 					} catch (error) {
+						console.error('[DND] Error creating blob URL:', error);
 						// Failed to create blob URL
 					}
+				} else if (file) {
+					console.log('[DND] File has no path and tauriInvoke not available');
 				}
 			}
 		}
@@ -168,14 +199,18 @@ export async function extractEditorsAndFilesDropData(
 	accessor: ServicesAccessor,
 	e: DragEvent
 ): Promise<Array<IDraggedResourceEditorInput>> {
+	console.log('[DND] extractEditorsAndFilesDropData called');
 	const editors = extractEditorsDropData(e);
+	console.log('[DND] extractEditorsDropData returned', editors.length, 'editors');
 
 	// Web: Check for file transfer
 	if (e.dataTransfer && isWeb && containsDragType(e, DataTransfers.FILES)) {
+		console.log('[DND] Detected web file transfer');
 		const files = e.dataTransfer.items;
 		if (files) {
 			const instantiationService = accessor.get(IInstantiationService);
 			const filesData = await instantiationService.invokeFunction(accessor => extractFilesDropData(accessor, e));
+			console.log('[DND] extractFilesDropData returned', filesData.length, 'files');
 			for (const fileData of filesData) {
 				editors.push({
 					resource: fileData.resource,
@@ -187,6 +222,7 @@ export async function extractEditorsAndFilesDropData(
 		}
 	}
 
+	console.log('[DND] extractEditorsAndFilesDropData returning', editors.length, 'total editors');
 	return editors;
 }
 
