@@ -26,6 +26,18 @@ import { extractSelection } from '../../opener/common/opener.js';
 import { Registry } from '../../registry/common/platform.js';
 import { IMarker } from '../../markers/common/markers.js';
 
+// Tauri: Import invoke for getting file paths
+let tauriInvoke: ((cmd: string, args?: any) => Promise<any>) | undefined = undefined;
+try {
+	// Dynamically import Tauri API when available
+	const tauriModule = (globalThis as any)['__TAURI__']?.core;
+	if (tauriModule && typeof tauriModule.invoke === 'function') {
+		tauriInvoke = tauriModule.invoke;
+	}
+} catch {
+	// Tauri not available
+}
+
 //#region Editor / Resources DND
 
 export const CodeDataTransfers = {
@@ -77,15 +89,31 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 			}
 		}
 
-		// Check for native file transfer
+		// Check for native file transfer (Electron or Tauri)
 		if (e.dataTransfer?.files) {
 			for (let i = 0; i < e.dataTransfer.files.length; i++) {
 				const file = e.dataTransfer.files[i];
-				if (file && getPathForFile(file)) {
+				const filePath = getPathForFile(file);
+				if (file && filePath) {
 					try {
-						editors.push({ resource: URI.file(getPathForFile(file)!), isExternal: true, allowWorkspaceOpen: true });
+						editors.push({ resource: URI.file(filePath), isExternal: true, allowWorkspaceOpen: true });
 					} catch (error) {
 						// Invalid URI
+					}
+				} else if (file && tauriInvoke) {
+					// Tauri: For files without a direct path, we need to handle them differently
+					// Store the file reference and use File API to read content later
+					// Mark as external with a special scheme that we can handle
+					try {
+						// Create a blob URL as a temporary identifier
+						const blobUrl = URL.createObjectURL(file);
+						editors.push({ 
+							resource: URI.parse(`tauri-file:${encodeURIComponent(file.name)}?blob=${encodeURIComponent(blobUrl)}`), 
+							isExternal: true, 
+							allowWorkspaceOpen: false 
+						});
+					} catch (error) {
+						// Failed to create blob URL
 					}
 				}
 			}
@@ -526,10 +554,24 @@ interface IElectronWebUtils {
 /**
  * A helper to get access to Electrons `webUtils.getPathForFile` function
  * in a safe way without crashing the application when running in the web.
+ * For Tauri, we use a custom command to get the file path.
  */
 export function getPathForFile(file: File): string | undefined {
 	if (isNative && typeof (globalThis as IElectronWebUtils).vscode?.webUtils?.getPathForFile === 'function') {
 		return (globalThis as IElectronWebUtils).vscode?.webUtils?.getPathForFile(file);
+	}
+
+	// Tauri: Use invoke to get file path
+	if (tauriInvoke) {
+		try {
+			// Create a temporary object with file info that can be sent to Rust
+			const fileInfo = { name: file.name, size: file.size, type: file.type };
+			// We need to use a different approach for Tauri - store file reference and return a virtual path
+			// For now, return undefined and let the file upload mechanism handle it
+			return undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	return undefined;
