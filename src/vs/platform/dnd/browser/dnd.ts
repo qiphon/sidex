@@ -38,6 +38,10 @@ try {
 	// Tauri not available
 }
 
+// Store for Tauri file references (since we can't get real paths from drag-and-drop)
+const tauriFileStore = new Map<string, File>();
+let tauriFileCounter = 0;
+
 // Helper function to get path for file (Electron or Tauri)
 function getLocalPathForFile(file: File): string | null {
 	// Electron: native file path available via (file as any).path
@@ -46,9 +50,12 @@ function getLocalPathForFile(file: File): string | null {
 	}
 	
 	// Tauri: Try to get file path via invoke
+	// Note: In Tauri, the File object from drag-and-drop may not have a direct path
+	// We need to use a different approach - store file reference and use blob URL
 	if (tauriInvoke && file.name) {
-		// In Tauri, we may need to use a different approach
-		// For now, return null and handle via blob URL
+		// For Tauri, we cannot directly get the file path from a dragged File object
+		// The File object comes from the browser's DataTransfer API which doesn't expose real paths
+		// Return null to trigger the blob URL fallback in extractEditorsDropData
 		return null;
 	}
 	
@@ -126,26 +133,27 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 						console.error('[DND] Error creating URI from file path:', error);
 						// Invalid URI
 					}
-				} else if (file && tauriInvoke) {
-					// Tauri: For files without a direct path, we need to handle them differently
-					// Store the file reference and use File API to read content later
-					// Mark as external with a special scheme that we can handle
-					try {
-						console.log('[DND] Creating blob URL for Tauri file:', file.name);
-						// Create a blob URL as a temporary identifier
-						const blobUrl = URL.createObjectURL(file);
-						console.log('[DND] Blob URL created:', blobUrl);
-						editors.push({ 
-							resource: URI.parse(`tauri-file:${encodeURIComponent(file.name)}?blob=${encodeURIComponent(blobUrl)}`), 
-							isExternal: true, 
-							allowWorkspaceOpen: false 
-						});
-					} catch (error) {
-						console.error('[DND] Error creating blob URL:', error);
-						// Failed to create blob URL
-					}
-				} else if (file) {
-					console.log('[DND] File has no path and tauriInvoke not available');
+					} else if (file && !filePath && tauriInvoke) {
+						// Tauri: For files without a direct path, store the file reference
+						// and use a virtual path scheme that we can resolve later
+						try {
+							console.log('[DND] Storing Tauri file reference:', file.name);
+							// Store file in our local store with a unique ID
+							const fileId = `tauri-file-${++tauriFileCounter}`;
+							tauriFileStore.set(fileId, file);
+							console.log('[DND] File stored with ID:', fileId);
+							// Create a virtual URI that encodes the file ID
+							editors.push({ 
+								resource: URI.parse(`tauri-file:${encodeURIComponent(fileId)}/${encodeURIComponent(file.name)}`), 
+								isExternal: true, 
+								allowWorkspaceOpen: false 
+							});
+						} catch (error) {
+							console.error('[DND] Error storing Tauri file reference:', error);
+							// Failed to store file reference
+						}
+					} else if (file) {
+						console.log('[DND] File has no path and tauriInvoke not available');
 				}
 			}
 		}
