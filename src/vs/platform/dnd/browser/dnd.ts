@@ -125,9 +125,13 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 				console.log('[DND] File', i, ':', file.name, 'type:', file.type, 'size:', file.size);
 				const filePath = getLocalPathForFile(file);
 				console.log('[DND] File path result:', filePath);
+				
+				// Check if this is actually a directory (via webkitRelativePath or size === 0 and name suggests folder)
+				const isDirectory = file.name.endsWith('/') || (file.size === 0 && !file.type && file.webkitRelativePath?.includes('/'));
+				
 				if (file && filePath) {
 					try {
-						console.log('[DND] Adding editor with file path:', filePath);
+						console.log('[DND] Adding editor with file path:', filePath, 'isDirectory:', isDirectory);
 						editors.push({ resource: URI.file(filePath), isExternal: true, allowWorkspaceOpen: true });
 					} catch (error) {
 						console.error('[DND] Error creating URI from file path:', error);
@@ -137,7 +141,7 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 						// Tauri: For files without a direct path, store the file reference
 						// and use a virtual path scheme that we can resolve later
 						try {
-							console.log('[DND] Storing Tauri file reference:', file.name);
+							console.log('[DND] Storing Tauri file reference:', file.name, 'isDirectory:', isDirectory);
 							// Store file in our local store with a unique ID
 							const fileId = `tauri-file-${++tauriFileCounter}`;
 							tauriFileStore.set(fileId, file);
@@ -146,7 +150,7 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 							editors.push({ 
 								resource: URI.parse(`tauri-file:${encodeURIComponent(fileId)}/${encodeURIComponent(file.name)}`), 
 								isExternal: true, 
-								allowWorkspaceOpen: false 
+								allowWorkspaceOpen: isDirectory // Allow workspace open for directories 
 							});
 						} catch (error) {
 							console.error('[DND] Error storing Tauri file reference:', error);
