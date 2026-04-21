@@ -39,7 +39,7 @@ try {
 }
 
 // Helper function to get path for file (Electron or Tauri)
-function getPathForFile(file: File): string | null {
+function getLocalPathForFile(file: File): string | null {
 	// Electron: native file path available via (file as any).path
 	if ((file as any).path) {
 		return (file as any).path;
@@ -116,7 +116,7 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 			for (let i = 0; i < e.dataTransfer.files.length; i++) {
 				const file = e.dataTransfer.files[i];
 				console.log('[DND] File', i, ':', file.name, 'type:', file.type, 'size:', file.size);
-				const filePath = getPathForFile(file);
+				const filePath = getLocalPathForFile(file);
 				console.log('[DND] File path result:', filePath);
 				if (file && filePath) {
 					try {
