@@ -55,6 +55,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: test key
+        run: echo ${{secrets.TEST_KEY}}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -166,130 +169,14 @@ jobs:
           \) -exec cp {} dist-artifacts/ \; 2>/dev/null || true
           ls -la dist-artifacts/
 
-      - name: Sign Windows installers (Azure Trusted Signing)
-        if: runner.os == 'Windows'
-        uses: Azure/artifact-signing-action@v1.1.0
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
-          trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE }}
-          files-folder: dist-artifacts
-          files-folder-filter: exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: dist-artifacts/
-          retention-days: 7
-
-  # ── Deploy to Cloudflare R2 ──────────────────────────────────────────────────
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all-artifacts
-          merge-multiple: true
-
-      - name: List files
-        run: find all-artifacts -type f | sort
-
-      - name: Configure AWS CLI for R2
-        env:
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-        run: |
-          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
-          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
-          aws configure set default.region auto
-
-      - name: Upload to R2 — versioned folder
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-        run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          aws s3 sync all-artifacts/ \
-            "s3://siden-assets/releases/sidex/${VERSION}/" \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-            --delete
-
-      - name: Upload to R2 — overwrite latest
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-        run: |
-          aws s3 sync all-artifacts/ \
-            "s3://siden-assets/releases/sidex/latest/" \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-            --delete
-
-      - name: Generate and upload latest.json
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-        run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          BASE_URL="https://cdn.siden.ai/releases/sidex/latest"
-
-          MACOS_SIG=$(cat all-artifacts/*.app.tar.gz.sig 2>/dev/null | head -1 || echo "")
-          MACOS_FILE=$(ls all-artifacts/*.app.tar.gz 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-
-          WIN_SIG=$(cat all-artifacts/*x64-setup.exe.zip.sig 2>/dev/null | head -1 || echo "")
-          WIN_FILE=$(ls all-artifacts/*x64-setup.exe.zip 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-
-          LINUX_SIG=$(cat all-artifacts/*.AppImage.tar.gz.sig 2>/dev/null | head -1 || echo "")
-          LINUX_FILE=$(ls all-artifacts/*.AppImage.tar.gz 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "")
-
-          cat > latest.json << EOF
-          {
-            "version": "${VERSION}",
-            "notes": "See the full changelog at https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
-            "pub_date": "${DATE}",
-            "platforms": {
-              "darwin-aarch64": { "signature": "${MACOS_SIG}", "url": "${BASE_URL}/${MACOS_FILE}" },
-              "darwin-x86_64": { "signature": "${MACOS_SIG}", "url": "${BASE_URL}/${MACOS_FILE}" },
-              "windows-x86_64": { "signature": "${WIN_SIG}", "url": "${BASE_URL}/${WIN_FILE}" },
-              "linux-x86_64": { "signature": "${LINUX_SIG}", "url": "${BASE_URL}/${LINUX_FILE}" }
-            }
-          }
-          EOF
-
-          aws s3 cp latest.json \
-            "s3://siden-assets/releases/sidex/latest/latest.json" \
-            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-            --content-type "application/json" \
-            --cache-control "no-cache"
-
-  # ── GitHub Release ───────────────────────────────────────────────────────────
-  release:
-    needs: deploy
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all-artifacts
-          merge-multiple: true
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "v${{ github.event.inputs.version || github.ref_name }}"
-          name: "SideX v${{ github.event.inputs.version || github.ref_name }}"
-          draft: true
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}  # 优先用手动输入的 tag
+          files: dist-artifacts/*
+          name: Release ${{ github.event.inputs.tag || github.ref_name }}
+          draft: false
+          prerelease: false
           generate_release_notes: true
-          files: all-artifacts/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
