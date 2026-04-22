@@ -385,9 +385,10 @@ export function createEditorServices(
 	options?: CreateServicesOptions
 ): TestInstantiationService {
 	const services = new ServiceCollection();
-
+	 
 	const serviceIdentifiers: ServiceIdentifier<any>[] = [];
 
+	 
 	const define = <T>(id: ServiceIdentifier<T>, ctor: new (...args: any[]) => T) => {
 		if (!services.has(id)) {
 			services.set(id, new SyncDescriptor(ctor));

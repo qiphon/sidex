@@ -683,6 +683,7 @@ class AnchorCoordinate {
 	) {}
 }
 
+ 
 function safeInvoke<T extends (...args: any[]) => any>(
 	fn: T,
 	thisArg: ThisParameterType<T>,

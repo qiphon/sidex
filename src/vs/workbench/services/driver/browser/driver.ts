@@ -45,6 +45,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 	}
 
 	async setValue(selector: string, text: string): Promise<void> {
+		 
 		const element = mainWindow.document.querySelector(selector);
 
 		if (!element) {
@@ -59,6 +60,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 	}
 
 	async isActiveElement(selector: string): Promise<boolean> {
+		 
 		const element = mainWindow.document.querySelector(selector);
 
 		if (element !== mainWindow.document.activeElement) {
@@ -85,6 +87,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 	}
 
 	async getElements(selector: string, recursive: boolean): Promise<IElement[]> {
+		 
 		const query = mainWindow.document.querySelectorAll(selector);
 		const result: IElement[] = [];
 		for (let i = 0; i < query.length; i++) {
@@ -135,6 +138,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 	}
 
 	async typeInEditor(selector: string, text: string): Promise<void> {
+		 
 		const element = mainWindow.document.querySelector(selector);
 
 		if (!element) {
@@ -173,6 +177,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 	}
 
 	async getEditorSelection(selector: string): Promise<{ selectionStart: number; selectionEnd: number }> {
+		 
 		const element = mainWindow.document.querySelector(selector);
 		if (!element) {
 			throw new Error(`Editor not found: ${selector}`);
@@ -191,6 +196,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 	}
 
 	async getTerminalBuffer(selector: string): Promise<string[]> {
+		 
 		const element = mainWindow.document.querySelector(selector);
 
 		if (!element) {
@@ -213,6 +219,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 	}
 
 	async writeInTerminal(selector: string, text: string): Promise<void> {
+		 
 		const element = mainWindow.document.querySelector(selector);
 
 		if (!element) {
@@ -248,6 +255,7 @@ export class BrowserWindowDriver implements IWindowDriver {
 		selector: string,
 		offset?: { x: number; y: number }
 	): Promise<{ x: number; y: number }> {
+		 
 		const element = mainWindow.document.querySelector(selector);
 
 		if (!element) {

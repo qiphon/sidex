@@ -1031,6 +1031,7 @@ export class FindWidget extends Widget implements IOverlayWidget, IVerticalSashL
 		}
 
 		if (e.equals(KeyCode.UpArrow)) {
+			 
 			return stopPropagationForMultiLineUpwards(
 				e,
 				this._findInput.getValue(),
@@ -1039,6 +1040,7 @@ export class FindWidget extends Widget implements IOverlayWidget, IVerticalSashL
 		}
 
 		if (e.equals(KeyCode.DownArrow)) {
+			 
 			return stopPropagationForMultiLineDownwards(
 				e,
 				this._findInput.getValue(),
@@ -1078,6 +1080,7 @@ export class FindWidget extends Widget implements IOverlayWidget, IVerticalSashL
 		}
 
 		if (e.equals(KeyCode.UpArrow)) {
+			 
 			return stopPropagationForMultiLineUpwards(
 				e,
 				this._replaceInput.inputBox.value,
@@ -1086,6 +1089,7 @@ export class FindWidget extends Widget implements IOverlayWidget, IVerticalSashL
 		}
 
 		if (e.equals(KeyCode.DownArrow)) {
+			 
 			return stopPropagationForMultiLineDownwards(
 				e,
 				this._replaceInput.inputBox.value,

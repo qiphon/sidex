@@ -1246,6 +1246,7 @@ export class ActionListWidget<T> extends Disposable {
 	}
 
 	private _getRowElement(index: number): HTMLElement | null {
+		 
 		return this.domNode.ownerDocument.getElementById(this._list.getElementID(index));
 	}
 

@@ -131,6 +131,7 @@ export class TerminalEditor extends EditorPane {
 		this._editorInput?.terminalInstance?.focus(true);
 	}
 
+	 
 	protected createEditor(parent: HTMLElement): void {
 		this._editorInstanceElement = parent;
 		this._overflowGuardElement = dom.$('.terminal-overflow-guard.terminal-editor');

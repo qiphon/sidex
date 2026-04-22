@@ -711,6 +711,7 @@ export class PaneView extends Disposable {
 	}
 
 	private getPaneHeaderElements(): HTMLElement[] {
+		 
 		return [...this.element.querySelectorAll('.pane-header')] as HTMLElement[];
 	}
 

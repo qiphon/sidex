@@ -592,6 +592,7 @@ interface IMetaData<T, U> {
 	type?: IParserType<U>;
 }
 
+ 
 function _isEmpty<T>(
 	this: void,
 	value: T | undefined,
@@ -614,6 +615,7 @@ function _isEmpty<T>(
 	return true;
 }
 
+ 
 function _assignProperties<T>(
 	this: void,
 	target: T | undefined,
@@ -641,6 +643,7 @@ function _assignProperties<T>(
 	return target;
 }
 
+ 
 function _fillProperties<T>(
 	this: void,
 	target: T | undefined,
@@ -669,6 +672,7 @@ function _fillProperties<T>(
 	return target;
 }
 
+ 
 function _fillDefaults<T>(
 	this: void,
 	target: T | undefined,
@@ -705,6 +709,7 @@ function _fillDefaults<T>(
 	return target;
 }
 
+ 
 function _freeze<T>(this: void, target: T, properties: IMetaData<T, any>[]): Readonly<T> | undefined {
 	if (target === undefined || target === null) {
 		return undefined;
@@ -1135,6 +1140,7 @@ namespace CommandConfiguration {
 		linux?: IBaseCommandConfigurationShape;
 	}
 
+	 
 	const properties: IMetaData<Tasks.ICommandConfiguration, any>[] = [
 		{ property: 'runtime' },
 		{ property: 'name' },
@@ -1548,6 +1554,7 @@ namespace DependsOrder {
 }
 
 namespace ConfigurationProperties {
+	 
 	const properties: IMetaData<Tasks.IConfigurationProperties, any>[] = [
 		{ property: 'name' },
 		{ property: 'identifier' },

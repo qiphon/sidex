@@ -82,8 +82,9 @@ class TerminalCommandGuideContribution extends Disposable implements ITerminalCo
 		if (!showCommandGuide) {
 			this._activeCommandGuide.clear();
 		} else {
+			 
 			const screenElement = xterm.raw.element!.querySelector('.xterm-screen')!;
-
+			 
 			const viewportElement = xterm.raw.element!.querySelector('.xterm-viewport')!;
 			this._activeCommandGuide.value = combinedDisposable(
 				addDisposableListener(screenElement, 'mousemove', (e: MouseEvent) =>

@@ -38,10 +38,12 @@ export class ExtensionRecommendationNotificationServiceChannelClient implements 
 export class ExtensionRecommendationNotificationServiceChannel implements IServerChannel {
 	constructor(private service: IExtensionRecommendationNotificationService) {}
 
+	 
 	listen(_: unknown, event: string): Event<any> {
 		throw new Error(`Event not found: ${event}`);
 	}
 
+	 
 	call(_: unknown, command: string, args?: any): Promise<any> {
 		switch (command) {
 			case 'promptImportantExtensionsInstallNotification':
