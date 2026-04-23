@@ -137,7 +137,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find src-tauri/target \( \
+          find sidex/target \( \
             -name "*.dmg" \
             -o -name "*.app.tar.gz" \
             -o -name "*.app.tar.gz.sig" \
@@ -149,7 +149,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find src-tauri/target \( \
+          find sidex/target \( \
             -name "*-setup.exe" \
             -o -name "*.exe.zip" \
             -o -name "*.exe.zip.sig" \
@@ -161,7 +161,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find src-tauri/target \( \
+          find sidex/target \( \
             -name "*.deb" \
             -o -name "*.AppImage" \
             -o -name "*.AppImage.tar.gz" \
