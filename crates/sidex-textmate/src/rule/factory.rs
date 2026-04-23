@@ -293,12 +293,7 @@ impl RuleFactory {
                         Self::compile_from_repo(&include, repository, registry, grammar_registry)
                     }
                     IncludeReference::Relative { rule_name } => {
-                        Self::compile_from_repo(
-                            &rule_name,
-                            repository,
-                            registry,
-                            grammar_registry,
-                        )
+                        Self::compile_from_repo(&rule_name, repository, registry, grammar_registry)
                     }
                     IncludeReference::TopLevel { scope_name }
                     | IncludeReference::TopLevelRepository { scope_name, .. } => {
@@ -311,10 +306,8 @@ impl RuleFactory {
                         grammar_registry
                             .external_grammar_repository(&scope_name, repository)
                             .and_then(|external_repo| {
-                                let key = external_include
-                                    .as_deref()
-                                    .unwrap_or("$self")
-                                    .to_string();
+                                let key =
+                                    external_include.as_deref().unwrap_or("$self").to_string();
                                 Self::compile_from_repo(
                                     &key,
                                     external_repo,
@@ -365,7 +358,6 @@ impl RuleFactory {
         registry: &mut RuleRegistry,
         grammar_registry: &G,
     ) -> Option<RuleId> {
-
         if registry.compiling_keys.contains(key) {
             return registry.key_to_id.get(key).copied();
         }

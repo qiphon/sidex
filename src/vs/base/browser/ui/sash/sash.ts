@@ -520,21 +520,17 @@ export class Sash extends Disposable {
 
 		let isMultisashResize = false;
 
-		// eslint-disable-next-line local/code-no-any-casts
 		if (!(event as any).__orthogonalSashEvent) {
 			const orthogonalSash = this.getOrthogonalSash(event);
 
 			if (orthogonalSash) {
 				isMultisashResize = true;
-				// eslint-disable-next-line local/code-no-any-casts
 				(event as any).__orthogonalSashEvent = true;
 				orthogonalSash.onPointerStart(event, new OrthogonalPointerEventFactory(pointerEventFactory));
 			}
 		}
 
-		// eslint-disable-next-line local/code-no-any-casts
 		if (this.linkedSash && !(event as any).__linkedSashEvent) {
-			// eslint-disable-next-line local/code-no-any-casts
 			(event as any).__linkedSashEvent = true;
 			this.linkedSash.onPointerStart(event, new OrthogonalPointerEventFactory(pointerEventFactory));
 		}
@@ -543,7 +539,6 @@ export class Sash extends Disposable {
 			return;
 		}
 
-		 
 		const iframes = this.el.ownerDocument.getElementsByTagName('iframe');
 		for (const iframe of iframes) {
 			iframe.classList.add(PointerEventsDisabledCssClass); // disable mouse events on iframes as long as we drag the sash

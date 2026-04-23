@@ -7,7 +7,6 @@ import { sumBy } from '../../../../base/common/arrays.js';
 import { BugIndicatingError } from '../../../../base/common/errors.js';
 import { OffsetRange } from '../ranges/offsetRange.js';
 
- 
 export abstract class BaseEdit<
 	T extends BaseReplacement<T> = BaseReplacement<any>,
 	TEdit extends BaseEdit<T, TEdit> = BaseEdit<T, any>
@@ -362,7 +361,7 @@ export class Edit<T extends BaseReplacement<T>> extends BaseEdit<T, Edit<T>> {
 	 * Represents a set of edits to a string.
 	 * All these edits are applied at once.
 	 */
-	public static readonly empty = new Edit<never>([]);
+	public static readonly empty = new Edit<never>([] as never[]);
 
 	public static create<T extends BaseReplacement<T>>(replacements: readonly T[]): Edit<T> {
 		return new Edit(replacements);

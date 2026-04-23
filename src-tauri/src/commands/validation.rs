@@ -17,6 +17,7 @@ pub fn validate_path(path: &str) -> Result<(), String> {
 }
 
 /// Rejects arguments containing NUL bytes.
+#[allow(dead_code)]
 pub fn validate_args(args: &[&str]) -> Result<(), String> {
     for (i, arg) in args.iter().enumerate() {
         if arg.contains('\0') {

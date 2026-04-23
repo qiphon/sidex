@@ -64,19 +64,14 @@ impl SyncResource {
 // ── Sync state ──────────────────────────────────────────────────────────
 
 /// Overall state of the sync system.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SyncState {
+    #[default]
     Off,
     Syncing,
     Synced,
     Error(String),
     HasConflicts,
-}
-
-impl Default for SyncState {
-    fn default() -> Self {
-        Self::Off
-    }
 }
 
 // ── Conflict resolution ─────────────────────────────────────────────────
@@ -410,17 +405,16 @@ impl SettingsSync {
         remote_data: Option<&SyncData>,
         provider: &mut dyn SyncDataProvider,
     ) -> Result<SyncResult, String> {
-        match remote_data {
-            Some(data) => self.import(data, provider),
-            None => {
-                self.last_sync = Some(Instant::now());
-                self.state = SyncState::Synced;
-                Ok(SyncResult {
-                    resources_synced: Vec::new(),
-                    conflicts: Vec::new(),
-                    errors: Vec::new(),
-                })
-            }
+        if let Some(data) = remote_data {
+            self.import(data, provider)
+        } else {
+            self.last_sync = Some(Instant::now());
+            self.state = SyncState::Synced;
+            Ok(SyncResult {
+                resources_synced: Vec::new(),
+                conflicts: Vec::new(),
+                errors: Vec::new(),
+            })
         }
     }
 

@@ -25,7 +25,7 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 #[allow(clippy::too_many_lines)]
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let file_menu = SubmenuBuilder::new(app, "File")
+    let file_menu = SubmenuBuilder::with_id(app, "file_menu", "File")
         .item(
             &MenuItemBuilder::with_id("new_file", "New File")
                 .accelerator("CmdOrCtrl+N")
@@ -73,7 +73,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let edit_menu = SubmenuBuilder::new(app, "Edit")
+    let edit_menu = SubmenuBuilder::with_id(app, "edit_menu", "Edit")
         .item(&PredefinedMenuItem::undo(app, None)?)
         .item(&PredefinedMenuItem::redo(app, None)?)
         .separator()
@@ -104,7 +104,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let selection_menu = SubmenuBuilder::new(app, "Selection")
+    let selection_menu = SubmenuBuilder::with_id(app, "selection_menu", "Selection")
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .item(
             &MenuItemBuilder::with_id("expand_selection", "Expand Selection")
@@ -155,7 +155,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let view_menu = SubmenuBuilder::new(app, "View")
+    let view_menu = SubmenuBuilder::with_id(app, "view_menu", "View")
         .item(
             &MenuItemBuilder::with_id("command_palette", "Command Palette...")
                 .accelerator("CmdOrCtrl+Shift+P")
@@ -232,7 +232,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let go_menu = SubmenuBuilder::new(app, "Go")
+    let go_menu = SubmenuBuilder::with_id(app, "go_menu", "Go")
         .item(
             &MenuItemBuilder::with_id("back", "Back")
                 .accelerator("CmdOrCtrl+Alt+Left")
@@ -272,7 +272,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let run_menu = SubmenuBuilder::new(app, "Run")
+    let run_menu = SubmenuBuilder::with_id(app, "run_menu", "Run")
         .item(
             &MenuItemBuilder::with_id("start_debugging", "Start Debugging")
                 .accelerator("F5")
@@ -301,7 +301,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let terminal_menu = SubmenuBuilder::new(app, "Terminal")
+    let terminal_menu = SubmenuBuilder::with_id(app, "terminal_menu", "Terminal")
         .item(
             &MenuItemBuilder::with_id("new_terminal", "New Terminal")
                 .accelerator("CmdOrCtrl+Shift+`")
@@ -317,12 +317,12 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         )
         .build()?;
 
-    let window_menu = SubmenuBuilder::new(app, "Window")
+    let window_menu = SubmenuBuilder::with_id(app, "window_menu", "Window")
         .item(&PredefinedMenuItem::minimize(app, None)?)
         .item(&PredefinedMenuItem::maximize(app, None)?)
         .build()?;
 
-    let help_menu = SubmenuBuilder::new(app, "Help")
+    let help_menu = SubmenuBuilder::with_id(app, "help_menu", "Help")
         .item(&MenuItemBuilder::with_id("welcome", "Welcome").build(app)?)
         .item(&MenuItemBuilder::with_id("documentation", "Documentation").build(app)?)
         .item(&MenuItemBuilder::with_id("release_notes", "Release Notes").build(app)?)
@@ -336,7 +336,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .separator()
         .build()?;
 
-    let sidex_menu = SubmenuBuilder::new(app, "SideX")
+    let sidex_menu = SubmenuBuilder::with_id(app, "sidex_menu", "SideX")
         .item(&PredefinedMenuItem::about(app, Some("About SideX"), None)?)
         .separator()
         .item(&PredefinedMenuItem::services(app, None)?)
@@ -847,6 +847,8 @@ pub fn run() {
             // Extension API introspection
             commands::ext_api_get_namespaces,
             commands::ext_api_get_commands,
+            // Menu i18n
+            commands::update_menu_labels,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

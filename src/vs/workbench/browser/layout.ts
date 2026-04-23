@@ -292,7 +292,6 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		if (targetDocument === this.mainContainer.ownerDocument) {
 			return this.mainContainer; // main window
 		} else {
-			 
 			return targetDocument.body.getElementsByClassName('monaco-workbench')[0] as HTMLElement; // auxiliary window
 		}
 	}
@@ -3642,7 +3641,7 @@ class LayoutStateModel extends Disposable {
 			const defaultAuxiliaryBarVisibility = this.configurationService.getValue(
 				WorkbenchLayoutSettings.AUXILIARYBAR_DEFAULT_VISIBILITY
 			);
-			const startupEditor = this.configurationService.getValue<
+			const _startupEditor = this.configurationService.getValue<
 				'none' | 'welcomePage' | 'readme' | 'newUntitledFile' | 'welcomePageInEmptyWorkbench' | 'terminal'
 			>('workbench.startupEditor');
 			if (

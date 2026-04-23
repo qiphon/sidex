@@ -104,16 +104,16 @@ impl DiagnosticCounts {
 
 /// Checks whether a diagnostic has the `Unnecessary` tag (render faded).
 pub fn is_unnecessary(diag: &Diagnostic) -> bool {
-    diag.tags.as_ref().map_or(false, |tags| {
-        tags.contains(&lsp_types::DiagnosticTag::UNNECESSARY)
-    })
+    diag.tags
+        .as_ref()
+        .is_some_and(|tags| tags.contains(&lsp_types::DiagnosticTag::UNNECESSARY))
 }
 
 /// Checks whether a diagnostic has the `Deprecated` tag (render strikethrough).
 pub fn is_deprecated(diag: &Diagnostic) -> bool {
-    diag.tags.as_ref().map_or(false, |tags| {
-        tags.contains(&lsp_types::DiagnosticTag::DEPRECATED)
-    })
+    diag.tags
+        .as_ref()
+        .is_some_and(|tags| tags.contains(&lsp_types::DiagnosticTag::DEPRECATED))
 }
 
 // ── DiagnosticKey ───────────────────────────────────────────────────────────
@@ -290,7 +290,6 @@ impl DiagnosticManager {
                 match diag.severity {
                     Some(lsp_types::DiagnosticSeverity::ERROR) => counts.errors += 1,
                     Some(lsp_types::DiagnosticSeverity::WARNING) => counts.warnings += 1,
-                    Some(lsp_types::DiagnosticSeverity::INFORMATION) => counts.info += 1,
                     Some(lsp_types::DiagnosticSeverity::HINT) => counts.hints += 1,
                     _ => counts.info += 1,
                 }

@@ -302,10 +302,10 @@ pub fn stash_drop_index(repo_root: &Path, index: usize) -> GitResult<String> {
 /// Parse `git stash list` output into structured [`StashEntry`] values.
 pub fn stash_list_parsed(repo_root: &Path) -> GitResult<Vec<StashEntry>> {
     let output = run_git(repo_root, &["stash", "list", "--format=%gd%n%gs%n%aI"])?;
-    parse_stash_list(&output)
+    Ok(parse_stash_list(&output))
 }
 
-fn parse_stash_list(output: &str) -> GitResult<Vec<StashEntry>> {
+fn parse_stash_list(output: &str) -> Vec<StashEntry> {
     let lines: Vec<&str> = output.lines().collect();
     let mut entries = Vec::new();
 
@@ -347,7 +347,7 @@ fn parse_stash_list(output: &str) -> GitResult<Vec<StashEntry>> {
         });
     }
 
-    Ok(entries)
+    entries
 }
 
 /// Rename a local branch.
@@ -499,12 +499,12 @@ pub fn pull_detailed(
 
     if output.status.success() {
         let fast_forward = stdout.contains("Fast-forward");
-        let merge_commit = if !fast_forward {
+        let merge_commit = if fast_forward {
+            None
+        } else {
             run_git(repo_root, &["rev-parse", "HEAD"])
                 .ok()
                 .map(|h| h.trim().to_string())
-        } else {
-            None
         };
         Ok(PullResult {
             success: true,
@@ -713,10 +713,10 @@ pub fn get_remotes(repo_root: &Path) -> GitResult<Vec<RemoteInfo>> {
     Ok(map
         .into_iter()
         .map(|(name, (fetch_url, push_url))| {
-            let url = if !fetch_url.is_empty() {
-                fetch_url.clone()
-            } else {
+            let url = if fetch_url.is_empty() {
                 push_url.clone()
+            } else {
+                fetch_url.clone()
             };
             RemoteInfo {
                 name,
@@ -762,7 +762,7 @@ fn collect_conflict_paths(repo_root: &Path) -> GitResult<Vec<String>> {
     Ok(output
         .lines()
         .filter(|l| !l.is_empty())
-        .map(|l| l.to_string())
+        .map(std::string::ToString::to_string)
         .collect())
 }
 
@@ -838,17 +838,14 @@ pub fn list_tags(repo_root: &Path) -> GitResult<Vec<TagInfo>> {
             TagInfo {
                 hash: parts.first().copied().unwrap_or("").to_string(),
                 name: parts.get(1).copied().unwrap_or("").to_string(),
-                message: parts
-                    .get(2)
-                    .map(|s| {
-                        let s = s.to_string();
-                        if s.is_empty() {
-                            None
-                        } else {
-                            Some(s)
-                        }
-                    })
-                    .unwrap_or(None),
+                message: parts.get(2).and_then(|s| {
+                    let s = s.to_string();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s)
+                    }
+                }),
             }
         })
         .collect();

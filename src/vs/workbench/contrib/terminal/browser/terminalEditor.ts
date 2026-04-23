@@ -131,7 +131,6 @@ export class TerminalEditor extends EditorPane {
 		this._editorInput?.terminalInstance?.focus(true);
 	}
 
-	 
 	protected createEditor(parent: HTMLElement): void {
 		this._editorInstanceElement = parent;
 		this._overflowGuardElement = dom.$('.terminal-overflow-guard.terminal-editor');
@@ -245,7 +244,7 @@ export class TerminalEditor extends EditorPane {
 		let defaultProfileName;
 		try {
 			defaultProfileName = this._terminalProfileService.getDefaultProfileName();
-		} catch (e) {
+		} catch (_e) {
 			defaultProfileName = this._terminalProfileResolverService.defaultProfileName;
 		}
 		return defaultProfileName!;

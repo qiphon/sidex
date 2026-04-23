@@ -1,4 +1,4 @@
-//! Linux installer: atomically swap the running AppImage or the binary
+//! Linux installer: atomically swap the running `AppImage` or the binary
 //! shipped inside a `.deb` / `.tar.gz`.
 
 use std::fs;
@@ -59,13 +59,11 @@ fn replace_binary(current: &Path, artifact: &Path) -> UpdateResult<()> {
     let target = current.to_path_buf();
     let mode = fs::metadata(current)
         .ok()
-        .map(|m| m.permissions().mode() & 0o7777)
-        .unwrap_or(0o755);
+        .map_or(0o755, |m| m.permissions().mode() & 0o7777);
 
     let scratch_parent = current
         .parent()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+        .map_or_else(|| PathBuf::from("."), PathBuf::from);
     let scratch = scratch_parent.join(".sidex-update.tmp");
 
     if scratch.exists() {

@@ -327,6 +327,7 @@ impl TokenScope {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn from_prefix(s: &str) -> Option<Self> {
         if s.starts_with("comment.doc") {
             return Some(Self::CommentDoc);
@@ -722,16 +723,20 @@ impl SyntaxHighlighter {
                     if let Some(scope) = current_scope {
                         let text = &source[*start..*end];
                         let start_pos = byte_offset_to_point(source, *start);
+                        #[allow(clippy::cast_possible_truncation)]
                         let mut line = start_pos.row as u32;
+                        #[allow(clippy::cast_possible_truncation)]
                         let mut col = start_pos.column as u32;
 
+                        #[allow(clippy::explicit_counter_loop)]
                         for segment in text.split('\n') {
                             if !segment.is_empty() {
+                                #[allow(clippy::cast_possible_truncation)]
                                 let len = segment.len() as u32;
                                 while highlighter.tokens.len() <= line as usize {
-                                    highlighter.tokens.push(HighlightedLine::new(
-                                        highlighter.tokens.len() as u32,
-                                    ));
+                                    #[allow(clippy::cast_possible_truncation)]
+                                    let line_num = highlighter.tokens.len() as u32;
+                                    highlighter.tokens.push(HighlightedLine::new(line_num));
                                 }
                                 highlighter.tokens[line as usize]
                                     .push(HighlightToken::new(col, len, scope));

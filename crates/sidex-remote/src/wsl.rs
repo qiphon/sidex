@@ -63,7 +63,7 @@ pub fn translate_path_to_wsl(windows_path: &Path) -> String {
         let drive = s[..1].to_lowercase();
         format!("/mnt/{drive}{}", &s[2..])
     } else {
-        s.to_string()
+        s.clone()
     }
 }
 
@@ -97,7 +97,7 @@ pub fn exec_in_wsl(_distro: &str, _command: &str) -> Result<ExecOutput> {
     wsl_unavailable()
 }
 
-/// Install the SideX Server binary inside the given WSL distro.
+/// Install the `SideX` Server binary inside the given WSL distro.
 pub fn install_server_in_wsl(distro: &str) -> Result<()> {
     let check = exec_in_wsl(
         distro,
@@ -139,11 +139,13 @@ pub async fn connect_distro(name: &str) -> Result<WslConnection> {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(clippy::unused_async)]
 pub async fn connect_distro(_name: &str) -> Result<WslConnection> {
     wsl_unavailable()
 }
 
 /// WSL-based [`RemoteTransport`].
+#[allow(dead_code)]
 pub struct WslTransport {
     distro: String,
 }
@@ -180,6 +182,8 @@ pub fn list_distributions() -> Result<Vec<WslDistro>> {
 }
 
 /// Parse the tabular output of `wsl --list --verbose`.
+#[allow(dead_code)]
+#[allow(clippy::unnecessary_wraps)]
 pub(crate) fn parse_wsl_list(text: &str) -> Result<Vec<WslDistro>> {
     let mut distros = Vec::new();
 
@@ -346,6 +350,7 @@ impl RemoteTransport for WslTransport {
 #[cfg(not(target_os = "windows"))]
 impl WslTransport {
     /// Connect to a named WSL distribution. Returns an error on non-Windows.
+    #[allow(clippy::unused_async)]
     pub async fn connect(_distro: &str) -> Result<Self> {
         wsl_unavailable()
     }

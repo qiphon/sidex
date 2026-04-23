@@ -2,7 +2,7 @@
 //!
 //! [`RemoteManager`] keeps track of all active remote connections regardless
 //! of backend and provides a uniform `ConnectionId`-based API for the rest
-//! of SideX to interact with them.
+//! of `SideX` to interact with them.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -165,6 +165,7 @@ impl RemoteManager {
 
     /// Connect via a remote tunnel (placeholder — requires a `TunnelClient`
     /// to be wired into `RemoteTransport`).
+    #[allow(clippy::unused_async)]
     pub async fn connect_tunnel(&mut self, _tunnel_id: &str) -> Result<ConnectionId> {
         bail!("tunnel transport not yet wired into RemoteTransport")
     }

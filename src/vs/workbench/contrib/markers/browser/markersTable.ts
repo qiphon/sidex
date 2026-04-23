@@ -285,7 +285,7 @@ class MarkersTableVirtualDelegate implements ITableVirtualDelegate<MarkerTableIt
 	static readonly ROW_HEIGHT = 24;
 	readonly headerRowHeight = MarkersTableVirtualDelegate.HEADER_ROW_HEIGHT;
 
-	getHeight(item: MarkerTableItem) {
+	getHeight(_item: MarkerTableItem) {
 		return MarkersTableVirtualDelegate.ROW_HEIGHT;
 	}
 }
@@ -373,14 +373,13 @@ export class MarkersTable extends Disposable implements IProblemsWidget {
 			options
 		) as WorkbenchTable<MarkerTableItem>;
 
-		 
 		const list = this.table.domNode.querySelector('.monaco-list-rows')! as HTMLElement;
 
 		// mouseover/mouseleave event handlers
 		const onRowHover = Event.chain(this._register(new DomEmitter(list, 'mouseover')).event, $ =>
 			$.map(e => DOM.findParentWithClass(e.target as HTMLElement, 'monaco-list-row', 'monaco-list-rows'))
-				.filter<HTMLElement>(e => !!e)
-				.map(e => parseInt(e.getAttribute('data-index')!))
+				.filter((e): boolean => !!e)
+				.map(e => parseInt((e as HTMLElement).getAttribute('data-index')!))
 		);
 
 		const onListLeave = Event.map(this._register(new DomEmitter(list, 'mouseleave')).event, () => -1);
@@ -611,7 +610,7 @@ export class MarkersTable extends Disposable implements IProblemsWidget {
 		this.reset(this.resourceMarkers);
 	}
 
-	updateMarker(marker: Marker): void {
+	updateMarker(_marker: Marker): void {
 		this.table.rerender();
 	}
 

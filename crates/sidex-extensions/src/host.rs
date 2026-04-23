@@ -541,7 +541,10 @@ impl ExtensionHostManager {
         self.next_host_id += 1;
 
         let mut host = ExtensionHost::start(id, kind, node_path, host_script, extensions_dir)?;
-        host.loaded_extensions = extensions.iter().map(|e| e.canonical_id()).collect();
+        host.loaded_extensions = extensions
+            .iter()
+            .map(super::manifest::ExtensionManifest::canonical_id)
+            .collect();
         host.state = HostState::Ready;
 
         log::info!(

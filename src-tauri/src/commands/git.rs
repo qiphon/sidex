@@ -54,6 +54,7 @@ pub struct GitRemote {
     pub remote_type: String,
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn git_err(e: sidex_git::GitError) -> String {
     format!("Git error: {e}")
 }
@@ -376,11 +377,7 @@ pub async fn git_blame(path: String, file: String) -> Result<Vec<BlameLine>, Str
 }
 
 #[tauri::command]
-pub async fn git_tag(
-    path: String,
-    name: String,
-    message: Option<String>,
-) -> Result<(), String> {
+pub async fn git_tag(path: String, name: String, message: Option<String>) -> Result<(), String> {
     validate_path(&path)?;
     let repo = Path::new(&path);
     sidex_git::tag(repo, &name, message.as_deref()).map_err(git_err)

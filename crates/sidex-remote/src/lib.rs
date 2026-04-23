@@ -1,4 +1,4 @@
-//! Remote development for SideX — SSH, WSL, Dev Containers, Codespaces, Tunnels.
+//! Remote development for `SideX` — SSH, WSL, Dev Containers, Codespaces, Tunnels.
 //!
 //! This crate provides a unified [`transport::RemoteTransport`] trait that
 //! every backend implements.  The [`manager::RemoteManager`] keeps track of

@@ -20,7 +20,6 @@ import {
 	ITerminalProfile,
 	ITerminalBackendRegistry,
 	TerminalExtensions,
-	IProcessDetails,
 	IPtyHostLatencyMeasurement,
 	ITerminalsLayoutInfo,
 	ITerminalsLayoutInfoById,
@@ -31,6 +30,7 @@ import {
 	IProcessPropertyMap,
 	ITerminalLaunchResult
 } from '../../../../platform/terminal/common/terminal.js';
+import type { IProcessDetails } from '../../../../platform/terminal/common/terminalProcess.js';
 import type { IProcessEnvironment } from '../../../../base/common/platform.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { ITerminalInstanceService, ITerminalService } from './terminal.js';
@@ -42,7 +42,9 @@ let _invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>)
 let _listen: ((event: string, handler: (event: { payload: unknown }) => void) => Promise<() => void>) | undefined;
 
 async function ensureTauri(): Promise<boolean> {
-	if (_invoke && _listen) {return true;}
+	if (_invoke && _listen) {
+		return true;
+	}
 	try {
 		const core = await import('@tauri-apps/api/core');
 		const events = await import('@tauri-apps/api/event');
@@ -189,7 +191,7 @@ class TauriPty extends Disposable implements ITerminalChildProcess {
 		}
 	}
 
-	shutdown(immediate: boolean): void {
+	shutdown(_immediate: boolean): void {
 		try {
 			if (this._backendId !== undefined && _invoke) {
 				_invoke('terminal_kill', { terminalId: this._backendId }).catch(() => {});
@@ -323,7 +325,9 @@ class TauriTerminalBackend extends Disposable implements ITerminalBackend {
 		if (_invoke) {
 			try {
 				const shell = (await _invoke('get_default_shell')) as string;
-				if (shell) {return shell;}
+				if (shell) {
+					return shell;
+				}
 			} catch {}
 		}
 		return '/bin/zsh';
@@ -477,7 +481,7 @@ class TauriTerminalBackend extends Disposable implements ITerminalBackend {
 	async getTerminalLayoutInfo(): Promise<ITerminalsLayoutInfo | undefined> {
 		return undefined;
 	}
-	async getPerformanceMarks(): Promise<performance.PerformanceMark[]> {
+	async getPerformanceMarks(): Promise<any[]> {
 		return [];
 	}
 	async reduceConnectionGraceTime(): Promise<void> {}

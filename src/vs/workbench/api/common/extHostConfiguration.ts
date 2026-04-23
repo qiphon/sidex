@@ -118,13 +118,11 @@ export class ExtHostConfigProvider {
 
 	getConfiguration(
 		section?: string,
-		scope?: vscode.ConfigurationScope | null,
+		_scope?: vscode.ConfigurationScope | null,
 		_extensionDescription?: IExtensionDescription
 	): vscode.WorkspaceConfiguration {
 		const overrides: IConfigurationOverrides = {};
-		const config = deepClone(
-			this._configuration.getValue(section, overrides, this._extHostWorkspace.workspace)
-		);
+		const config = deepClone(this._configuration.getValue(section, overrides, this._extHostWorkspace.workspace));
 
 		const result: vscode.WorkspaceConfiguration = {
 			has(key: string): boolean {

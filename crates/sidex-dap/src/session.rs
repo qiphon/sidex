@@ -24,8 +24,7 @@ pub struct BreakpointPersistence {
 impl BreakpointPersistence {
     /// Saves the persistence data to a JSON file.
     pub fn save(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 

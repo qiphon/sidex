@@ -84,7 +84,7 @@ impl EnvApi {
             )),
             "clipboard/writeText" => {
                 let text = params.get("text").and_then(Value::as_str).unwrap_or("");
-                *self.clipboard_text.write().expect("lock") = text.to_owned();
+                text.clone_into(&mut self.clipboard_text.write().expect("lock"));
                 Ok(Value::Null)
             }
             "openExternal" => {
@@ -101,7 +101,7 @@ impl EnvApi {
     }
 
     pub fn set_language(&self, lang: &str) {
-        *self.language.write().expect("lock") = lang.to_owned();
+        lang.clone_into(&mut self.language.write().expect("lock"));
     }
     pub fn set_log_level(&self, level: LogLevel) {
         *self.log_level.write().expect("lock") = level;

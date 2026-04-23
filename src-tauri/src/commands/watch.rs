@@ -469,7 +469,7 @@ pub async fn watch_start(
                     }
 
                     // Determine if it's a directory
-                    let is_dir = std::fs::metadata(path).map(|m| m.is_dir()).unwrap_or(false);
+                    let is_dir = std::fs::metadata(path).is_ok_and(|m| m.is_dir());
 
                     // Send to debounce channel
                     let pending = PendingEvent {

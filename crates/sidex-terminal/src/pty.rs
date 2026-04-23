@@ -718,7 +718,7 @@ impl PtyProcess {
     /// Sets an environment variable by writing an `export` command to the shell.
     pub fn set_env(&self, key: &str, value: &str) -> PtyResult<()> {
         let cmd = if cfg!(target_os = "windows") {
-            format!("set {}={}\n", key, value)
+            format!("set {key}={value}\n")
         } else {
             format!("export {}='{}'\n", key, value.replace('\'', "'\"'\"'"))
         };
@@ -728,6 +728,7 @@ impl PtyProcess {
     /// Attempts to read the current working directory of the shell process
     /// via `/proc/<pid>/cwd` on Linux or `lsof` on macOS.
     pub fn get_cwd(&self) -> Option<PathBuf> {
+        #[allow(unused_variables)]
         let pid = self.pid()?;
 
         #[cfg(target_os = "linux")]
@@ -773,7 +774,7 @@ impl PtyProcess {
 
     /// Returns a `TermInfo` snapshot of this terminal.
     pub fn info(&self, handle: TermHandle) -> TermInfo {
-        let total = self.output.lock().map(|b| b.total_count()).unwrap_or(0);
+        let total = self.output.lock().map_or(0, |b| b.total_count());
         TermInfo {
             handle,
             shell: self.shell.clone(),

@@ -59,6 +59,7 @@ impl DirtyDiffProvider {
     }
 
     /// Set the debounce interval.
+    #[must_use]
     pub fn with_debounce_ms(mut self, ms: u64) -> Self {
         self.debounce_ms = ms;
         self
@@ -74,6 +75,7 @@ impl DirtyDiffProvider {
     ) -> bool {
         let now = Instant::now();
         if let Some(existing) = self.diffs.get(path) {
+            #[allow(clippy::cast_possible_truncation)]
             let elapsed = now.duration_since(existing.last_computed).as_millis() as u64;
             if elapsed < self.debounce_ms {
                 return false;
@@ -86,12 +88,9 @@ impl DirtyDiffProvider {
 
     /// Force recomputation of the dirty diff for a file.
     pub fn recompute(&mut self, path: &Path, current_content: &str, repo_root: &Path) {
-        let original = match get_original_content(path, repo_root) {
-            Ok(content) => content,
-            Err(_) => {
-                self.diffs.remove(path);
-                return;
-            }
+        let Ok(original) = get_original_content(path, repo_root) else {
+            self.diffs.remove(path);
+            return;
         };
 
         let hunks = compute_dirty_diff(&original, current_content);
@@ -106,10 +105,7 @@ impl DirtyDiffProvider {
 
     /// Get cached hunks for a file.
     pub fn hunks(&self, path: &Path) -> &[DiffHunk] {
-        self.diffs
-            .get(path)
-            .map(|d| d.hunks.as_slice())
-            .unwrap_or(&[])
+        self.diffs.get(path).map_or(&[], |d| d.hunks.as_slice())
     }
 
     /// Remove cached diff data for a file.
@@ -146,6 +142,7 @@ impl DirtyDiffProvider {
     }
 
     /// Returns minimap/scrollbar marks: `(line_fraction, kind)` pairs.
+    #[allow(clippy::cast_precision_loss)]
     pub fn scrollbar_marks(&self, path: &Path, total_lines: u32) -> Vec<(f32, DirtyDiffKind)> {
         if total_lines == 0 {
             return Vec::new();
@@ -188,43 +185,40 @@ pub fn compute_dirty_diff(original: &str, current: &str) -> Vec<DiffHunk> {
     let mut hunks = Vec::new();
     let mut i = 0;
     while i < ops.len() {
-        match ops[i] {
-            EditOp::Equal => {
+        if let EditOp::Equal = ops[i] {
+            i += 1;
+        } else {
+            let start = i;
+            let old_start = count_old_before(&ops, start);
+            let new_start = count_new_before(&ops, start);
+            let mut old_count = 0u32;
+            let mut new_count = 0u32;
+
+            while i < ops.len() && !matches!(ops[i], EditOp::Equal) {
+                match ops[i] {
+                    EditOp::Delete => old_count += 1,
+                    EditOp::Insert => new_count += 1,
+                    EditOp::Equal => unreachable!(),
+                }
                 i += 1;
             }
-            _ => {
-                let start = i;
-                let mut old_start = count_old_before(&ops, start);
-                let mut new_start = count_new_before(&ops, start);
-                let mut old_count = 0u32;
-                let mut new_count = 0u32;
 
-                while i < ops.len() && !matches!(ops[i], EditOp::Equal) {
-                    match ops[i] {
-                        EditOp::Delete => old_count += 1,
-                        EditOp::Insert => new_count += 1,
-                        EditOp::Equal => unreachable!(),
-                    }
-                    i += 1;
-                }
+            let kind = match (old_count, new_count) {
+                (0, _) => DirtyDiffKind::Added,
+                (_, 0) => DirtyDiffKind::Removed,
+                _ => DirtyDiffKind::Modified,
+            };
 
-                let kind = match (old_count, new_count) {
-                    (0, _) => DirtyDiffKind::Added,
-                    (_, 0) => DirtyDiffKind::Removed,
-                    _ => DirtyDiffKind::Modified,
-                };
+            hunks.push(DiffHunk {
+                original_start: (old_start + 1) as u32,
+                original_count: old_count,
+                modified_start: (new_start + 1) as u32,
+                modified_count: new_count,
+                kind,
+            });
 
-                hunks.push(DiffHunk {
-                    original_start: (old_start + 1) as u32,
-                    original_count: old_count,
-                    modified_start: (new_start + 1) as u32,
-                    modified_count: new_count,
-                    kind,
-                });
-
-                let _ = old_start;
-                let _ = new_start;
-            }
+            let _ = old_start;
+            let _ = new_start;
         }
     }
 
@@ -252,6 +246,7 @@ enum EditOp {
     Delete,
 }
 
+#[allow(clippy::many_single_char_names)]
 fn lcs_table(a: &[&str], b: &[&str]) -> Vec<Vec<u32>> {
     let m = a.len();
     let n = b.len();

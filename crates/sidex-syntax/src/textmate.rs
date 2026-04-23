@@ -499,7 +499,7 @@ impl<'g> TextMateTokenizer<'g> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn try_match_compiled(
         &mut self,
         patterns: &[Pattern],

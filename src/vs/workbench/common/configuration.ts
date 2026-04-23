@@ -74,7 +74,7 @@ export const Extensions = {
 
 type ConfigurationValue = { value: unknown | undefined /* Remove */ };
 export type ConfigurationKeyValuePairs = [string, ConfigurationValue][];
- 
+
 export type ConfigurationMigrationFn = (
 	value: any,
 	valueAccessor: (key: string) => any
@@ -295,7 +295,9 @@ export class DynamicWindowConfiguration extends Disposable implements IWorkbench
 	) {
 		super();
 		this.registerNewWindowProfileConfiguration();
-		this._register(this.userDataProfilesService.onDidChangeProfiles(e => this.registerNewWindowProfileConfiguration()));
+		this._register(
+			this.userDataProfilesService.onDidChangeProfiles(_e => this.registerNewWindowProfileConfiguration())
+		);
 
 		this.setNewWindowProfile();
 		this.checkAndResetNewWindowProfileConfig();

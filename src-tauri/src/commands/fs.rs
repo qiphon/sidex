@@ -28,7 +28,7 @@ pub struct FileStat {
     pub readonly: bool,
 }
 
-fn io_err(path: &str, e: sidex_workspace::WorkspaceError) -> String {
+fn io_err(path: &str, e: &sidex_workspace::WorkspaceError) -> String {
     format!("{path}: {e}")
 }
 
@@ -36,35 +36,35 @@ fn io_err(path: &str, e: sidex_workspace::WorkspaceError) -> String {
 #[tauri::command]
 pub fn read_file(path: String) -> Result<String, String> {
     validate_path(&path)?;
-    ws::read_file(Path::new(&path)).map_err(|e| io_err(&path, e))
+    ws::read_file(Path::new(&path)).map_err(|e| io_err(&path, &e))
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 pub fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
     validate_path(&path)?;
-    ws::read_file_bytes(Path::new(&path)).map_err(|e| io_err(&path, e))
+    ws::read_file_bytes(Path::new(&path)).map_err(|e| io_err(&path, &e))
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 pub fn write_file(path: String, content: String) -> Result<(), String> {
     validate_path(&path)?;
-    ws::write_file(Path::new(&path), &content).map_err(|e| io_err(&path, e))
+    ws::write_file(Path::new(&path), &content).map_err(|e| io_err(&path, &e))
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 pub fn write_file_bytes(path: String, content: Vec<u8>) -> Result<(), String> {
     validate_path(&path)?;
-    ws::write_file_bytes(Path::new(&path), &content).map_err(|e| io_err(&path, e))
+    ws::write_file_bytes(Path::new(&path), &content).map_err(|e| io_err(&path, &e))
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 pub fn read_dir(path: String) -> Result<Vec<DirEntry>, String> {
     validate_path(&path)?;
-    let entries = ws::read_dir(Path::new(&path)).map_err(|e| io_err(&path, e))?;
+    let entries = ws::read_dir(Path::new(&path)).map_err(|e| io_err(&path, &e))?;
 
     Ok(entries
         .into_iter()
@@ -84,7 +84,7 @@ pub fn read_dir(path: String) -> Result<Vec<DirEntry>, String> {
 #[tauri::command]
 pub fn stat(path: String) -> Result<FileStat, String> {
     validate_path(&path)?;
-    let s = ws::stat(Path::new(&path)).map_err(|e| io_err(&path, e))?;
+    let s = ws::stat(Path::new(&path)).map_err(|e| io_err(&path, &e))?;
     Ok(FileStat {
         size: s.size,
         is_dir: s.is_dir,
@@ -100,14 +100,14 @@ pub fn stat(path: String) -> Result<FileStat, String> {
 #[tauri::command]
 pub fn mkdir(path: String, recursive: bool) -> Result<(), String> {
     validate_path(&path)?;
-    ws::mkdir(Path::new(&path), recursive).map_err(|e| io_err(&path, e))
+    ws::mkdir(Path::new(&path), recursive).map_err(|e| io_err(&path, &e))
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 pub fn remove(path: String, recursive: bool) -> Result<(), String> {
     validate_path(&path)?;
-    ws::remove(Path::new(&path), recursive).map_err(|e| io_err(&path, e))
+    ws::remove(Path::new(&path), recursive).map_err(|e| io_err(&path, &e))
 }
 
 #[allow(clippy::needless_pass_by_value)]

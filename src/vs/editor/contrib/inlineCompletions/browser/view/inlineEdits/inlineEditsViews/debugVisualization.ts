@@ -12,7 +12,6 @@ export interface IVisualizationEffect {
 }
 
 export function setVisualization(data: object, visualization: IVisualizationEffect): void {
-	// eslint-disable-next-line local/code-no-any-casts
 	(data as any)['$$visualization'] = visualization;
 }
 
@@ -183,7 +182,7 @@ class HtmlHorizontalOffsetRangeVisualizer implements IVisualizationEffect {
 		};
 
 		// This is for debugging only
-		 
+
 		document.body.appendChild(container);
 		updatePosition();
 
@@ -234,7 +233,7 @@ class HtmlRectVisualizer implements IVisualizationEffect {
 		};
 
 		// This is for debugging only
-		 
+
 		document.body.appendChild(div);
 		updatePosition();
 

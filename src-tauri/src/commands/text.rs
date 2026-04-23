@@ -121,20 +121,19 @@ pub fn get_word_boundaries(line: String, column: usize) -> Result<WordBoundary, 
     #[allow(clippy::cast_possible_truncation)]
     let pos = sidex_text::Position::new(0, column as u32);
 
-    match buffer.get_word_at_position(pos) {
-        Some(word) => Ok(WordBoundary {
+    if let Some(word) = buffer.get_word_at_position(pos) {
+        Ok(WordBoundary {
             start: word.start_column as usize,
             end: word.end_column as usize,
-        }),
-        None => {
-            let bytes = line.as_bytes();
-            if bytes.is_empty() || column >= bytes.len() {
-                return Ok(WordBoundary { start: 0, end: 0 });
-            }
-            let start = column.saturating_sub(1);
-            let end = (column + 1).min(bytes.len());
-            Ok(WordBoundary { start, end })
+        })
+    } else {
+        let bytes = line.as_bytes();
+        if bytes.is_empty() || column >= bytes.len() {
+            return Ok(WordBoundary { start: 0, end: 0 });
         }
+        let start = column.saturating_sub(1);
+        let end = (column + 1).min(bytes.len());
+        Ok(WordBoundary { start, end })
     }
 }
 
@@ -154,9 +153,8 @@ pub fn simple_diff(old_text: String, new_text: String) -> Vec<DiffLine> {
     let diff = compute_line_diff(&old_lines, &new_lines);
 
     let mut result = Vec::new();
-    let mut line_number = 0usize;
-    for entry in &diff {
-        line_number += 1;
+    for (line_number, entry) in diff.iter().enumerate() {
+        let line_number = line_number + 1;
         match entry {
             LineDiff::Equal(_) => {}
             LineDiff::Modified(_, new) => {

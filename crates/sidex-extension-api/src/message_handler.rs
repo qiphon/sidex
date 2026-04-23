@@ -1,4 +1,4 @@
-//! Main RPC dispatcher for extension host ↔ SideX communication.
+//! Main RPC dispatcher for extension host ↔ `SideX` communication.
 //!
 //! **Inbound** — [`handle_ext_host_message`] routes JSON-RPC calls arriving
 //! from the Node.js extension host to the correct [`ExtensionApiHandler`]
@@ -6,7 +6,7 @@
 //!
 //! **Outbound** — the `notify_*` / `request_*` family of functions send
 //! document-sync events, editor-state notifications, and language-feature
-//! requests from SideX *to* the extension host.
+//! requests from `SideX` *to* the extension host.
 
 use anyhow::Result;
 use serde_json::{json, Value};

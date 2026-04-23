@@ -738,7 +738,6 @@ export class SettingsEditor2 extends EditorPane {
 		} else if (this._currentFocusContext === SettingsFocusContext.SettingControl) {
 			const element = this.focusedSettingDOMElement;
 			if (element) {
-				 
 				const control = element.querySelector(AbstractSettingRenderer.CONTROL_SELECTOR);
 				if (control) {
 					(<HTMLElement>control).focus();
@@ -773,7 +772,6 @@ export class SettingsEditor2 extends EditorPane {
 		this.settingsTree.domFocus();
 
 		if (focusSettingInput) {
-			 
 			const controlInFocusedRow = this.settingsTree
 				.getHTMLElement()
 				.querySelector(`.focused ${AbstractSettingRenderer.CONTROL_SELECTOR}`);
@@ -801,7 +799,7 @@ export class SettingsEditor2 extends EditorPane {
 		}
 
 		// Do not select all if the user is already searching.
-		this.searchWidget.focus(selectAll && !this.searchInputDelayer.isTriggered);
+		(this.searchWidget as any).focus(selectAll && !this.searchInputDelayer.isTriggered);
 	}
 
 	clearSearchResults(): void {
@@ -830,7 +828,7 @@ export class SettingsEditor2 extends EditorPane {
 			label += `. ${this.lastSyncedLabel}`;
 		}
 
-		this.searchWidget.updateAriaLabel(label);
+		(this.searchWidget as any).updateAriaLabel(label);
 	}
 
 	/**
@@ -1044,7 +1042,6 @@ export class SettingsEditor2 extends EditorPane {
 	}
 
 	private onDidClickSetting(evt: ISettingLinkClickEvent, recursed?: boolean): void {
-		 
 		const targetElement = this.currentSettingsModel?.getElementsByName(evt.targetKey)?.[0];
 		let revealFailed = false;
 		if (targetElement) {
@@ -1088,7 +1085,6 @@ export class SettingsEditor2 extends EditorPane {
 					evt.targetKey
 				);
 				if (domElements && domElements[0]) {
-					 
 					const control = domElements[0].querySelector(AbstractSettingRenderer.CONTROL_SELECTOR);
 					if (control) {
 						(<HTMLElement>control).focus();
@@ -1354,7 +1350,7 @@ export class SettingsEditor2 extends EditorPane {
 				const { element, height } = params;
 				try {
 					this.settingsTree.updateElementHeight(element, height);
-				} catch (e) {
+				} catch (_e) {
 					// the element was not found
 				}
 			})
@@ -1483,7 +1479,7 @@ export class SettingsEditor2 extends EditorPane {
 		value: unknown,
 		manualReset: boolean,
 		languageFilter: string | undefined,
-		scope: ConfigurationScope | undefined
+		_scope: ConfigurationScope | undefined
 	): Promise<void> {
 		// ConfigurationService displays the error if this fails.
 		// Force a render afterwards because onDidConfigurationUpdate doesn't fire if the update doesn't result in an effective setting value change.
@@ -1785,7 +1781,7 @@ export class SettingsEditor2 extends EditorPane {
 							this.extensionGalleryService.getManifest(extension, CancellationToken.None),
 							EXTENSION_FETCH_TIMEOUT_MS
 						)) ?? null;
-				} catch (e) {
+				} catch (_e) {
 					// Likely a networking issue.
 					// Skip adding a button for this extension to the Settings editor.
 					continue;
@@ -1900,7 +1896,6 @@ export class SettingsEditor2 extends EditorPane {
 				const newModel = this.settingsTreeModel.value;
 				let newElement: SettingsTreeElement | undefined;
 
-				 
 				const settings = newModel.getElementsByName(anchorId);
 				if (settings && settings.length > 0) {
 					newElement = settings[0];
@@ -1929,7 +1924,7 @@ export class SettingsEditor2 extends EditorPane {
 				if (newElement) {
 					try {
 						this.settingsTree.reveal(newElement, 0);
-					} catch (e) {
+					} catch (_e) {
 						// Ignore the error
 					}
 				}
@@ -1996,7 +1991,6 @@ export class SettingsEditor2 extends EditorPane {
 
 		// If the context view is focused, delay rendering settings
 		if (this.contextViewFocused()) {
-			 
 			const element = this.window.document.querySelector('.context-view');
 			if (element) {
 				this.scheduleRefresh(element as HTMLElement, key);
@@ -2030,7 +2024,6 @@ export class SettingsEditor2 extends EditorPane {
 		this.renderResultCountMessages(false);
 
 		if (key) {
-			 
 			const elements = this.currentSettingsModel?.getElementsByName(key);
 			if (elements?.length) {
 				if (elements.length >= 2) {
@@ -2079,7 +2072,7 @@ export class SettingsEditor2 extends EditorPane {
 		if (!this.currentSettingsModel) {
 			return;
 		}
-		 
+
 		const dataElements = this.currentSettingsModel.getElementsByName(key);
 		const isModified = dataElements && dataElements[0] && dataElements[0].isConfigured; // all elements are either configured or not
 		const elements = this.settingRenderers.getDOMElementsForSettingKey(this.settingsTree.getHTMLElement(), key);
@@ -2603,7 +2596,7 @@ class SyncControls extends Disposable {
 		@ICommandService private readonly commandService: ICommandService,
 		@IUserDataSyncService private readonly userDataSyncService: IUserDataSyncService,
 		@IUserDataSyncEnablementService private readonly userDataSyncEnablementService: IUserDataSyncEnablementService,
-		@ITelemetryService telemetryService: ITelemetryService
+		@ITelemetryService _telemetryService: ITelemetryService
 	) {
 		super();
 
@@ -2627,7 +2620,7 @@ class SyncControls extends Disposable {
 
 		this.updateLastSyncedTime();
 		this._register(
-			this.userDataSyncService.onDidChangeLastSyncTime(() => {
+			(this.userDataSyncService as any).onDidChangeLastSyncTime(() => {
 				this.updateLastSyncedTime();
 			})
 		);

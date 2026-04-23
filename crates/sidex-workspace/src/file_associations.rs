@@ -122,6 +122,7 @@ fn lang(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn builtin_associations() -> Vec<LanguageAssociation> {
     vec![
         lang("rust", &[".rs"], &[], &[], "text/x-rust"),

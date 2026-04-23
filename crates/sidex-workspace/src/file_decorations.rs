@@ -140,8 +140,8 @@ pub fn compute_git_decorations(statuses: &[GitStatusInput]) -> HashMap<PathBuf, 
     map
 }
 
-pub fn compute_diagnostic_decorations(
-    diagnostics: &HashMap<PathBuf, DiagnosticSummary>,
+pub fn compute_diagnostic_decorations<S: ::std::hash::BuildHasher>(
+    diagnostics: &HashMap<PathBuf, DiagnosticSummary, S>,
 ) -> HashMap<PathBuf, FileDecoration> {
     let mut map = HashMap::with_capacity(diagnostics.len());
     for (path, summary) in diagnostics {
@@ -167,9 +167,9 @@ pub fn compute_diagnostic_decorations(
 
 /// Propagate child decorations up to ancestor folders. Folder badges show
 /// the aggregate count of decorated children. Faded-only entries are skipped.
-pub fn propagate_decorations(
+pub fn propagate_decorations<S: ::std::hash::BuildHasher>(
     tree: &FileTree,
-    decorations: &HashMap<PathBuf, FileDecoration>,
+    decorations: &HashMap<PathBuf, FileDecoration, S>,
 ) -> HashMap<PathBuf, FileDecoration> {
     let mut folder_counts: HashMap<PathBuf, usize> = HashMap::new();
     let mut worst_color: HashMap<PathBuf, Color> = HashMap::new();
@@ -188,7 +188,7 @@ pub fn propagate_decorations(
                 worst_color
                     .entry(dir.to_path_buf())
                     .and_modify(|e| {
-                        if color_priority(&c) > color_priority(e) {
+                        if color_priority(c) > color_priority(*e) {
                             *e = c;
                         }
                     })
@@ -212,7 +212,7 @@ pub fn propagate_decorations(
         .collect()
 }
 
-fn color_priority(c: &Color) -> u8 {
+fn color_priority(c: Color) -> u8 {
     match (c.r > 200, c.g < 100, c.g > 150, c.b > 200) {
         (true, true, _, _) => 3, // red
         (true, _, true, _) => 2, // yellow
@@ -228,7 +228,7 @@ fn merge_decoration(existing: &mut FileDecoration, other: &FileDecoration) {
     if let Some(oc) = other.badge_color {
         if existing
             .badge_color
-            .map_or(true, |c| color_priority(&c) < color_priority(&oc))
+            .is_none_or(|c| color_priority(c) < color_priority(oc))
         {
             existing.badge_color = Some(oc);
         }

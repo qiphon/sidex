@@ -183,6 +183,7 @@ fn position_to_offset(lines: &[&str], pos: sidex_text::Position) -> usize {
 // ── Preview ─────────────────────────────────────────────────────────────────
 
 /// Previews a workspace edit without applying it.
+#[allow(clippy::too_many_lines)]
 pub fn preview_workspace_edit(
     edit: &lsp_types::WorkspaceEdit,
     documents: &[DocumentState],

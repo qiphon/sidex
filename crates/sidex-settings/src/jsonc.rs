@@ -107,14 +107,14 @@ pub fn modify_jsonc(input: &str, path: &[&str], value: &Value) -> Result<String>
                 Value::Object(m) => {
                     m.insert((*key).to_string(), value.clone());
                 }
-                _ => anyhow::bail!("path element '{}' is not an object", key),
+                _ => anyhow::bail!("path element '{key}' is not an object"),
             }
         } else {
             target = match target {
                 Value::Object(m) => m
                     .entry((*key).to_string())
                     .or_insert_with(|| Value::Object(serde_json::Map::new())),
-                _ => anyhow::bail!("path element '{}' is not an object", key),
+                _ => anyhow::bail!("path element '{key}' is not an object"),
             };
         }
     }
@@ -230,58 +230,58 @@ fn find_key_in_src(input: &str, needle: &str) -> Option<usize> {
 }
 
 fn value_span(input: &str, after: usize) -> (usize, usize) {
-    let b = input.as_bytes();
-    let mut i = after;
-    while i < b.len() && b[i].is_ascii_whitespace() {
-        i += 1;
+    let bytes = input.as_bytes();
+    let mut pos = after;
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
     }
-    let s = i;
-    match b.get(i) {
+    let start = pos;
+    match bytes.get(pos) {
         Some(b'"') => {
-            i += 1;
-            while i < b.len() {
-                if b[i] == b'\\' && i + 1 < b.len() {
-                    i += 2;
-                } else if b[i] == b'"' {
-                    return (s, i + 1);
+            pos += 1;
+            while pos < bytes.len() {
+                if bytes[pos] == b'\\' && pos + 1 < bytes.len() {
+                    pos += 2;
+                } else if bytes[pos] == b'"' {
+                    return (start, pos + 1);
                 } else {
-                    i += 1;
+                    pos += 1;
                 }
             }
         }
-        Some(&c @ b'{') | Some(&c @ b'[') => {
-            let cl = if c == b'{' { b'}' } else { b']' };
-            let mut d = 1;
-            i += 1;
-            while i < b.len() && d > 0 {
-                if b[i] == c {
-                    d += 1;
-                } else if b[i] == cl {
-                    d -= 1;
-                } else if b[i] == b'"' {
-                    i += 1;
-                    while i < b.len() {
-                        if b[i] == b'\\' && i + 1 < b.len() {
-                            i += 2;
-                        } else if b[i] == b'"' {
+        Some(&ch @ (b'{' | b'[')) => {
+            let close = if ch == b'{' { b'}' } else { b']' };
+            let mut depth = 1;
+            pos += 1;
+            while pos < bytes.len() && depth > 0 {
+                if bytes[pos] == ch {
+                    depth += 1;
+                } else if bytes[pos] == close {
+                    depth -= 1;
+                } else if bytes[pos] == b'"' {
+                    pos += 1;
+                    while pos < bytes.len() {
+                        if bytes[pos] == b'\\' && pos + 1 < bytes.len() {
+                            pos += 2;
+                        } else if bytes[pos] == b'"' {
                             break;
                         } else {
-                            i += 1;
+                            pos += 1;
                         }
                     }
                 }
-                i += 1;
+                pos += 1;
             }
-            return (s, i);
+            return (start, pos);
         }
         _ => {
-            while i < b.len() && !matches!(b[i], b',' | b'}' | b']' | b'\n') {
-                i += 1;
+            while pos < bytes.len() && !matches!(bytes[pos], b',' | b'}' | b']' | b'\n') {
+                pos += 1;
             }
-            return (s, input[s..i].trim_end().len() + s);
+            return (start, input[start..pos].trim_end().len() + start);
         }
     }
-    (s, input.len())
+    (start, input.len())
 }
 
 fn extract_comments(input: &str) -> Vec<JsoncComment> {

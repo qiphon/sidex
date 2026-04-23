@@ -309,6 +309,7 @@ impl TunnelConnection {
     }
 
     /// Stop the tunnel and mark it disconnected.
+    #[allow(clippy::unused_async)]
     pub async fn stop(&mut self) -> Result<()> {
         self.server = None;
         self.state = TunnelState::Disconnected;

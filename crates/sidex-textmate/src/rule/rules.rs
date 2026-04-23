@@ -194,7 +194,7 @@ impl Rule {
     }
 }
 
-    /// Registry of compiled rules keyed by [`RuleId`]. Equivalent to the
+/// Registry of compiled rules keyed by [`RuleId`]. Equivalent to the
 /// `IRuleRegistry` interface + the `_ruleId2desc` map upstream keeps
 /// inside `Grammar`. Rules are stored behind `Arc` so references can
 /// be handed back through the [`crate::tokenizer::GrammarRuntime`]

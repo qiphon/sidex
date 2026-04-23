@@ -490,17 +490,12 @@ impl KeyBinding {
 // ── KeybindingSource ────────────────────────────────────────────────────────
 
 /// Where a keybinding was defined — affects priority ordering.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeybindingSource {
+    #[default]
     Default,
     User,
     Extension(String),
-}
-
-impl Default for KeybindingSource {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 impl fmt::Display for KeybindingSource {

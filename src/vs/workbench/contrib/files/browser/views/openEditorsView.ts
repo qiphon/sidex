@@ -588,7 +588,7 @@ export class OpenEditorsView extends ViewPane {
 					this.list.setFocus([index]);
 					this.list.setSelection([index]);
 					this.list.reveal(index);
-				} catch (e) {
+				} catch (_e) {
 					// noop list updated in the meantime
 				}
 				return;
@@ -690,7 +690,7 @@ export class OpenEditorsView extends ViewPane {
 		}
 
 		const parentNode = this.list.getHTMLElement();
-		 
+
 		const childNodes: HTMLElement[] = [].slice.call(parentNode.querySelectorAll('.open-editor > a'));
 
 		return dom.getLargestChildWidth(parentNode, childNodes);

@@ -147,7 +147,6 @@ export class TauriExecutableDebugAdapter extends AbstractDebugAdapter {
 	private handleData(data: string): void {
 		this.rawData += data;
 
-		 
 		while (true) {
 			if (this.contentLength >= 0) {
 				if (this.rawData.length >= this.contentLength) {
@@ -222,7 +221,7 @@ export class TauriSocketDebugAdapter extends AbstractDebugAdapter {
 				}
 			};
 
-			this.ws.onerror = event => {
+			this.ws.onerror = _event => {
 				const err = new Error(`WebSocket error connecting to debug adapter at ${url}`);
 				this._onError.fire(err);
 				reject(err);
@@ -254,7 +253,6 @@ export class TauriSocketDebugAdapter extends AbstractDebugAdapter {
 	private handleData(data: string): void {
 		this.rawData += data;
 
-		 
 		while (true) {
 			if (this.contentLength >= 0) {
 				if (this.rawData.length >= this.contentLength) {

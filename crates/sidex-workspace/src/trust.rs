@@ -14,18 +14,13 @@ const TRUST_FILE_NAME: &str = ".sidex-trusted-workspaces.json";
 // ── Trust state ─────────────────────────────────────────────────────────
 
 /// High-level trust determination for a workspace.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum TrustState {
     Trusted,
     Untrusted,
     /// Not yet decided — first open, prompt required.
+    #[default]
     Unknown,
-}
-
-impl Default for TrustState {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 // ── Restricted features ─────────────────────────────────────────────────
@@ -144,20 +139,15 @@ struct TrustData {
 // ── Extension trust capability ──────────────────────────────────────────
 
 /// Whether an extension supports running in untrusted workspaces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ExtensionTrustCapability {
     /// Extension is fully supported in untrusted workspaces.
     Supported,
     /// Extension has limited functionality in untrusted workspaces.
     Limited,
     /// Extension should be disabled in untrusted workspaces (default).
+    #[default]
     Unsupported,
-}
-
-impl Default for ExtensionTrustCapability {
-    fn default() -> Self {
-        Self::Unsupported
-    }
 }
 
 // ── Restricted mode capabilities ────────────────────────────────────────

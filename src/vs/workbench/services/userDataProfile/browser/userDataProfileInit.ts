@@ -9,8 +9,12 @@ import { IUserDataInitializer } from '../../userData/browser/userDataInit.js';
 export class UserDataProfileInitializer implements IUserDataInitializer {
 	_serviceBrand: undefined;
 
+	constructor(..._args: any[]) {}
+
 	async whenInitializationFinished(): Promise<void> {}
-	async requiresInitialization(): Promise<boolean> { return false; }
+	async requiresInitialization(): Promise<boolean> {
+		return false;
+	}
 	async initializeRequiredResources(): Promise<void> {}
 	async initializeOtherResources(_instantiationService: IInstantiationService): Promise<void> {}
 	async initializeInstalledExtensions(_instantiationService: IInstantiationService): Promise<void> {}

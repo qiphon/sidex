@@ -28,6 +28,7 @@ pub fn ext_api_get_namespaces() -> Vec<String> {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn ext_api_get_commands(registry: State<'_, Arc<CommandRegistry>>) -> Vec<ExtCommandInfo> {
     registry
         .get_commands()

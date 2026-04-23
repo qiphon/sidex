@@ -54,7 +54,7 @@ pub fn relaunch(install_root: &Path) -> UpdateResult<()> {
     }
     #[cfg(target_os = "linux")]
     {
-        return linux::relaunch(install_root);
+        linux::relaunch(install_root)
     }
     #[cfg(target_os = "windows")]
     {

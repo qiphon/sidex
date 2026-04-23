@@ -33,6 +33,7 @@ pub fn extend_selection(sel: &mut TerminalSelection, point: SelectionPoint) {
 }
 
 /// Extracts the selected text from the grid, respecting the selection mode.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn selected_text(grid: &TerminalGrid, selection: &TerminalSelection) -> String {
     let (start, end) = selection.ordered();
     let mut result = String::new();
@@ -63,11 +64,11 @@ pub fn selected_text(grid: &TerminalGrid, selection: &TerminalSelection) -> Stri
                         line_text.push(cell.c);
                     }
                 }
-                if line != end.line {
+                if line == end.line {
+                    result.push_str(&line_text);
+                } else {
                     result.push_str(line_text.trim_end_matches(' '));
                     result.push('\n');
-                } else {
-                    result.push_str(&line_text);
                 }
             }
         }
@@ -127,7 +128,7 @@ pub fn selected_text(grid: &TerminalGrid, selection: &TerminalSelection) -> Stri
 /// Returns `true` if the given grid cell is within the selection.
 pub fn is_selected(selection: &TerminalSelection, row: u16, col: u16) -> bool {
     let (start, end) = selection.ordered();
-    let line = row as i32;
+    let line = i32::from(row);
 
     if line < start.line || line > end.line {
         return false;
@@ -155,6 +156,7 @@ pub fn is_selected(selection: &TerminalSelection, row: u16, col: u16) -> bool {
 }
 
 /// Expands a selection point to word boundaries. Returns (start, end) of the word.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn expand_selection_word(
     grid: &TerminalGrid,
     point: SelectionPoint,

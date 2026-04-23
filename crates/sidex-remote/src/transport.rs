@@ -1,7 +1,7 @@
 //! Unified remote transport abstraction.
 //!
 //! Every remote backend (SSH, WSL, containers, Codespaces, tunnels) implements
-//! [`RemoteTransport`] so the rest of SideX can operate without knowing which
+//! [`RemoteTransport`] so the rest of `SideX` can operate without knowing which
 //! backend is active.
 
 use std::path::Path;

@@ -30,10 +30,22 @@ async function boot() {
 	await loadNlsMessages();
 
 	await Promise.all([
-		import('./vs/workbench/workbench.common.main.js').catch(e => { console.error('[SideX] Barrel "common" failed:', e); throw e; }),
-		import('./vs/workbench/browser/web.main.js').catch(e => { console.error('[SideX] Barrel "web.main" failed:', e); throw e; }),
-		import('./vs/workbench/browser/parts/dialogs/dialog.web.contribution.js').catch(e => { console.error('[SideX] Barrel "web-dialog" failed:', e); throw e; }),
-		import('./vs/workbench/workbench.web.main.js').catch(e => { console.error('[SideX] Barrel "web-services" failed:', e); throw e; }),
+		import('./vs/workbench/workbench.common.main.js').catch(e => {
+			console.error('[SideX] Barrel "common" failed:', e);
+			throw e;
+		}),
+		import('./vs/workbench/browser/web.main.js').catch(e => {
+			console.error('[SideX] Barrel "web.main" failed:', e);
+			throw e;
+		}),
+		import('./vs/workbench/browser/parts/dialogs/dialog.web.contribution.js').catch(e => {
+			console.error('[SideX] Barrel "web-dialog" failed:', e);
+			throw e;
+		}),
+		import('./vs/workbench/workbench.web.main.js').catch(e => {
+			console.error('[SideX] Barrel "web-services" failed:', e);
+			throw e;
+		})
 	]);
 
 	// SideX Rust bridge initialization — make services available before workbench creation
@@ -47,7 +59,7 @@ async function boot() {
 			SideXThemeService,
 			SideXExtensionService,
 			SideXKeymapService,
-			SideXFileSystemProvider,
+			SideXFileSystemProvider
 		} = await import('./vs/platform/sidex/common/sidexServices.js');
 
 		(globalThis as any).__SIDEX_SERVICES__ = {
@@ -59,7 +71,7 @@ async function boot() {
 			theme: new SideXThemeService(),
 			extensions: new SideXExtensionService(),
 			keymap: new SideXKeymapService(),
-			fileSystem: new SideXFileSystemProvider(),
+			fileSystem: new SideXFileSystemProvider()
 		};
 
 		console.log('[SideX] Rust bridge services initialized');
@@ -199,6 +211,7 @@ async function boot() {
 	setupMenuActions();
 	setupWindowStateSave();
 	setupNativeWindowDragging();
+	updateNativeMenuLabels();
 
 	console.log(
 		'[SideX] Workbench created' + (folderParam ? ` (folder: ${folderParam})` : ' (no folder)'),
@@ -375,7 +388,9 @@ function setupMenuActions() {
 	// Listen for command execution via keyboard shortcuts forwarded from native menu
 	window.addEventListener('sidex-command', async (e: any) => {
 		const commandId = e.detail?.commandId;
-		if (!commandId) {return;}
+		if (!commandId) {
+			return;
+		}
 		if (
 			commandId === 'workbench.action.files.openFolder' ||
 			commandId === 'workbench.action.files.openFolderViaWorkspace'
@@ -394,6 +409,108 @@ function setupMenuActions() {
 			console.error(`[SideX] Command ${commandId} failed:`, err);
 		}
 	});
+}
+
+/**
+ * After NLS translations are loaded into `_VSCODE_NLS_MESSAGES`, send
+ * translated labels to the Rust side so the native macOS menu bar updates.
+ */
+async function updateNativeMenuLabels() {
+	if (!navigator.userAgent.includes('Mac')) {
+		return;
+	}
+
+	const nlsMessages: string[] | undefined = (globalThis as any)._VSCODE_NLS_MESSAGES;
+	if (!nlsMessages) {
+		return;
+	}
+
+	// NLS key -> native menu item ID.
+	// Submenu headers use the submenu IDs from lib.rs; individual items use
+	// the MenuItemBuilder IDs.  Keys come from menubarControl.ts / the
+	// various contribution files.
+	const nlsKeyToMenuId: Record<string, string> = {
+		// Submenu titles
+		mFile: 'file_menu',
+		mEdit: 'edit_menu',
+		mSelection: 'selection_menu',
+		mView: 'view_menu',
+		mGoto: 'go_menu',
+		mRun: 'run_menu',
+		mTerminal: 'terminal_menu',
+		mHelp: 'help_menu',
+		// File menu items
+		miNewFile: 'new_file',
+		miNewWindow: 'new_window',
+		miOpenFile: 'open_file',
+		miSave: 'save',
+		miSaveAs: 'save_as',
+		miCloseEditor: 'close_editor',
+		// Edit menu items
+		miFind: 'find',
+		miReplace: 'replace',
+		miFindInFiles: 'find_in_files',
+		miReplaceInFiles: 'replace_in_files',
+		// View menu items
+		miCommandPalette: 'command_palette',
+		miToggleFullScreen: 'toggle_fullscreen',
+		miZoomIn: 'zoom_in',
+		miZoomOut: 'zoom_out',
+		miZoomReset: 'reset_zoom',
+		// Go menu items
+		miBack: 'back',
+		miForward: 'forward',
+		miGotoFile: 'go_to_file',
+		miGotoSymbolInWorkspace: 'go_to_symbol',
+		miGotoLine: 'go_to_line',
+		miGotoDefinition: 'go_to_definition',
+		// Run menu items
+		miStartDebugging: 'start_debugging',
+		miRunWithoutDebugging: 'run_without_debugging',
+		miStopDebugging: 'stop_debugging',
+		miRestartDebugging: 'restart_debugging',
+		miToggleBreakpoint: 'toggle_breakpoint',
+		// Terminal menu items
+		miNewTerminal: 'new_terminal',
+		miSplitTerminal: 'split_terminal',
+		miRunTask: 'run_task',
+		miRunBuildTask: 'run_build_task',
+		// Help menu items
+		miWelcome: 'welcome',
+		miDocumentation: 'documentation',
+		miReleaseNotes: 'release_notes',
+		miKeyboardShortcuts: 'keyboard_shortcuts',
+		miReportIssue: 'report_issue'
+	};
+
+	try {
+		const indexRes = await fetch('/nls.messages.json');
+		if (!indexRes.ok) {
+			return;
+		}
+		const nlsEntries: Array<{ key: string; msg: string }> = await indexRes.json();
+
+		const labels: Record<string, string> = {};
+
+		for (let i = 0; i < nlsEntries.length; i++) {
+			const menuId = nlsKeyToMenuId[nlsEntries[i].key];
+			if (menuId) {
+				const translated = nlsMessages[i];
+				if (typeof translated === 'string' && translated !== nlsEntries[i].msg) {
+					labels[menuId] = translated.replace(/&&/g, '').replace(/&/g, '');
+				}
+			}
+		}
+
+		if (Object.keys(labels).length === 0) {
+			return;
+		}
+
+		const { invoke } = await import('@tauri-apps/api/core');
+		await invoke('update_menu_labels', { labels });
+	} catch (e) {
+		console.warn('[SideX] Could not update native menu labels:', e);
+	}
 }
 
 boot().catch(err => {

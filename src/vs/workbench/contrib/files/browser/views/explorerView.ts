@@ -343,7 +343,6 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 		// Expand on drag over
 		this.dragHandler = new DelayedDragHandler(container, () => this.setExpanded(true));
 
-		 
 		const titleElement = container.querySelector('.title') as HTMLElement;
 		const setHeader = () => {
 			titleElement.textContent = this.name;
@@ -876,7 +875,7 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 
 	override getOptimalWidth(): number {
 		const parentNode = this.tree.getHTMLElement();
-		 
+
 		const childNodes = ([] as HTMLElement[]).slice.call(parentNode.querySelectorAll('.explorer-item .label-name')); // select all file labels
 
 		return DOM.getLargestChildWidth(parentNode, childNodes);
@@ -922,7 +921,7 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 					for (let i = 0; i < Math.min(input.length, 5); i++) {
 						try {
 							await this.tree.expand(input[i]);
-						} catch (e) {}
+						} catch (_e) {}
 					}
 				}
 				// Reloaded or transitioned from an empty workspace, but only have a single folder in the workspace.
@@ -943,7 +942,7 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 							if (!previousRoots.has(item.resource)) {
 								try {
 									await this.tree.expand(item);
-								} catch (e) {}
+								} catch (_e) {}
 							}
 						})
 					);
@@ -990,7 +989,7 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 		while (item && item.resource.toString() !== resource.toString()) {
 			try {
 				await this.tree.expand(item);
-			} catch (e) {
+			} catch (_e) {
 				return this.selectResource(resource, reveal, retry + 1);
 			}
 			if (!item.children.size) {
@@ -1026,7 +1025,7 @@ export class ExplorerView extends ViewPane implements IExplorerView {
 
 				this.tree.setFocus([item]);
 				this.tree.setSelection([item]);
-			} catch (e) {
+			} catch (_e) {
 				// Element might not be in the tree, try again and silently fail
 				return this.selectResource(resource, reveal, retry + 1);
 			}

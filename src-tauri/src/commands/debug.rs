@@ -292,6 +292,7 @@ pub fn dap_get_launch_configs(workspace: String) -> Result<DapLaunchConfigRespon
 
 /// Return the built-in debug adapter registry.
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn dap_get_adapter_registry() -> Result<Vec<DebugAdapterInfo>, String> {
     let registry = sidex_dap::DebugAdapterRegistry::with_builtins();
     let infos = registry
@@ -393,6 +394,7 @@ pub async fn dap_start_adapter(
 
 /// Send a raw DAP request through a managed `DebugClient` session.
 #[tauri::command]
+#[allow(clippy::too_many_lines)]
 pub async fn dap_send_request(
     state: State<'_, Arc<DapClientStore>>,
     adapter_id: u32,

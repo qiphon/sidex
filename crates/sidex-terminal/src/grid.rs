@@ -193,10 +193,8 @@ impl Cell {
             3
         } else if self.attrs.contains(CellAttributes::DOUBLE_UNDERLINE) {
             2
-        } else if self.attrs.contains(CellAttributes::UNDERLINE) {
-            1
         } else {
-            0
+            u8::from(self.attrs.contains(CellAttributes::UNDERLINE))
         }
     }
 
@@ -327,11 +325,11 @@ impl TerminalSelection {
     pub fn new_simple(start_row: u16, start_col: u16, end_row: u16, end_col: u16) -> Self {
         Self {
             start: SelectionPoint {
-                line: start_row as i32,
+                line: i32::from(start_row),
                 col: start_col,
             },
             end: SelectionPoint {
-                line: end_row as i32,
+                line: i32::from(end_row),
                 col: end_col,
             },
             mode: SelectionMode::Normal,
@@ -447,6 +445,7 @@ impl TerminalGrid {
 
     // --- Tab stops ---
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn next_tab_stop(&self, col: u16) -> u16 {
         for i in (col as usize + 1)..self.tabs.len() {
             if self.tabs[i] {
@@ -686,6 +685,7 @@ impl TerminalGrid {
         text.trim_end().to_string()
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn get_selected_text(&self) -> Option<String> {
         let sel = self.selection?;
         let (start, end) = sel.ordered();
@@ -703,20 +703,9 @@ impl TerminalGrid {
             };
             if (row as usize) < self.cells.len() {
                 let cells = &self.cells[row as usize];
-                match sel.mode {
-                    SelectionMode::Block => {
-                        for col in col_start..=col_end {
-                            if (col as usize) < cells.len() && cells[col as usize].width != 0 {
-                                result.push(cells[col as usize].c);
-                            }
-                        }
-                    }
-                    _ => {
-                        for col in col_start..=col_end {
-                            if (col as usize) < cells.len() && cells[col as usize].width != 0 {
-                                result.push(cells[col as usize].c);
-                            }
-                        }
+                for col in col_start..=col_end {
+                    if (col as usize) < cells.len() && cells[col as usize].width != 0 {
+                        result.push(cells[col as usize].c);
                     }
                 }
             }

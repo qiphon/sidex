@@ -21,28 +21,48 @@ export interface ISimpleFindWidgetOpts {
 }
 
 export abstract class SimpleFindWidget extends Widget {
-	constructor(
-		_opts?: ISimpleFindWidgetOpts,
-		..._services: any[]
-	) {
+	readonly state: any;
+	readonly focusTracker: any;
+	inputValue: string = '';
+	isVisible: boolean = false;
+
+	constructor(_opts?: ISimpleFindWidgetOpts, ..._services: any[]) {
 		super();
 	}
 
-	protected abstract _getResultCount(dataChanged?: boolean): Promise<{ resultIndex: number; resultCount: number } | undefined>;
+	protected abstract _getResultCount(
+		dataChanged?: boolean
+	): Promise<{ resultIndex: number; resultCount: number } | undefined>;
 
 	getDomNode(): HTMLElement {
 		return document.createElement('div');
 	}
 
-	reveal(_initialInput?: string, _animated?: boolean): void { }
-	hide(_animated?: boolean): void { }
-	layout(_width?: number): void { }
+	getFindInputDomNode(): HTMLElement {
+		return document.createElement('div');
+	}
 
-	protected _onInputChange(): void { }
-	protected _onFocusTrackerFocus(): void { }
-	protected _onFocusTrackerBlur(): void { }
-	protected _onFindInputFocusTrackerFocus(): void { }
-	protected _onFindInputFocusTrackerBlur(): void { }
-	protected _findFirst(): void { }
-	protected _findNext(_previous: boolean): void { }
+	reveal(_initialInput?: string, _animated?: boolean): void {}
+	hide(_animated?: boolean): void {}
+	layout(_width?: number): void {}
+	updateResultCount(): void {}
+	updateButtons(_e: any): void {}
+
+	_getWholeWordValue(): boolean {
+		return false;
+	}
+	_getRegexValue(): boolean {
+		return false;
+	}
+	_getCaseSensitiveValue(): boolean {
+		return false;
+	}
+
+	protected _onInputChange(): void {}
+	protected _onFocusTrackerFocus(): void {}
+	protected _onFocusTrackerBlur(): void {}
+	protected _onFindInputFocusTrackerFocus(): void {}
+	protected _onFindInputFocusTrackerBlur(): void {}
+	protected _findFirst(): void {}
+	protected _findNext(_previous: boolean): void {}
 }

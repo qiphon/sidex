@@ -195,7 +195,7 @@ impl DevContainerConnection {
     }
 }
 
-/// List all Docker containers managed by SideX.
+/// List all Docker containers managed by `SideX`.
 pub async fn list_containers() -> Result<Vec<ContainerInfo>> {
     let docker = Docker::connect_with_local_defaults().context("connecting to Docker")?;
     let opts = bollard::container::ListContainersOptions::<String> {
@@ -227,8 +227,7 @@ pub async fn list_containers() -> Result<Vec<ContainerInfo>> {
                 protocol: p
                     .typ
                     .as_ref()
-                    .map(|t| format!("{t:?}"))
-                    .unwrap_or_else(|| "tcp".to_string()),
+                    .map_or_else(|| "tcp".to_string(), |t| format!("{t:?}")),
             })
             .collect();
         result.push(ContainerInfo {
@@ -292,7 +291,7 @@ pub async fn detect_forwarded_ports(container_id: &str) -> Result<Vec<u16>> {
     Ok(ports)
 }
 
-/// Install the SideX Server inside a running container.
+/// Install the `SideX` Server inside a running container.
 pub async fn install_server_in_container(container_id: &str) -> Result<()> {
     let docker = Docker::connect_with_local_defaults()?;
     let version = env!("CARGO_PKG_VERSION");
@@ -394,11 +393,11 @@ async fn install_features(
     features: &HashMap<String, Value>,
     user: &str,
 ) -> Result<()> {
-    for (feature_ref, _options) in features {
+    for feature_ref in features.keys() {
         log::info!("installing dev container feature: {feature_ref}");
-        let install_cmd = format!(
+        let install_cmd =
             "command -v apt-get >/dev/null && apt-get update && apt-get install -y curl || true"
-        );
+                .to_string();
         exec_in_container(docker, container_id, &install_cmd, user).await?;
     }
     Ok(())
@@ -432,10 +431,10 @@ async fn exec_in_container(
         while let Some(Ok(msg)) = output.next().await {
             match msg {
                 LogOutput::StdOut { message } => {
-                    stdout.push_str(&String::from_utf8_lossy(&message))
+                    stdout.push_str(&String::from_utf8_lossy(&message));
                 }
                 LogOutput::StdErr { message } => {
-                    stderr.push_str(&String::from_utf8_lossy(&message))
+                    stderr.push_str(&String::from_utf8_lossy(&message));
                 }
                 _ => {}
             }
@@ -448,6 +447,7 @@ async fn exec_in_container(
     Ok(ExecOutput {
         stdout,
         stderr,
+        #[allow(clippy::cast_possible_truncation)]
         exit_code: exit_code as i32,
     })
 }
@@ -582,6 +582,9 @@ impl ContainerTransport {
         config: &DevContainerConfig,
         context_path: &Path,
     ) -> Result<String> {
+        use bollard::models::BuildInfo;
+        use futures_util::StreamExt;
+
         let tag = format!("sidex-devcontainer:{:x}", fxhash(context_path));
         let dockerfile = config.dockerfile.as_deref().unwrap_or("Dockerfile");
 
@@ -590,9 +593,6 @@ impl ContainerTransport {
             t: tag.clone(),
             ..Default::default()
         };
-
-        use bollard::models::BuildInfo;
-        use futures_util::StreamExt;
 
         let tar_bytes = tar_directory(context_path)?;
         let mut stream = docker.build_image(opts, None, Some(tar_bytes.into()));
@@ -626,6 +626,7 @@ impl ContainerTransport {
             binds.push(format!("{}:{}:{}", m.source, m.target, m.r#type));
         }
 
+        #[allow(clippy::zero_sized_map_values)]
         let exposed: HashMap<String, HashMap<(), ()>> = config
             .forward_ports
             .iter()
@@ -833,11 +834,11 @@ impl RemoteTransport for ContainerTransport {
 
 fn base64_encode_simple(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let b0 = u32::from(chunk[0]);
+        let b1 = u32::from(chunk.get(1).copied().unwrap_or(0));
+        let b2 = u32::from(chunk.get(2).copied().unwrap_or(0));
         let triple = (b0 << 16) | (b1 << 8) | b2;
         out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
         out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);

@@ -119,11 +119,18 @@ pub fn unpack_vsix(vsix_path: &Path) -> Result<VsixPackage> {
             _ => {}
         }
 
-        if rel_lower.ends_with(".png") || rel_lower.ends_with(".jpg") || rel_lower.ends_with(".svg")
+        if (std::path::Path::new(&rel_lower)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
+            || std::path::Path::new(&rel_lower)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jpg"))
+            || std::path::Path::new(&rel_lower)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("svg")))
+            && rel_lower.contains("icon")
         {
-            if rel_lower.contains("icon") {
-                icon = Some(buf.clone());
-            }
+            icon = Some(buf.clone());
         }
 
         contents.insert(rel.to_string(), buf);
@@ -249,7 +256,9 @@ fn apply_file_mode(path: &Path, mode: Option<u32>, rel: &str) {
 
     let is_script_like = rel.starts_with("bin/")
         || rel.contains("/bin/")
-        || rel.ends_with(".sh")
+        || std::path::Path::new(rel)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("sh"))
         || rel.ends_with(".command");
 
     let target_mode = match mode {

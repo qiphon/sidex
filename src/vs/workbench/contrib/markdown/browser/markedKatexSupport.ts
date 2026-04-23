@@ -125,9 +125,9 @@ export class MarkedKatexSupport {
 		return this.sanitizeStyles(styleString, allowedProperties);
 	}
 
-	private static _katex?: typeof import('katex').default;
+	private static _katex?: typeof import('katex');
 	private static _katexPromise = new Lazy(async () => {
-		this._katex = await importAMDNodeModule<typeof import('katex').default>('katex', 'dist/katex.min.js');
+		this._katex = await importAMDNodeModule<typeof import('katex')>('katex', 'dist/katex.min.js');
 		return this._katex;
 	});
 
@@ -154,7 +154,7 @@ export class MarkedKatexSupport {
 
 	public static ensureKatexStyles(window: CodeWindow) {
 		const doc = window.document;
-		 
+
 		if (!doc.querySelector('link.katex')) {
 			const katexStyle = document.createElement('link');
 			katexStyle.classList.add('katex');

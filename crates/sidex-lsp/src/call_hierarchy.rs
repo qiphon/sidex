@@ -64,7 +64,6 @@ impl SymbolKind {
             9 => Self::Constructor,
             10 => Self::Enum,
             11 => Self::Interface,
-            12 => Self::Function,
             13 => Self::Variable,
             14 => Self::Constant,
             15 => Self::String,
@@ -141,6 +140,7 @@ fn convert_item(item: CallHierarchyItem) -> CallHierarchyItemInfo {
 
     CallHierarchyItemInfo {
         name: item.name.clone(),
+        #[allow(clippy::cast_possible_truncation)]
         kind: serde_json::to_value(item.kind)
             .ok()
             .and_then(|v| v.as_u64())

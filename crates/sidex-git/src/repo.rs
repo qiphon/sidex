@@ -29,8 +29,7 @@ pub fn is_git_repo(path: &Path) -> bool {
         .current_dir(path)
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// The name of the current branch (e.g. `"main"`).

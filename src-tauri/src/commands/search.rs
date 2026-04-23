@@ -179,32 +179,27 @@ pub struct WsReplaceReport {
     pub errors: Vec<(String, String)>,
 }
 
-fn build_ws_query(query: &str, options: &Option<WorkspaceSearchOptions>) -> CrateSearchQuery {
+fn build_ws_query(query: &str, options: Option<&WorkspaceSearchOptions>) -> CrateSearchQuery {
     CrateSearchQuery {
         pattern: query.to_string(),
-        is_regex: options.as_ref().and_then(|o| o.is_regex).unwrap_or(false),
-        case_sensitive: options
-            .as_ref()
-            .and_then(|o| o.case_sensitive)
-            .unwrap_or(false),
-        whole_word: options.as_ref().and_then(|o| o.whole_word).unwrap_or(false),
-        max_results: options.as_ref().and_then(|o| o.max_results),
+        is_regex: options.and_then(|o| o.is_regex).unwrap_or(false),
+        case_sensitive: options.and_then(|o| o.case_sensitive).unwrap_or(false),
+        whole_word: options.and_then(|o| o.whole_word).unwrap_or(false),
+        max_results: options.and_then(|o| o.max_results),
     }
 }
 
-fn build_ws_options(options: &Option<WorkspaceSearchOptions>) -> CrateSearchOptions {
+fn build_ws_options(options: Option<&WorkspaceSearchOptions>) -> CrateSearchOptions {
     CrateSearchOptions {
         include_patterns: options
-            .as_ref()
             .and_then(|o| o.include_patterns.clone())
             .unwrap_or_default(),
         exclude_patterns: options
-            .as_ref()
             .and_then(|o| o.exclude_patterns.clone())
             .unwrap_or_default(),
-        max_results: options.as_ref().and_then(|o| o.max_results),
-        max_file_size: options.as_ref().and_then(|o| o.max_file_size),
-        context_lines: options.as_ref().and_then(|o| o.context_lines),
+        max_results: options.and_then(|o| o.max_results),
+        max_file_size: options.and_then(|o| o.max_file_size),
+        context_lines: options.and_then(|o| o.context_lines),
     }
 }
 
@@ -215,8 +210,8 @@ pub fn search_workspace(
     query: String,
     options: Option<WorkspaceSearchOptions>,
 ) -> Result<Vec<WsSearchMatch>, String> {
-    let ws_query = build_ws_query(&query, &options);
-    let ws_opts = build_ws_options(&options);
+    let ws_query = build_ws_query(&query, options.as_ref());
+    let ws_opts = build_ws_options(options.as_ref());
 
     let results = SearchEngine::search_with_options(Path::new(&root), &ws_query, &ws_opts)
         .map_err(|e| e.to_string())?;
@@ -240,8 +235,8 @@ pub fn search_workspace_grouped(
     query: String,
     options: Option<WorkspaceSearchOptions>,
 ) -> Result<Vec<WsSearchGroup>, String> {
-    let ws_query = build_ws_query(&query, &options);
-    let ws_opts = build_ws_options(&options);
+    let ws_query = build_ws_query(&query, options.as_ref());
+    let ws_opts = build_ws_options(options.as_ref());
 
     let groups = SearchEngine::search_grouped(Path::new(&root), &ws_query, &ws_opts)
         .map_err(|e| e.to_string())?;
@@ -289,7 +284,7 @@ pub fn search_workspace_replace_preview(
     replacement: String,
     options: Option<WorkspaceSearchOptions>,
 ) -> Result<Vec<WsFileReplacement>, String> {
-    let ws_query = build_ws_query(&query, &options);
+    let ws_query = build_ws_query(&query, options.as_ref());
 
     let replacements = SearchEngine::replace_in_files(Path::new(&root), &ws_query, &replacement)
         .map_err(|e| e.to_string())?;

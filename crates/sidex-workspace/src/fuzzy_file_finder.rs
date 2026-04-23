@@ -87,6 +87,7 @@ impl FileIndex {
     }
 
     /// Fuzzy-match the query against indexed file paths.
+    #[allow(clippy::cast_precision_loss)]
     pub fn query(&self, pattern: &str, max_results: usize) -> Vec<FileMatch> {
         if pattern.is_empty() {
             return self

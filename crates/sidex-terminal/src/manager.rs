@@ -129,6 +129,7 @@ impl SplitGroup {
             self.rebalance();
         }
     }
+    #[allow(clippy::cast_precision_loss)]
     fn rebalance(&mut self) {
         let n = self.terminals.len().max(1) as f32;
         self.ratios = vec![1.0 / n; self.terminals.len()];
@@ -303,10 +304,10 @@ impl TerminalManager {
     pub fn create_with_config(&mut self, config: &PtySpawnConfig) -> ManagerResult<TerminalId> {
         let mut p = default_profile();
         if let Some(ref s) = config.shell {
-            p.shell_path = s.clone();
+            p.shell_path.clone_from(s);
         }
         if let Some(ref a) = config.args {
-            p.args = a.clone();
+            p.args.clone_from(a);
         }
         p.env.clone_from(&config.env);
         self.spawn_instance(&p, config.cwd.as_deref(), config.size)
@@ -315,17 +316,16 @@ impl TerminalManager {
     pub fn split_terminal(&mut self, source_id: u32) -> ManagerResult<u32> {
         let prof = lock(self.get_inst(TerminalId(source_id))?)?.profile.clone();
         let new_id = self.spawn_instance(&prof, None, self.default_size)?.0;
-        match self
+        if let Some(g) = self
             .split_groups
             .iter_mut()
             .find(|g| g.terminals.contains(&source_id))
         {
-            Some(g) => g.add(new_id),
-            None => {
-                let mut g = SplitGroup::new(source_id);
-                g.add(new_id);
-                self.split_groups.push(g);
-            }
+            g.add(new_id);
+        } else {
+            let mut g = SplitGroup::new(source_id);
+            g.add(new_id);
+            self.split_groups.push(g);
         }
         Ok(new_id)
     }
@@ -382,6 +382,7 @@ impl TerminalManager {
         self.active_instance = self.adjacent(-1);
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn adjacent(&self, delta: isize) -> Option<TerminalId> {
         let cur = self.active_instance?;
         let pos = self.order.iter().position(|&t| t == cur)?;

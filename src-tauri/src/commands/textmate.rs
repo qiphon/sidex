@@ -350,7 +350,7 @@ pub fn textmate_tokenize_document(
         });
     }
 
-    let final_stack = results.last().map(|r| r.rule_stack).unwrap_or(0);
+    let final_stack = results.last().map_or(0, |r| r.rule_stack);
     Ok(TokenizeDocumentResponse {
         lines: results,
         final_stack,

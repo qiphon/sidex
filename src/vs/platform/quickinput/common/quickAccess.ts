@@ -175,7 +175,7 @@ export interface IQuickAccessProviderDescriptor {
 	/**
 	 * The actual provider that will be instantiated as needed.
 	 */
-	 
+
 	readonly ctor: {
 		new (...services: any /* TS BrandedService but no clue how to type this properly */[]): IQuickAccessProvider;
 	};
@@ -280,7 +280,7 @@ export class QuickAccessRegistry implements IQuickAccessRegistry {
 		return result || this.defaultProvider;
 	}
 
-	clear(): Function {
+	clear(): () => void {
 		const providers = [...this.providers];
 		const defaultProvider = this.defaultProvider;
 

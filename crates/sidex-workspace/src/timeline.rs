@@ -84,7 +84,7 @@ impl Timeline {
             }
         }
 
-        self.entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        self.entries.sort_by_key(|a| std::cmp::Reverse(a.timestamp));
         Ok(())
     }
 
@@ -188,7 +188,6 @@ pub fn get_git_timeline(path: &Path, repo_root: &Path) -> WorkspaceResult<Vec<Ti
 
 /// Directory structure for local history:
 ///   `<history_dir>/<sha256_of_path>/<timestamp>.snapshot`
-
 fn history_subdir(path: &Path, history_dir: &Path) -> PathBuf {
     let mut hasher = Sha256::new();
     hasher.update(path.to_string_lossy().as_bytes());
@@ -257,7 +256,7 @@ pub fn get_local_history(path: &Path, history_dir: &Path) -> WorkspaceResult<Vec
         let timestamp_str = file_name.trim_end_matches(".snapshot");
         let timestamp: u64 = timestamp_str.parse().unwrap_or(0);
 
-        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let size = entry.metadata().map_or(0, |m| m.len());
         let label = format_local_timestamp(timestamp);
 
         entries.push(TimelineEntry {
@@ -271,7 +270,7 @@ pub fn get_local_history(path: &Path, history_dir: &Path) -> WorkspaceResult<Vec
         });
     }
 
-    entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.timestamp));
     Ok(entries)
 }
 
@@ -377,6 +376,7 @@ fn format_local_timestamp(epoch_secs: u64) -> String {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn format_byte_size(bytes: u64) -> String {
     if bytes < 1024 {
         format!("{bytes} B")

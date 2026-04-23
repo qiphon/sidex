@@ -1,31 +1,29 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/sidex-text",
-    "crates/sidex-syntax",
-    "crates/sidex-lsp",
-    "crates/sidex-workspace",
-    "crates/sidex-terminal",
-    "crates/sidex-git",
-    "crates/sidex-extensions",
-    "crates/sidex-extension-api",
-    "crates/sidex-theme",
-    "crates/sidex-keymap",
-    "crates/sidex-settings",
-    "crates/sidex-db",
-    "crates/sidex-remote",
-    "crates/sidex-dap",
-    "crates/sidex-tasks",
-    "crates/sidex-update",
-    "crates/sidex-profiles",
-    "crates/sidex-auth",
-    "crates/sidex-textmate",
-    "src-tauri",
-    "sidex-extension-sdk",
+  "crates/sidex-text",
+  "crates/sidex-syntax",
+  "crates/sidex-lsp",
+  "crates/sidex-workspace",
+  "crates/sidex-terminal",
+  "crates/sidex-git",
+  "crates/sidex-extensions",
+  "crates/sidex-extension-api",
+  "crates/sidex-theme",
+  "crates/sidex-keymap",
+  "crates/sidex-settings",
+  "crates/sidex-db",
+  "crates/sidex-remote",
+  "crates/sidex-dap",
+  "crates/sidex-tasks",
+  "crates/sidex-update",
+  "crates/sidex-profiles",
+  "crates/sidex-auth",
+  "crates/sidex-textmate",
+  "src-tauri",
+  "sidex-extension-sdk",
 ]
-exclude = [
-    "extensions-rust",
-]
+exclude = ["extensions-rust"]
 
 [workspace.package]
 version = "0.2.0"

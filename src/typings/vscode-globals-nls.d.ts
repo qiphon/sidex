@@ -34,6 +34,11 @@ declare global {
 	 * Instead of accessing this global variable directly, use function getNLSLanguage.
 	 */
 	var _VSCODE_NLS_LANGUAGE: string | undefined;
+	/**
+	 * Key-based translation table used in dev mode (when NLS entries are not
+	 * indexed). Set by the NLS loader when `nls.messages.json` is unavailable.
+	 */
+	var _VSCODE_NLS_TRANSLATIONS: Record<string, string> | undefined;
 }
 
 // fake export to make global work

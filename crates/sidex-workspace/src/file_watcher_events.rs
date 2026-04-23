@@ -85,8 +85,9 @@ impl FileConflictResolver {
         if let Some(pos) = self.pending_conflicts.iter().position(|c| c.path == path) {
             let conflict = self.pending_conflicts.remove(pos);
             match resolution {
-                ConflictResolution::KeepEditor | ConflictResolution::Compare => Some(conflict),
-                ConflictResolution::ReloadFromDisk => Some(conflict),
+                ConflictResolution::KeepEditor
+                | ConflictResolution::Compare
+                | ConflictResolution::ReloadFromDisk => Some(conflict),
             }
         } else {
             None

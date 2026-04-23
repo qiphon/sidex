@@ -1,4 +1,4 @@
-//! SideX Server — runs on the remote machine.
+//! `SideX` Server — runs on the remote machine.
 //!
 //! Full JSON-RPC API: fs/*, pty/*, exec/*, lsp/*, ext/* and auto-update.
 
@@ -72,6 +72,7 @@ struct PtyHandle {
 }
 
 struct LspHandle {
+    #[allow(dead_code)]
     child: tokio::process::Child,
 }
 
@@ -100,6 +101,7 @@ pub struct ServerConnection {
 
 /// File watcher entry tracking watched paths.
 struct WatchEntry {
+    #[allow(dead_code)]
     path: String,
     #[allow(dead_code)]
     task: tokio::task::JoinHandle<()>,
@@ -120,6 +122,7 @@ pub struct SideXServer {
     lsps: Arc<Mutex<HashMap<String, LspHandle>>>,
     next_pty_id: Arc<Mutex<u64>>,
     version: String,
+    #[allow(dead_code)]
     watchers: Arc<Mutex<HashMap<String, WatchEntry>>>,
     connections: Arc<Mutex<Vec<ServerConnection>>>,
     next_conn_id: Arc<Mutex<u64>>,
@@ -250,7 +253,7 @@ impl SideXServer {
             "fs/writeFile" => self.fs_write_file(req.id, &req.params).await,
             "fs/readDir" => self.fs_read_dir(req.id, &req.params).await,
             "fs/stat" => self.fs_stat(req.id, &req.params).await,
-            "fs/watch" => self.fs_watch(req.id, &req.params).await,
+            "fs/watch" => self.fs_watch(req.id, &req.params),
             "fs/delete" => self.fs_delete(req.id, &req.params).await,
             "fs/rename" => self.fs_rename(req.id, &req.params).await,
             "fs/mkdir" => self.fs_mkdir(req.id, &req.params).await,
@@ -259,7 +262,7 @@ impl SideXServer {
             // PTY
             "pty/open" => self.pty_open(req.id, &req.params).await,
             "pty/write" => self.pty_write(req.id, &req.params).await,
-            "pty/resize" => self.pty_resize(req.id, &req.params).await,
+            "pty/resize" => self.pty_resize(req.id, &req.params),
             "pty/close" => self.pty_close(req.id, &req.params).await,
             // LSP
             "lsp/start" => self.lsp_start(req.id, &req.params).await,
@@ -272,7 +275,7 @@ impl SideXServer {
             "server/version" => {
                 Response::ok(req.id, serde_json::json!({ "version": self.version }))
             }
-            "server/checkUpdate" => self.server_check_update(req.id).await,
+            "server/checkUpdate" => self.server_check_update(req.id),
             "server/info" => self.server_info(req.id).await,
             "server/setWorkspace" => self.server_set_workspace(req.id, &req.params).await,
             _ => Response::err(req.id, -32601, format!("unknown method: {}", req.method)),
@@ -322,8 +325,8 @@ impl SideXServer {
                     entries.push(serde_json::json!({
                         "name": entry.file_name().to_string_lossy(),
                         "path": entry.path().to_string_lossy(),
-                        "is_dir": meta.as_ref().map_or(false, |m| m.is_dir()),
-                        "size": meta.as_ref().map_or(0, |m| m.len()),
+                        "is_dir": meta.as_ref().is_some_and(std::fs::Metadata::is_dir),
+                        "size": meta.as_ref().map_or(0, std::fs::Metadata::len),
                     }));
                 }
                 Response::ok(id, serde_json::json!({ "entries": entries }))
@@ -357,7 +360,8 @@ impl SideXServer {
         }
     }
 
-    async fn fs_watch(&self, id: u64, params: &serde_json::Value) -> Response {
+    #[allow(clippy::unused_self)]
+    fn fs_watch(&self, id: u64, params: &serde_json::Value) -> Response {
         let Some(_path) = params.get("path").and_then(|v| v.as_str()) else {
             return Response::err(id, -32602, "missing `path` param");
         };
@@ -370,7 +374,7 @@ impl SideXServer {
         };
         let recursive = params
             .get("recursive")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
         let meta = match tokio::fs::symlink_metadata(path).await {
             Ok(m) => m,
@@ -408,7 +412,7 @@ impl SideXServer {
         };
         let recursive = params
             .get("recursive")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(true);
         let result = if recursive {
             tokio::fs::create_dir_all(path).await
@@ -458,8 +462,16 @@ impl SideXServer {
     // -- pty handlers -------------------------------------------------------
 
     async fn pty_open(&self, id: u64, params: &serde_json::Value) -> Response {
-        let cols = params.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u16;
-        let rows = params.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u16;
+        #[allow(clippy::cast_possible_truncation)]
+        let cols = params
+            .get("cols")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(80) as u16;
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = params
+            .get("rows")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(24) as u16;
         let shell = params.get("shell").and_then(|v| v.as_str()).unwrap_or("sh");
 
         let child = match Command::new(shell)
@@ -484,7 +496,7 @@ impl SideXServer {
     }
 
     async fn pty_write(&self, id: u64, params: &serde_json::Value) -> Response {
-        let Some(pty_id) = params.get("pty_id").and_then(|v| v.as_u64()) else {
+        let Some(pty_id) = params.get("pty_id").and_then(serde_json::Value::as_u64) else {
             return Response::err(id, -32602, "missing `pty_id` param");
         };
         let Some(data_b64) = params.get("data").and_then(|v| v.as_str()) else {
@@ -507,15 +519,16 @@ impl SideXServer {
         }
     }
 
-    async fn pty_resize(&self, id: u64, params: &serde_json::Value) -> Response {
-        let Some(_pty_id) = params.get("pty_id").and_then(|v| v.as_u64()) else {
+    #[allow(clippy::unused_self)]
+    fn pty_resize(&self, id: u64, params: &serde_json::Value) -> Response {
+        let Some(_pty_id) = params.get("pty_id").and_then(serde_json::Value::as_u64) else {
             return Response::err(id, -32602, "missing `pty_id` param");
         };
         Response::ok(id, serde_json::json!({}))
     }
 
     async fn pty_close(&self, id: u64, params: &serde_json::Value) -> Response {
-        let Some(pty_id) = params.get("pty_id").and_then(|v| v.as_u64()) else {
+        let Some(pty_id) = params.get("pty_id").and_then(serde_json::Value::as_u64) else {
             return Response::err(id, -32602, "missing `pty_id` param");
         };
         let mut ptys = self.ptys.lock().await;
@@ -634,7 +647,7 @@ impl SideXServer {
         Response::ok(id, serde_json::json!({ "workspace": path }))
     }
 
-    async fn server_check_update(&self, id: u64) -> Response {
+    fn server_check_update(&self, id: u64) -> Response {
         Response::ok(
             id,
             serde_json::json!({
@@ -651,11 +664,11 @@ impl SideXServer {
 
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let b0 = u32::from(chunk[0]);
+        let b1 = u32::from(chunk.get(1).copied().unwrap_or(0));
+        let b2 = u32::from(chunk.get(2).copied().unwrap_or(0));
         let triple = (b0 << 16) | (b1 << 8) | b2;
         out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
         out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
@@ -673,6 +686,7 @@ fn base64_encode(data: &[u8]) -> String {
     out
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn base64_decode(input: &str) -> Result<Vec<u8>> {
     fn val(c: u8) -> Option<u8> {
         match c {
@@ -690,24 +704,27 @@ fn base64_decode(input: &str) -> Result<Vec<u8>> {
         if chunk.len() < 2 {
             break;
         }
-        let a = val(chunk[0]).unwrap_or(0) as u32;
-        let b = val(chunk[1]).unwrap_or(0) as u32;
+        let a = u32::from(val(chunk[0]).unwrap_or(0));
+        let b = u32::from(val(chunk[1]).unwrap_or(0));
         let c = if chunk.len() > 2 && chunk[2] != b'=' {
-            val(chunk[2]).unwrap_or(0) as u32
+            u32::from(val(chunk[2]).unwrap_or(0))
         } else {
             0
         };
         let d = if chunk.len() > 3 && chunk[3] != b'=' {
-            val(chunk[3]).unwrap_or(0) as u32
+            u32::from(val(chunk[3]).unwrap_or(0))
         } else {
             0
         };
         let triple = (a << 18) | (b << 12) | (c << 6) | d;
+        #[allow(clippy::cast_possible_truncation)]
         out.push((triple >> 16) as u8);
         if chunk.len() > 2 && chunk[2] != b'=' {
+            #[allow(clippy::cast_possible_truncation)]
             out.push((triple >> 8) as u8);
         }
         if chunk.len() > 3 && chunk[3] != b'=' {
+            #[allow(clippy::cast_possible_truncation)]
             out.push(triple as u8);
         }
     }

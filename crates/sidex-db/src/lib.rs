@@ -1,9 +1,9 @@
 //! # sidex-db
 //!
-//! SQLite state persistence for the `SideX` editor.
+//! `SQLite` state persistence for the `SideX` editor.
 //!
 //! This crate provides durable storage for application state using an
-//! embedded SQLite database.  It includes:
+//! embedded `SQLite` database.  It includes:
 //!
 //! - [`Database`] — connection wrapper with versioned schema migrations,
 //!   vacuum, and backup support.

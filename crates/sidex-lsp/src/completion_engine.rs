@@ -111,7 +111,7 @@ impl CompletionEngine {
     pub fn is_trigger_char(&self, language_id: &str, ch: char) -> bool {
         self.trigger_characters
             .get(language_id)
-            .map_or(false, |chars| chars.contains(&ch))
+            .is_some_and(|chars| chars.contains(&ch))
     }
 
     /// Returns `true` if `ch` is a commit character for the currently
@@ -121,9 +121,7 @@ impl CompletionEngine {
             .as_ref()
             .and_then(|s| s.selected_item())
             .and_then(|item| item.commit_characters.as_ref())
-            .map_or(false, |chars| {
-                chars.iter().any(|c| c.as_str().starts_with(ch))
-            })
+            .is_some_and(|chars| chars.iter().any(|c| c.as_str().starts_with(ch)))
     }
 }
 
@@ -136,6 +134,7 @@ pub struct CompletionSession {
     selected: usize,
     filter_text: String,
     is_incomplete: bool,
+    #[allow(dead_code)]
     resolve_support: bool,
 }
 
@@ -208,7 +207,7 @@ impl CompletionSession {
 
     /// Updates the filter text and recomputes the filtered/sorted list.
     pub fn set_filter(&mut self, text: &str) {
-        self.filter_text = text.to_owned();
+        text.clone_into(&mut self.filter_text);
         self.refilter();
     }
 
@@ -253,14 +252,14 @@ impl CompletionSession {
         self.selected
     }
 
-    /// Returns the currently selected CompletionItem.
+    /// Returns the currently selected `CompletionItem`.
     pub fn selected_item(&self) -> Option<&CompletionItem> {
         self.filtered_items
             .get(self.selected)
             .and_then(|(idx, _)| self.items.get(*idx))
     }
 
-    /// Returns the filtered items as (original_index, score).
+    /// Returns the filtered items as (`original_index`, score).
     pub fn filtered(&self) -> &[(usize, f64)] {
         &self.filtered_items
     }
@@ -387,7 +386,10 @@ pub fn fuzzy_score(pattern: &str, text: &str) -> Option<f64> {
                 score += 5.0;
             } else if prev_match.is_some() {
                 let gap = ti - prev_match.unwrap() - 1;
-                gap_penalty += gap as f64 * 0.5;
+                #[allow(clippy::cast_precision_loss)]
+                {
+                    gap_penalty += gap as f64 * 0.5;
+                }
             }
 
             if ti == 0 || !t_chars[ti - 1].is_alphanumeric() {
@@ -409,7 +411,10 @@ pub fn fuzzy_score(pattern: &str, text: &str) -> Option<f64> {
 
     if pi == p_len {
         score -= gap_penalty;
-        score -= (t_len as f64 - p_len as f64) * 0.25;
+        #[allow(clippy::cast_precision_loss)]
+        {
+            score -= (t_len as f64 - p_len as f64) * 0.25;
+        }
         Some(score)
     } else {
         None
@@ -459,7 +464,7 @@ pub fn filter_and_sort(items: &[CompletionItem], input: &str) -> Vec<(usize, f64
     scored
 }
 
-/// Assigns a sort priority based on CompletionItemKind. Higher = better.
+/// Assigns a sort priority based on `CompletionItemKind`. Higher = better.
 fn kind_sort_priority(kind: Option<CompletionItemKind>) -> f64 {
     match kind {
         Some(CompletionItemKind::METHOD) => 90.0,

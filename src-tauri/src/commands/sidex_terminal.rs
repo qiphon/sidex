@@ -46,12 +46,14 @@ impl From<sidex_terminal::TerminalMatch> for TerminalMatchInfo {
 
 /// Detect the user's default shell via `sidex-terminal`.
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn terminal_detect_shell() -> Result<String, String> {
     Ok(sidex_terminal::detect_default_shell())
 }
 
 /// List available terminal profiles (shell + icon + args).
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn terminal_get_profiles() -> Result<Vec<TerminalProfileInfo>, String> {
     Ok(sidex_terminal::detect_profiles()
         .into_iter()
@@ -83,12 +85,15 @@ pub fn terminal_find_in_buffer(
     };
 
     let lines: Vec<&str> = text.lines().collect();
+    #[allow(clippy::cast_possible_truncation)]
     let cols = lines.iter().map(|l| l.len()).max().unwrap_or(80).max(80) as u16;
+    #[allow(clippy::cast_possible_truncation)]
     let rows = (lines.len().max(4)) as u16;
     let mut grid = sidex_terminal::TerminalGrid::new(rows, cols);
     let template = sidex_terminal::Cell::default();
 
     for (i, line) in lines.iter().enumerate() {
+        #[allow(clippy::cast_possible_truncation)]
         grid.set_cursor(i as u16, 0);
         for ch in line.chars() {
             grid.write_char(ch, &template);

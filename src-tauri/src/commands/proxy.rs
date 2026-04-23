@@ -104,7 +104,7 @@ fn get_client() -> &'static reqwest::Client {
         reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .connect_timeout(Duration::from_secs(5))
-            .tcp_keepalive(Some(Duration::from_secs(60)))
+            .tcp_keepalive(Some(Duration::from_mins(1)))
             .pool_idle_timeout(Some(Duration::from_secs(90)))
             .pool_max_idle_per_host(8)
             .http2_keep_alive_interval(Some(Duration::from_secs(30)))

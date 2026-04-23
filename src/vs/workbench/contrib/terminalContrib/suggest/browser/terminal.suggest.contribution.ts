@@ -282,7 +282,7 @@ class TerminalSuggestContribution extends DisposableStore implements ITerminalCo
 		this._loadLspCompletionAddon(this._ctx.instance.xterm.raw);
 	}
 
-	private _updateContainerForTarget(target: TerminalLocation | undefined): void {
+	private _updateContainerForTarget(_target: TerminalLocation | undefined): void {
 		const addon = this._addon.value;
 		if (!addon || !this._ctx.instance.xterm?.raw) {
 			return;
@@ -304,7 +304,7 @@ class TerminalSuggestContribution extends DisposableStore implements ITerminalCo
 
 		const container = this._resolveAddonContainer(xtermElement);
 		addon.setContainerWithOverflow(container);
-		 
+
 		const screenElement = xtermElement?.querySelector('.xterm-screen');
 		if (dom.isHTMLElement(screenElement)) {
 			addon.setScreen(screenElement);

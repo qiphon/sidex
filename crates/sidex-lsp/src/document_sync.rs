@@ -21,7 +21,6 @@ impl TextDocumentSyncKind {
     pub fn from_lsp(kind: lsp_types::TextDocumentSyncKind) -> Self {
         match kind {
             lsp_types::TextDocumentSyncKind::NONE => Self::None,
-            lsp_types::TextDocumentSyncKind::FULL => Self::Full,
             lsp_types::TextDocumentSyncKind::INCREMENTAL => Self::Incremental,
             _ => Self::Full,
         }
@@ -98,6 +97,7 @@ fn offset_to_position(text: &str, offset: usize) -> lsp_types::Position {
     let line = slice.matches('\n').count();
     let last_newline = slice.rfind('\n').map_or(0, |i| i + 1);
     let character = slice[last_newline..].chars().count();
+    #[allow(clippy::cast_possible_truncation)]
     lsp_types::Position {
         line: line as u32,
         character: character as u32,
@@ -129,7 +129,7 @@ impl ChangeThrottle {
         let now = Instant::now();
         let should_send = self
             .last_sent
-            .map_or(true, |last| now.duration_since(last) >= self.min_interval);
+            .is_none_or(|last| now.duration_since(last) >= self.min_interval);
 
         if should_send {
             self.last_sent = Some(now);

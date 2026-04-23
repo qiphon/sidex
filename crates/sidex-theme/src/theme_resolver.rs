@@ -2,6 +2,7 @@
 //! extension-contributed themes, and semantic token coloring.
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::path::PathBuf;
 
 use crate::color::Color;
@@ -66,7 +67,10 @@ pub struct ResolvedTheme {
 /// Merge a base [`Theme`] with user color customizations (from
 /// `workbench.colorCustomizations` and `editor.tokenColorCustomizations`)
 /// to produce a final [`ResolvedTheme`].
-pub fn apply_theme(theme: &Theme, customizations: &HashMap<String, String>) -> ResolvedTheme {
+pub fn apply_theme(
+    theme: &Theme,
+    customizations: &HashMap<String, String, impl BuildHasher>,
+) -> ResolvedTheme {
     let mut wb_colors = workbench_to_map(&theme.workbench_colors);
 
     for (key, hex) in customizations {
@@ -88,7 +92,7 @@ pub fn apply_theme(theme: &Theme, customizations: &HashMap<String, String>) -> R
 /// token rules to produce a fully resolved theme.
 pub fn apply_theme_full(
     theme: &Theme,
-    customizations: &HashMap<String, String>,
+    customizations: &HashMap<String, String, impl BuildHasher>,
     semantic_rules: &[SemanticTokenColorRule],
 ) -> ResolvedTheme {
     let mut resolved = apply_theme(theme, customizations);
@@ -152,12 +156,12 @@ impl ThemeRegistry {
     /// This is designed for instant switching — no restart required.
     pub fn switch_theme(&mut self, name: &str) -> Option<&Theme> {
         if let Some(t) = self.builtin.iter().find(|t| t.name == name) {
-            self.active_theme_id = t.name.clone();
+            t.name.clone_into(&mut self.active_theme_id);
             return Some(t);
         }
 
         if self.loaded_extension_themes.contains_key(name) {
-            self.active_theme_id = name.to_owned();
+            name.clone_into(&mut self.active_theme_id);
             return self.loaded_extension_themes.get(name);
         }
 
@@ -167,7 +171,7 @@ impl ThemeRegistry {
             if let Ok(contents) = std::fs::read_to_string(&path) {
                 if let Ok(theme) = Theme::from_json(&contents) {
                     self.loaded_extension_themes.insert(id.clone(), theme);
-                    self.active_theme_id = id.clone();
+                    self.active_theme_id.clone_from(&id);
                     return self.loaded_extension_themes.get(&id);
                 }
             }

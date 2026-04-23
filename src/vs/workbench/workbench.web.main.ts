@@ -114,8 +114,7 @@ registerSingleton(ISharedWebContentExtractorService, NullSharedWebContentExtract
 // Logs
 import './contrib/logs/browser/logs.contribution.js';
 
-// SideX: removed — localization
-// import './contrib/localization/browser/localization.contribution.js';
+import './contrib/localization/browser/localization.contribution.js';
 
 // Performance — removed: SideX has its own performance monitoring
 // import './contrib/performance/browser/performance.web.contribution.js';

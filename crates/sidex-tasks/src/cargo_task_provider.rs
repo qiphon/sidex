@@ -98,7 +98,10 @@ fn make_cargo_task(
         name: name.to_string(),
         task_type: TaskType::Cargo,
         command: subcommand.to_string(),
-        args: extra_args.iter().map(|s| s.to_string()).collect(),
+        args: extra_args
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
         cwd: None,
         env: HashMap::default(),
         group,

@@ -112,7 +112,7 @@ export function renderLines(
 export class LineSource {
 	constructor(
 		public readonly lineTokens: LineTokens[],
-		public readonly lineBreakData: (ModelLineProjectionData | null)[] = lineTokens.map(t => null),
+		public readonly lineBreakData: (ModelLineProjectionData | null)[] = lineTokens.map(_t => null),
 		public readonly mightContainNonBasicASCII: boolean = true,
 		public readonly mightContainRTL: boolean = true
 	) {}
@@ -228,7 +228,7 @@ export class RenderLinesResult {
 		}
 
 		// Find the view line index based on the element
-		 
+
 		const viewLines = container.querySelectorAll('.view-line');
 		let viewLineIndex = -1;
 		for (let i = 0; i < viewLines.length; i++) {

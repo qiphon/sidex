@@ -215,7 +215,7 @@ export class ExplorerViewPaneContainer extends ViewPaneContainer {
 		);
 
 		this.viewletVisibleContextKey = ExplorerViewletVisibleContext.bindTo(contextKeyService);
-		this._register(this.contextService.onDidChangeWorkspaceName(e => this.updateTitleArea()));
+		this._register(this.contextService.onDidChangeWorkspaceName(_e => this.updateTitleArea()));
 	}
 
 	override create(parent: HTMLElement): void {
@@ -436,11 +436,11 @@ viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
 	order: 1
 });
 
-const cloneRepoButton = `[${localize('cloneRepository', 'Clone Repository')}](command:git.clone)`;
+const cloneRepoButton = `[${localize('cloneRepo', 'Clone Repository')}](command:git.clone)`;
 viewsRegistry.registerViewWelcomeContent(EmptyView.ID, {
 	content: localize(
 		{
-			key: 'sidexCloneRepository',
+			key: 'explorerViewlet.cloneRepository',
 			comment: ['Please do not translate the word "command", it is part of our internal syntax which must not change']
 		},
 		'You can clone a repository locally.\n{0}',

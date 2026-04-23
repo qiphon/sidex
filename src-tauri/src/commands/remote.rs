@@ -143,9 +143,8 @@ fn to_entry(info: ConnectionInfo) -> RemoteConnectionEntry {
 
 #[tauri::command]
 pub fn remote_list_ssh_hosts() -> Result<Vec<SshHostInfo>, String> {
-    let config_path = dirs::home_dir()
-        .map(|h| h.join(".ssh/config"))
-        .unwrap_or_else(|| PathBuf::from("~/.ssh/config"));
+    let config_path =
+        dirs::home_dir().map_or_else(|| PathBuf::from("~/.ssh/config"), |h| h.join(".ssh/config"));
 
     if !config_path.exists() {
         return Ok(Vec::new());
@@ -216,6 +215,7 @@ pub async fn remote_exec_ssh(
 }
 
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn remote_list_wsl_distros() -> Result<Vec<WslDistroInfo>, String> {
     #[cfg(target_os = "windows")]
     {

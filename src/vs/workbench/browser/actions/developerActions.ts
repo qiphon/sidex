@@ -337,7 +337,7 @@ class ToggleScreencastModeAction extends Action2 {
 		);
 
 		disposables.add(
-			onCompositionStart.event(e => {
+			onCompositionStart.event(_e => {
 				imeBackSpace = true;
 			})
 		);
@@ -360,7 +360,7 @@ class ToggleScreencastModeAction extends Action2 {
 		);
 
 		disposables.add(
-			onCompositionEnd.event(e => {
+			onCompositionEnd.event(_e => {
 				composing = undefined;
 				length++;
 			})
@@ -854,7 +854,7 @@ class PolicyDiagnosticsAction extends Action2 {
 							break;
 						}
 					}
-				} catch (error) {
+				} catch (_error) {
 					// Fallback to just session info
 				}
 
@@ -900,9 +900,8 @@ class PolicyDiagnosticsAction extends Action2 {
 		const excludedProperties = configurationRegistry.getExcludedConfigurationProperties();
 
 		if (policyConfigurations.size > 0) {
-			 
 			const appliedPolicy: Array<{ name: string; key: string; property: any; inspection: any }> = [];
-			 
+
 			const notAppliedPolicy: Array<{ name: string; key: string; property: any; inspection: any }> = [];
 
 			for (const [policyName, settingKey] of policyConfigurations) {
@@ -933,10 +932,8 @@ class PolicyDiagnosticsAction extends Action2 {
 				try {
 					const policyServiceConstructorName = policyService.constructor.name;
 					if (policyServiceConstructorName === 'MultiplexPolicyService') {
-						// eslint-disable-next-line local/code-no-any-casts
 						const multiplexService = policyService as any;
 						if (multiplexService.policyServices) {
-							 
 							const componentServices = multiplexService.policyServices as ReadonlyArray<any>;
 							for (const service of componentServices) {
 								if (service.getPolicyValue && service.getPolicyValue(policyName) !== undefined) {

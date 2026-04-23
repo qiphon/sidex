@@ -66,17 +66,12 @@ pub struct TreeItem {
 }
 
 /// Collapsible state of a tree item.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CollapsibleState {
+    #[default]
     None,
     Collapsed,
     Expanded,
-}
-
-impl Default for CollapsibleState {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Theme-aware icon for a tree item.
@@ -264,10 +259,7 @@ impl TreeViewRegistry {
 
     /// Gets the current selection for a tree view.
     pub fn selection(&self, view_id: &str) -> &[String] {
-        self.selections
-            .get(view_id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        self.selections.get(view_id).map_or(&[], Vec::as_slice)
     }
 
     // -- Inline actions ---------------------------------------------------
@@ -279,10 +271,7 @@ impl TreeViewRegistry {
 
     /// Gets inline actions for a tree view.
     pub fn inline_actions(&self, view_id: &str) -> &[TreeItemInlineAction] {
-        self.inline_actions
-            .get(view_id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        self.inline_actions.get(view_id).map_or(&[], Vec::as_slice)
     }
 
     // -- Queries ----------------------------------------------------------

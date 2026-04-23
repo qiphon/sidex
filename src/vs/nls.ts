@@ -103,6 +103,13 @@ export function localize(
 	if (typeof data === 'number') {
 		return _format(lookupMessage(data, message), args);
 	}
+
+	const key = typeof data === 'string' ? data : data.key;
+	const translations: Record<string, string> | undefined = (globalThis as any)._VSCODE_NLS_TRANSLATIONS;
+	if (translations && key in translations) {
+		return _format(translations[key], args);
+	}
+
 	return _format(message, args);
 }
 
@@ -172,7 +179,9 @@ export function localize2(
 	if (typeof data === 'number') {
 		message = lookupMessage(data, originalMessage);
 	} else {
-		message = originalMessage;
+		const key = typeof data === 'string' ? data : data.key;
+		const translations: Record<string, string> | undefined = (globalThis as any)._VSCODE_NLS_TRANSLATIONS;
+		message = translations && key in translations ? translations[key] : originalMessage;
 	}
 
 	const value = _format(message, args);

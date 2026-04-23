@@ -65,6 +65,7 @@ pub enum DependsOrder {
 /// Presentation options for how a task appears in the terminal.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)]
 pub struct TaskPresentation {
     #[serde(default)]
     pub reveal: RevealKind,
@@ -125,6 +126,7 @@ pub enum TaskState {
 /// A single task definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Task {
     pub name: String,
     #[serde(rename = "type", default)]

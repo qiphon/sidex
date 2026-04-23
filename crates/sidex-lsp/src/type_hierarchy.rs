@@ -47,6 +47,7 @@ fn convert_item(item: lsp_types::TypeHierarchyItem) -> TypeHierarchyItemInfo {
 
     TypeHierarchyItemInfo {
         name: item.name.clone(),
+        #[allow(clippy::cast_possible_truncation)]
         kind: serde_json::to_value(item.kind)
             .ok()
             .and_then(|v| v.as_u64())

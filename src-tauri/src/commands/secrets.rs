@@ -1,7 +1,7 @@
 //! OS-keyring-backed secret storage commands.
 //!
 //! Feeds the TypeScript `ISecretStorageService`. Keys are namespaced
-//! automatically (the crate stores them under the SideX service id) so
+//! automatically (the crate stores them under the `SideX` service id) so
 //! collisions with other apps on the same keyring are impossible.
 
 use std::sync::Arc;
@@ -31,6 +31,7 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn secret_get(
     store: tauri::State<'_, Arc<SecretsStore>>,
     key: String,
@@ -39,6 +40,7 @@ pub fn secret_get(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn secret_set(
     store: tauri::State<'_, Arc<SecretsStore>>,
     key: String,
@@ -48,6 +50,7 @@ pub fn secret_set(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn secret_delete(
     store: tauri::State<'_, Arc<SecretsStore>>,
     key: String,
@@ -56,6 +59,7 @@ pub fn secret_delete(
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn secret_keys(store: tauri::State<'_, Arc<SecretsStore>>) -> Result<Vec<String>, String> {
     store.inner.keys().map_err(|e| e.to_string())
 }

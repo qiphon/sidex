@@ -16,24 +16,16 @@ pub struct TerminalMatch {
     pub end_col: u16,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FindOptions {
     pub case_sensitive: bool,
     pub regex: bool,
     pub whole_word: bool,
 }
 
-impl Default for FindOptions {
-    fn default() -> Self {
-        Self {
-            case_sensitive: false,
-            regex: false,
-            whole_word: false,
-        }
-    }
-}
-
 /// Persistent state for the terminal find widget.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Default)]
 pub struct TerminalFind {
     pub visible: bool,
     pub query: String,
@@ -42,20 +34,6 @@ pub struct TerminalFind {
     pub case_sensitive: bool,
     pub regex: bool,
     pub whole_word: bool,
-}
-
-impl Default for TerminalFind {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            query: String::new(),
-            matches: Vec::new(),
-            current_match: 0,
-            case_sensitive: false,
-            regex: false,
-            whole_word: false,
-        }
-    }
 }
 
 impl TerminalFind {
@@ -80,10 +58,10 @@ impl TerminalFind {
     /// Run the search against `grid`, replacing previous results.
     pub fn search(&mut self, grid: &TerminalGrid) {
         self.matches = find_in_terminal(grid, &self.query, &self.options());
-        if !self.matches.is_empty() {
-            self.current_match = self.current_match.min(self.matches.len() - 1);
-        } else {
+        if self.matches.is_empty() {
             self.current_match = 0;
+        } else {
+            self.current_match = self.current_match.min(self.matches.len() - 1);
         }
     }
 
@@ -142,6 +120,7 @@ fn line_text(cells: &[Cell]) -> String {
 }
 
 /// Search the terminal grid (scrollback + visible) for `query`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn find_in_terminal(
     grid: &TerminalGrid,
     query: &str,
@@ -150,9 +129,8 @@ pub fn find_in_terminal(
     if query.is_empty() {
         return Vec::new();
     }
-    let re = match build_pattern(query, options) {
-        Some(r) => r,
-        None => return Vec::new(),
+    let Some(re) = build_pattern(query, options) else {
+        return Vec::new();
     };
     let sb_len = grid.scrollback.len();
     let mut results = Vec::new();
@@ -170,7 +148,7 @@ pub fn find_in_terminal(
         collect(
             &re,
             &line_text(&grid.cells()[row as usize]),
-            row as i32,
+            i32::from(row),
             &mut results,
         );
     }

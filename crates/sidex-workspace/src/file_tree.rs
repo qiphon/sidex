@@ -52,7 +52,7 @@ impl FileDecorations {
 }
 
 /// A single decoration on a file entry.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct FileDecoration {
     pub badge: Option<String>,
     pub badge_color: Option<Color>,
@@ -60,19 +60,6 @@ pub struct FileDecoration {
     pub strikethrough: bool,
     pub faded: bool,
     pub color: Option<Color>,
-}
-
-impl Default for FileDecoration {
-    fn default() -> Self {
-        Self {
-            badge: None,
-            badge_color: None,
-            tooltip: None,
-            strikethrough: false,
-            faded: false,
-            color: None,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -253,21 +240,11 @@ impl FileClipboard {
 // ---------------------------------------------------------------------------
 
 /// State for a drag-and-drop file move operation.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct DragDropState {
     pub source_paths: Vec<PathBuf>,
     pub target_dir: Option<PathBuf>,
     pub is_dragging: bool,
-}
-
-impl Default for DragDropState {
-    fn default() -> Self {
-        Self {
-            source_paths: Vec::new(),
-            target_dir: None,
-            is_dragging: false,
-        }
-    }
 }
 
 impl DragDropState {
@@ -376,8 +353,9 @@ pub struct FileNode {
     pub is_compact: bool,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(b: &bool) -> bool {
-    !(*b)
+    !b
 }
 
 impl FileNode {
@@ -711,7 +689,7 @@ fn resort_recursive(node: &mut FileNode, order: FileSortOrder) {
 }
 
 /// Compact single-child directory chains (e.g. `src/` → `src/utils/`).
-fn compact_single_child_dirs(nodes: &mut Vec<FileNode>) {
+fn compact_single_child_dirs(nodes: &mut [FileNode]) {
     for node in nodes.iter_mut() {
         if !node.is_dir {
             continue;

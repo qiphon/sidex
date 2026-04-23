@@ -62,7 +62,6 @@ impl CodespaceState {
             "Starting" => Self::Starting,
             "Running" => Self::Running,
             "Stopping" => Self::Stopping,
-            "Stopped" => Self::Stopped,
             "Rebuilding" => Self::Rebuilding,
             "Deleted" => Self::Deleted,
             _ => Self::Stopped,
@@ -169,6 +168,14 @@ pub async fn rebuild_codespace(name: &str, token: &str) -> Result<()> {
 
 /// Get available machine types for a repository.
 pub async fn list_machine_types(token: &str, repo: &str) -> Result<Vec<String>> {
+    #[derive(Deserialize)]
+    struct Machine {
+        name: String,
+    }
+    #[derive(Deserialize)]
+    struct MachinesResp {
+        machines: Vec<Machine>,
+    }
     let client = gh_client(token)?;
     let resp = client
         .get(format!("{GITHUB_API}/repos/{repo}/codespaces/machines"))
@@ -177,14 +184,6 @@ pub async fn list_machine_types(token: &str, repo: &str) -> Result<Vec<String>> 
         .context("listing machine types")?;
     if !resp.status().is_success() {
         bail!("list machines: {}", resp.text().await?);
-    }
-    #[derive(Deserialize)]
-    struct Machine {
-        name: String,
-    }
-    #[derive(Deserialize)]
-    struct MachinesResp {
-        machines: Vec<Machine>,
     }
     let body: MachinesResp = resp.json().await?;
     Ok(body.machines.into_iter().map(|m| m.name).collect())
@@ -314,6 +313,7 @@ pub async fn delete_codespace(name: &str, token: &str) -> Result<()> {
 ///
 /// Internally delegates to an [`SshTransport`] once the codespace is running,
 /// since GitHub exposes SSH access to codespaces via `gh cs ssh`.
+#[allow(dead_code)]
 pub struct CodespacesTransport {
     name: String,
     token: String,

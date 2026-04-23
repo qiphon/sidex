@@ -65,6 +65,7 @@ pub fn syntax_detect_language(filename: String) -> Result<String, String> {
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn syntax_detect_from_content(
     filename: Option<String>,
     content: Option<String>,

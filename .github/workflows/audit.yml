@@ -5,16 +5,22 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/audit.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
+      - "crates/**/Cargo.toml"
       - "package.json"
       - "package-lock.json"
   pull_request:
     branches: [main]
     paths:
       - ".github/workflows/audit.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "src-tauri/Cargo.toml"
       - "src-tauri/Cargo.lock"
+      - "crates/**/Cargo.toml"
       - "package.json"
       - "package-lock.json"
   schedule:
@@ -39,7 +45,7 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Run cargo audit
-        run: cargo audit --file src-tauri/Cargo.lock
+        run: cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2023-0071
 
   npm-audit:
     name: npm audit

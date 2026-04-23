@@ -243,17 +243,15 @@ impl FileOperationService {
 
         ensure_parent(target)?;
 
-        match std::fs::rename(source, target) {
-            Ok(()) => {}
-            Err(_) => {
-                // Cross-device: copy then delete.
-                std::fs::copy(source, target).map_err(|e| io_err(source, e))?;
-                let meta = std::fs::symlink_metadata(source).map_err(|e| io_err(source, e))?;
-                if meta.is_dir() {
-                    std::fs::remove_dir_all(source).map_err(|e| io_err(source, e))?;
-                } else {
-                    std::fs::remove_file(source).map_err(|e| io_err(source, e))?;
-                }
+        if std::fs::rename(source, target).is_ok() {
+        } else {
+            // Cross-device: copy then delete.
+            std::fs::copy(source, target).map_err(|e| io_err(source, e))?;
+            let meta = std::fs::symlink_metadata(source).map_err(|e| io_err(source, e))?;
+            if meta.is_dir() {
+                std::fs::remove_dir_all(source).map_err(|e| io_err(source, e))?;
+            } else {
+                std::fs::remove_file(source).map_err(|e| io_err(source, e))?;
             }
         }
 
@@ -361,9 +359,7 @@ impl FileOperationService {
     /// Check if a file is read-only.
     #[must_use]
     pub fn is_readonly(path: &Path) -> bool {
-        std::fs::metadata(path)
-            .map(|m| m.permissions().readonly())
-            .unwrap_or(false)
+        std::fs::metadata(path).is_ok_and(|m| m.permissions().readonly())
     }
 
     // ── Large file detection ────────────────────────────────────────────
@@ -377,15 +373,13 @@ impl FileOperationService {
     /// Check if a file exceeds a custom byte threshold.
     #[must_use]
     pub fn is_file_larger_than(path: &Path, threshold: u64) -> bool {
-        std::fs::metadata(path)
-            .map(|m| m.len() > threshold)
-            .unwrap_or(false)
+        std::fs::metadata(path).is_ok_and(|m| m.len() > threshold)
     }
 
     /// Get the file size in bytes, or 0 if it cannot be read.
     #[must_use]
     pub fn file_size(path: &Path) -> u64 {
-        std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+        std::fs::metadata(path).map_or(0, |m| m.len())
     }
 }
 
@@ -425,16 +419,16 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> WorkspaceResult<()> {
 /// Move a file or directory to the OS trash.
 ///
 /// On macOS this uses `NSFileManager`-style semantics via a `.Trash`
-/// directory. On Linux it follows the FreeDesktop trash spec. As a
+/// directory. On Linux it follows the `FreeDesktop` trash spec. As a
 /// fallback, the item is moved to `~/.Trash/`.
 fn move_to_trash(path: &Path) -> WorkspaceResult<()> {
     let trash_dir = trash_directory()?;
     std::fs::create_dir_all(&trash_dir).map_err(|e| io_err(&trash_dir, e))?;
 
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    let file_name = path.file_name().map_or_else(
+        || "unknown".to_string(),
+        |n| n.to_string_lossy().to_string(),
+    );
 
     let mut target = trash_dir.join(&file_name);
     let mut counter = 1u32;

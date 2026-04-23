@@ -80,7 +80,7 @@ fn convert_token_rule(rule: &sidex_theme::TokenColorRule) -> TokenColorRule {
     TokenColorRule {
         scope: rule.scope.clone(),
         settings: TokenColorSettings {
-            foreground: rule.foreground.map(|c| c.to_hex()),
+            foreground: rule.foreground.map(sidex_theme::Color::to_hex),
             font_style: font_style_str(rule.font_style),
         },
     }
@@ -94,16 +94,15 @@ fn theme_to_data(theme: &Theme) -> ThemeData {
 }
 
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn theme_list() -> Result<Vec<ThemeInfo>, String> {
     let registry = ThemeRegistry::new();
 
     let mut infos: Vec<ThemeInfo> = registry
         .available_theme_names()
         .into_iter()
-        .enumerate()
-        .map(|(_, name)| {
+        .map(|name| {
             let kind = match name {
-                "Default Dark Modern" => ThemeKind::Dark,
                 "Default Light Modern" => ThemeKind::Light,
                 "Default High Contrast" => ThemeKind::HighContrast,
                 "Default High Contrast Light" => ThemeKind::HighContrastLight,
@@ -117,11 +116,12 @@ pub fn theme_list() -> Result<Vec<ThemeInfo>, String> {
         })
         .collect();
 
-    infos.sort_by(|a, b| a.label.cmp(&b.label));
+    infos.sort_by_key(|a| a.label.clone());
     Ok(infos)
 }
 
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn theme_get(id: String) -> Result<ThemeData, String> {
     let mut registry = ThemeRegistry::new();
 
@@ -131,7 +131,7 @@ pub fn theme_get(id: String) -> Result<ThemeData, String> {
         .available_theme_names()
         .into_iter()
         .find(|n| n.to_lowercase() == label)
-        .map(|n| n.to_owned());
+        .map(std::borrow::ToOwned::to_owned);
 
     let Some(name) = theme else {
         return Err(format!("theme not found: {id}"));
@@ -145,11 +145,13 @@ pub fn theme_get(id: String) -> Result<ThemeData, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn theme_get_default_dark() -> Result<ThemeData, String> {
     Ok(theme_to_data(&Theme::default_dark()))
 }
 
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn theme_get_default_light() -> Result<ThemeData, String> {
     Ok(theme_to_data(&Theme::default_light()))
 }

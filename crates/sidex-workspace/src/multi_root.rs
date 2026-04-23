@@ -23,6 +23,7 @@ pub struct WorkspaceFolder {
     pub index: u32,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(v: &u32) -> bool {
     *v == 0
 }
@@ -126,6 +127,7 @@ impl MultiRootWorkspace {
             return;
         }
 
+        #[allow(clippy::cast_possible_truncation)]
         let index = self.config.folders.len() as u32;
         self.config.folders.push(WorkspaceFolder {
             path: path.to_path_buf(),
@@ -187,6 +189,7 @@ impl MultiRootWorkspace {
         Ok(())
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn reindex_folders(&mut self) {
         for (i, folder) in self.config.folders.iter_mut().enumerate() {
             folder.index = i as u32;
@@ -215,11 +218,10 @@ impl MultiRootWorkspace {
     #[must_use]
     pub fn folder_name(folder: &WorkspaceFolder) -> String {
         folder.name.clone().unwrap_or_else(|| {
-            folder
-                .path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| folder.path.to_string_lossy().to_string())
+            folder.path.file_name().map_or_else(
+                || folder.path.to_string_lossy().to_string(),
+                |n| n.to_string_lossy().to_string(),
+            )
         })
     }
 
@@ -373,6 +375,7 @@ pub fn parse_workspace_file(path: &Path) -> Result<WorkspaceConfig, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("read workspace file: {e}"))?;
     let mut config: WorkspaceConfig =
         serde_json::from_str(&content).map_err(|e| format!("parse workspace JSON: {e}"))?;
+    #[allow(clippy::cast_possible_truncation)]
     for (i, folder) in config.folders.iter_mut().enumerate() {
         folder.index = i as u32;
         if folder.uri.is_empty() {

@@ -12,6 +12,7 @@ use crate::line_ending::LineEnding;
 
 /// Configurable options that govern how the model behaves on save and edit.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct TextModelOptions {
     /// Number of spaces a tab represents.
     pub tab_size: u32,
@@ -172,7 +173,7 @@ impl TextModel {
         if self.options.trim_trailing_whitespace {
             content = content
                 .lines()
-                .map(|line| line.trim_end())
+                .map(str::trim_end)
                 .collect::<Vec<_>>()
                 .join(self.line_ending.as_str());
             if content.ends_with(self.line_ending.as_str()) || self.options.insert_final_newline {

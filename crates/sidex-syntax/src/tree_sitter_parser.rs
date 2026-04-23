@@ -41,7 +41,7 @@ impl std::fmt::Debug for TreeSitterParserState {
             .field("has_highlight_query", &self.highlight_query.is_some())
             .field("has_locals_query", &self.locals_query.is_some())
             .field("has_injections_query", &self.injections_query.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -102,25 +102,25 @@ impl TreeSitterManager {
     pub fn register_language(
         &mut self,
         name: &str,
-        ts_language: tree_sitter::Language,
+        ts_language: &tree_sitter::Language,
         queries: TreeSitterQueries,
     ) -> Result<(), TreeSitterError> {
         let mut parser = Parser::new();
         parser
-            .set_language(&ts_language)
+            .set_language(ts_language)
             .map_err(|_| TreeSitterError::LanguageVersionMismatch)?;
 
-        let highlight_query = if !queries.highlights.is_empty() {
-            Some(Query::new(&ts_language, &queries.highlights)?)
-        } else {
+        let highlight_query = if queries.highlights.is_empty() {
             None
+        } else {
+            Some(Query::new(ts_language, &queries.highlights)?)
         };
         let locals_query = match &queries.locals {
-            Some(src) if !src.is_empty() => Some(Query::new(&ts_language, src)?),
+            Some(src) if !src.is_empty() => Some(Query::new(ts_language, src)?),
             _ => None,
         };
         let injections_query = match &queries.injections {
-            Some(src) if !src.is_empty() => Some(Query::new(&ts_language, src)?),
+            Some(src) if !src.is_empty() => Some(Query::new(ts_language, src)?),
             _ => None,
         };
 
@@ -271,7 +271,7 @@ pub fn get_fold_ranges(tree: &Tree, source: &str, folds_query: &Query) -> Vec<(u
             }
         }
     }
-    ranges.sort();
+    ranges.sort_unstable();
     ranges.dedup();
     ranges
 }

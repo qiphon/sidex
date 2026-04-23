@@ -155,7 +155,10 @@ pub fn validate_setting(key: &str, value: &Value, schema: &SettingSchema) -> Res
 
     if let Some(enum_vals) = &schema.enum_values {
         if !enum_vals.contains(value) && !enum_vals.is_empty() {
-            let allowed: Vec<String> = enum_vals.iter().map(|v| v.to_string()).collect();
+            let allowed: Vec<String> = enum_vals
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             return Err(format!(
                 "{key}: value not in allowed set: [{}]",
                 allowed.join(", ")

@@ -1,10 +1,11 @@
 //! SSH remote transport backend.
 //!
-//! Full implementation with connection pooling, keepalive, ProxyJump,
+//! Full implementation with connection pooling, keepalive, `ProxyJump`,
 //! agent forwarding, known-hosts checking, environment variables,
 //! and bidirectional port forwarding.
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::io::BufRead;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -349,11 +350,10 @@ pub fn check_known_host(
         format!("[{hostname}]:{port}")
     };
 
-    let fp = format!("SHA256:<key>");
+    let fp = "SHA256:<key>".to_string();
 
-    let file = match std::fs::File::open(&path) {
-        Ok(f) => f,
-        Err(_) => return KnownHostStatus::Unknown { fingerprint: fp },
+    let Ok(file) = std::fs::File::open(&path) else {
+        return KnownHostStatus::Unknown { fingerprint: fp };
     };
 
     for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
@@ -435,8 +435,7 @@ pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHostConfig>> {
                 if let Some(ref mut e) = current {
                     let expanded = if value.starts_with("~/") {
                         dirs::home_dir()
-                            .map(|h| h.join(&value[2..]))
-                            .unwrap_or_else(|| PathBuf::from(value))
+                            .map_or_else(|| PathBuf::from(value), |h| h.join(&value[2..]))
                     } else {
                         PathBuf::from(value)
                     };
@@ -478,7 +477,7 @@ pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHostConfig>> {
 // Client handler
 // ---------------------------------------------------------------------------
 
-struct ClientHandler;
+pub struct ClientHandler;
 
 #[async_trait::async_trait]
 impl client::Handler for ClientHandler {
@@ -497,6 +496,7 @@ impl client::Handler for ClientHandler {
 // ---------------------------------------------------------------------------
 
 struct PooledSession {
+    #[allow(dead_code)]
     handle: client::Handle<ClientHandler>,
     last_used: Instant,
 }
@@ -605,6 +605,7 @@ pub struct SshTransport {
     session: Arc<Mutex<client::Handle<ClientHandler>>>,
     host: String,
     port: u16,
+    #[allow(dead_code)]
     user: String,
     env_vars: Arc<Mutex<HashMap<String, String>>>,
     keepalive_handle: Option<tokio::task::JoinHandle<()>>,
@@ -648,7 +649,7 @@ impl SshTransport {
         })
     }
 
-    /// Connect through a ProxyJump host.
+    /// Connect through a `ProxyJump` host.
     pub async fn connect_via_proxy(
         proxy_host: &str,
         proxy_port: u16,
@@ -723,6 +724,7 @@ impl SshTransport {
     }
 
     /// Reverse port forward: remote -> local.
+    #[allow(clippy::unused_async)]
     pub async fn reverse_forward_port(
         &self,
         remote_port: u16,
@@ -764,7 +766,7 @@ impl SshTransport {
         }
         let mut prefix = String::new();
         for (k, v) in env.iter() {
-            prefix.push_str(&format!("export {k}={v:?}; "));
+            let _ = write!(prefix, "export {k}={v:?}; ");
         }
         prefix
     }
@@ -786,9 +788,8 @@ impl SshTransport {
         let mut buf = [0u8; 8192];
         loop {
             match stream.read(&mut buf).await {
-                Ok(0) => break,
+                Ok(0) | Err(_) => break,
                 Ok(n) => stdout.extend_from_slice(&buf[..n]),
-                Err(_) => break,
             }
         }
 
@@ -946,11 +947,11 @@ impl RemoteTransport for SshTransport {
 
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let b0 = u32::from(chunk[0]);
+        let b1 = u32::from(chunk.get(1).copied().unwrap_or(0));
+        let b2 = u32::from(chunk.get(2).copied().unwrap_or(0));
         let triple = (b0 << 16) | (b1 << 8) | b2;
         out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
         out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);

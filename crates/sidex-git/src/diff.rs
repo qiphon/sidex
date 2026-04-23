@@ -1,5 +1,6 @@
 //! Git diff — file diffs, staged diffs, and line-level diff info.
 
+use std::fmt::Write;
 use std::path::Path;
 
 use serde::Serialize;
@@ -158,14 +159,15 @@ pub fn compute_hunks(original: &str, modified: &str) -> Vec<DiffHunk> {
 /// Format hunks as a standard unified diff string.
 pub fn format_unified_diff(hunks: &[DiffHunk], original_name: &str, modified_name: &str) -> String {
     let mut out = String::new();
-    out.push_str(&format!("--- {original_name}\n"));
-    out.push_str(&format!("+++ {modified_name}\n"));
+    let _ = writeln!(out, "--- {original_name}");
+    let _ = writeln!(out, "+++ {modified_name}");
 
     for hunk in hunks {
-        out.push_str(&format!(
-            "@@ -{},{} +{},{} @@\n",
-            hunk.original_start, hunk.original_count, hunk.modified_start, hunk.modified_count,
-        ));
+        let _ = writeln!(
+            out,
+            "@@ -{},{} +{},{} @@",
+            hunk.original_start, hunk.original_count, hunk.modified_start, hunk.modified_count
+        );
         for line in &hunk.lines {
             let prefix = match line.kind {
                 DiffLineKind::Context => ' ',
@@ -398,7 +400,7 @@ fn infer_orig_start(ops: &[RawOp], start: usize, end: usize) -> usize {
     for op in ops.iter().skip(start).take(end - start) {
         match *op {
             RawOp::Equal(oi, _) | RawOp::Remove(oi) => return oi + 1,
-            _ => {}
+            RawOp::Add(_) => {}
         }
     }
     1
@@ -408,7 +410,7 @@ fn infer_mod_start(ops: &[RawOp], start: usize, end: usize) -> usize {
     for op in ops.iter().skip(start).take(end - start) {
         match *op {
             RawOp::Equal(_, ni) | RawOp::Add(ni) => return ni + 1,
-            _ => {}
+            RawOp::Remove(_) => {}
         }
     }
     1

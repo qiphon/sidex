@@ -1,4 +1,4 @@
-//! SQLite database connection with versioned schema migrations.
+//! `SQLite` database connection with versioned schema migrations.
 
 use std::path::{Path, PathBuf};
 
@@ -8,7 +8,7 @@ use rusqlite::Connection;
 /// Current schema version. Bump when adding migrations.
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
-/// Wraps a SQLite connection and ensures schema migrations run on open.
+/// Wraps a `SQLite` connection and ensures schema migrations run on open.
 pub struct Database {
     conn: Connection,
     path: PathBuf,
@@ -54,7 +54,7 @@ impl Database {
         &self.path
     }
 
-    /// Returns the current user_version of the database.
+    /// Returns the current `user_version` of the database.
     pub fn schema_version(&self) -> Result<u32> {
         let v: u32 = self
             .conn
@@ -74,10 +74,10 @@ impl Database {
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut dst =
+        let mut backup_conn =
             Connection::open(dest).with_context(|| format!("open backup at {}", dest.display()))?;
-        let backup =
-            rusqlite::backup::Backup::new(&self.conn, &mut dst).context("create backup object")?;
+        let backup = rusqlite::backup::Backup::new(&self.conn, &mut backup_conn)
+            .context("create backup object")?;
         backup
             .run_to_completion(100, std::time::Duration::from_millis(10), None)
             .context("run backup")?;

@@ -34,10 +34,10 @@ pub struct CommandInfo {
 /// Build the list of entries shown in the keyboard shortcuts editor.
 ///
 /// Merges default bindings with user overrides and command metadata.
-pub fn get_all_keybinding_entries(
+pub fn get_all_keybinding_entries<S: ::std::hash::BuildHasher>(
     defaults: &[ResolvedKeybinding],
     user: &[ResolvedKeybinding],
-    commands: &HashMap<String, CommandInfo>,
+    commands: &HashMap<String, CommandInfo, S>,
 ) -> Vec<KeybindingEntry> {
     let mut entries: Vec<KeybindingEntry> = Vec::new();
     let mut user_commands: HashMap<String, &ResolvedKeybinding> = HashMap::new();
@@ -57,16 +57,16 @@ pub fn get_all_keybinding_entries(
             resolved
         };
 
-        let title = commands
-            .get(&resolved.command)
-            .map(|c| {
+        let title = commands.get(&resolved.command).map_or_else(
+            || resolved.command.clone(),
+            |c| {
                 if let Some(cat) = &c.category {
                     format!("{cat}: {}", c.title)
                 } else {
                     c.title.clone()
                 }
-            })
-            .unwrap_or_else(|| resolved.command.clone());
+            },
+        );
 
         entries.push(KeybindingEntry {
             command_id: resolved.command.clone(),
@@ -87,8 +87,7 @@ pub fn get_all_keybinding_entries(
         }
         let title = commands
             .get(&ub.command)
-            .map(|c| c.title.clone())
-            .unwrap_or_else(|| ub.command.clone());
+            .map_or_else(|| ub.command.clone(), |c| c.title.clone());
 
         entries.push(KeybindingEntry {
             command_id: ub.command.clone(),
@@ -119,7 +118,7 @@ pub fn get_all_keybinding_entries(
         }
     }
 
-    entries.sort_by(|a, b| a.command_title.cmp(&b.command_title));
+    entries.sort_by_key(|a| a.command_title.clone());
     entries
 }
 
@@ -178,7 +177,7 @@ impl KeybindingRecorder {
 pub fn format_keybinding(combos: &[KeyCombo]) -> String {
     combos
         .iter()
-        .map(|c| format_combo(c))
+        .map(format_combo)
         .collect::<Vec<_>>()
         .join(" ")
 }

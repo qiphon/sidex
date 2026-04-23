@@ -5,7 +5,7 @@
 
 import { Schemas } from '../common/network.js';
 import { reset } from './dom.js';
- 
+
 import dompurify, * as DomPurifyTypes from './dompurify/dompurify.js';
 
 /**
@@ -129,7 +129,7 @@ function validateLink(value: string, allowedProtocols: AllowedLinksConfig): bool
 		}
 
 		return false;
-	} catch (e) {
+	} catch (_e) {
 		return false;
 	}
 }

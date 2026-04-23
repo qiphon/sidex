@@ -8,17 +8,12 @@ use crate::selection;
 use std::ops::Range;
 
 /// Terminal cursor shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CursorShape {
+    #[default]
     Block,
     Underline,
     Bar,
-}
-
-impl Default for CursorShape {
-    fn default() -> Self {
-        Self::Block
-    }
 }
 
 /// Underline style for rendering.
@@ -109,6 +104,11 @@ pub struct TerminalRenderOutput {
 }
 
 /// Converts a terminal grid into render primitives for the given viewport row range.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation
+)]
 pub fn render_terminal(
     grid: &TerminalGrid,
     viewport: Range<u32>,
@@ -140,7 +140,7 @@ pub fn render_terminal(
                 continue;
             }
 
-            let x_offset = col as f32 * metrics.cell_width + renderer.padding;
+            let x_offset = f32::from(col) * metrics.cell_width + renderer.padding;
             let cell_w = if cell.width == 2 {
                 metrics.cell_width * 2.0
             } else {
@@ -235,10 +235,10 @@ pub fn render_terminal(
     // Cursor
     if grid.cursor.visible && renderer.cursor_blink_visible {
         let (crow, ccol) = grid.cursor_position();
-        let crow32 = crow as u32;
+        let crow32 = u32::from(crow);
         if viewport.contains(&crow32) {
             let cy = (crow32 - viewport.start) as f32 * metrics.cell_height + renderer.padding;
-            let cx = ccol as f32 * metrics.cell_width + renderer.padding;
+            let cx = f32::from(ccol) * metrics.cell_width + renderer.padding;
 
             let cursor_rect = match renderer.cursor_style {
                 CursorShape::Block => RectInstance {
@@ -285,7 +285,12 @@ fn color_to_rgba(color: Color, is_fg: bool) -> [f32; 4] {
             indexed_color_to_rgba(idx)
         }
         Color::Indexed(idx) => indexed_color_to_rgba(idx),
-        Color::Rgb(r, g, b) => [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0],
+        Color::Rgb(r, g, b) => [
+            f32::from(r) / 255.0,
+            f32::from(g) / 255.0,
+            f32::from(b) / 255.0,
+            1.0,
+        ],
     }
 }
 
@@ -321,7 +326,12 @@ fn indexed_color_to_rgba(idx: u8) -> [f32; 4] {
             (v, v, v)
         }
     };
-    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
+    [
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        1.0,
+    ]
 }
 
 #[cfg(test)]

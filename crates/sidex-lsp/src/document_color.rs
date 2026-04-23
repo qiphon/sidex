@@ -35,6 +35,7 @@ impl LspColor {
     }
 
     /// Convert to a CSS hex string (e.g. `#ff0000ff`).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn to_hex(&self) -> String {
         let r = (self.red * 255.0) as u8;
         let g = (self.green * 255.0) as u8;
@@ -114,7 +115,7 @@ pub async fn provide_document_colors(
     }
     let infos: Vec<lsp_types::ColorInformation> =
         serde_json::from_value(result).context("failed to parse document colors")?;
-    Ok(infos.into_iter().map(convert_color_info).collect())
+    Ok(infos.iter().map(convert_color_info).collect())
 }
 
 /// Requests alternative color presentations for a color at a range.
@@ -153,7 +154,7 @@ pub async fn provide_color_presentations(
         .collect())
 }
 
-fn convert_color_info(info: lsp_types::ColorInformation) -> ColorInformation {
+fn convert_color_info(info: &lsp_types::ColorInformation) -> ColorInformation {
     ColorInformation {
         range: lsp_to_range(info.range),
         color: LspColor {

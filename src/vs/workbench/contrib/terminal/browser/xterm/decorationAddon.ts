@@ -177,7 +177,6 @@ export class DecorationAddon extends Disposable implements ITerminalAddon, IDeco
 	}
 
 	private _updateGutterDecorationVisibility(): void {
-		 
 		const commandDecorationElements = this._terminal?.element?.querySelectorAll(DecorationSelector.CommandDecoration);
 		if (commandDecorationElements) {
 			for (const commandDecorationElement of commandDecorationElements) {
@@ -402,7 +401,7 @@ export class DecorationAddon extends Disposable implements ITerminalAddon, IDeco
 		if (command?.exitCode === undefined && !command?.markProperties) {
 			return [];
 		} else if (command?.markProperties || markProperties) {
-			return [this._createHover(element, command || markProperties, markProperties?.hoverMessage)];
+			return [this._createHover(element, (command || markProperties) as any, markProperties?.hoverMessage)];
 		}
 		return [...this._createContextMenu(element, command), this._createHover(element, command)];
 	}

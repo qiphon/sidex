@@ -489,7 +489,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 					if (!result.isDirectory) {
 						continue;
 					}
-				} catch (e) {
+				} catch (_e) {
 					/* Ignore */
 				}
 				storedFoldersToAdd.push(
@@ -1296,7 +1296,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		});
 		try {
 			await Promises.settled(joiners);
-		} catch (error) {
+		} catch (_error) {
 			/* Ignore */
 		}
 	}
@@ -1482,9 +1482,7 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 					: 'user';
 			await invoke('settings_update', { key, value: value === undefined ? null : value, scope: scopeForRust });
 		} catch (error) {
-			this.logService.trace(
-				`WorkspaceService: settings_update bridge failed for key '${key}': ${error}`
-			);
+			this.logService.trace(`WorkspaceService: settings_update bridge failed for key '${key}': ${error}`);
 		}
 		switch (editableConfigurationTarget) {
 			case EditableConfigurationTarget.USER_LOCAL:
@@ -1939,7 +1937,7 @@ class ConfigurationDefaultOverridesContribution extends Disposable implements IW
 				if (!isUndefined(value) && !equals(value, schema.default)) {
 					overrides[property] = value;
 				}
-			} catch (error) {
+			} catch (_error) {
 				/*ignore */
 			}
 		}

@@ -174,9 +174,8 @@ pub fn log_graph(repo_root: &Path, max: usize) -> GitResult<Vec<GitGraphEntry>> 
     let mut lines = output.lines().peekable();
 
     while lines.peek().is_some() {
-        let raw_graph_line = match lines.next() {
-            Some(l) => l,
-            None => break,
+        let Some(raw_graph_line) = lines.next() else {
+            break;
         };
 
         let (graph_prefix, hash) = split_graph_prefix(raw_graph_line);
@@ -184,12 +183,12 @@ pub fn log_graph(repo_root: &Path, max: usize) -> GitResult<Vec<GitGraphEntry>> 
             continue;
         }
 
-        let short_hash = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
-        let parents_line = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
-        let author = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
-        let date = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
-        let message = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
-        let decorations = lines.next().map(|l| strip_graph(l)).unwrap_or_default();
+        let short_hash = lines.next().map(strip_graph).unwrap_or_default();
+        let parents_line = lines.next().map(strip_graph).unwrap_or_default();
+        let author = lines.next().map(strip_graph).unwrap_or_default();
+        let date = lines.next().map(strip_graph).unwrap_or_default();
+        let message = lines.next().map(strip_graph).unwrap_or_default();
+        let decorations = lines.next().map(strip_graph).unwrap_or_default();
 
         let parents: Vec<String> = parents_line
             .split_whitespace()
@@ -236,7 +235,7 @@ fn parse_decorations(decorations: &str) -> Vec<GitRef> {
 
     decorations
         .split(',')
-        .map(|s| s.trim())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| {
             let s = s

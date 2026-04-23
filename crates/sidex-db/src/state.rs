@@ -1,4 +1,4 @@
-//! Generic key-value state store backed by SQLite.
+//! Generic key-value state store backed by `SQLite`.
 //!
 //! Keys are scoped so that different subsystems (global settings, per-workspace
 //! data, per-extension data) can coexist without collision.  Typical scopes:

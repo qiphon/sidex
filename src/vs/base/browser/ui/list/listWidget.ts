@@ -693,7 +693,6 @@ class DOMFocusController<T> implements IDisposable {
 			return;
 		}
 
-		 
 		const tabIndexElement = focusedDomElement.querySelector('[tabIndex]');
 
 		if (!tabIndexElement || !isHTMLElement(tabIndexElement) || tabIndexElement.tabIndex === -1) {
@@ -1441,7 +1440,7 @@ class AccessibiltyRenderer<T> implements IListRenderer<T, IAccessibilityTemplate
 
 		data.disposables.add(
 			autorun(reader => {
-				this.setAriaLabel(reader.readObservable(observable), data.container);
+				this.setAriaLabel(reader.readObservable(observable as any), data.container);
 			})
 		);
 
@@ -1769,7 +1768,7 @@ export class List<T> implements ISpliceable<T>, IDisposable {
 
 			this.disposables.add(
 				autorun(reader => {
-					this.ariaLabel = reader.readObservable(observable);
+					this.ariaLabel = reader.readObservable(observable as any);
 				})
 			);
 		}
@@ -1788,7 +1787,7 @@ export class List<T> implements ISpliceable<T>, IDisposable {
 		return new ListView(container, virtualDelegate, renderers, viewOptions);
 	}
 
-	protected createMouseController(options: IListOptions<T>): MouseController<T> {
+	protected createMouseController(_options: IListOptions<T>): MouseController<T> {
 		return new MouseController(this);
 	}
 

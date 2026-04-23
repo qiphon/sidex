@@ -334,11 +334,6 @@ impl AnsiParser {
 
     fn osc_string(&mut self, byte: u8) -> Option<AnsiAction> {
         match byte {
-            0x07 => {
-                let cmd = parse_osc(&self.osc_buffer);
-                self.reset();
-                Some(AnsiAction::OscDispatch(cmd))
-            }
             0x1B => {
                 // Might be ST (\x1b\\)
                 // For simplicity, treat ESC as terminator too
@@ -346,7 +341,7 @@ impl AnsiParser {
                 self.reset();
                 Some(AnsiAction::OscDispatch(cmd))
             }
-            0x9C => {
+            0x07 | 0x9C => {
                 let cmd = parse_osc(&self.osc_buffer);
                 self.reset();
                 Some(AnsiAction::OscDispatch(cmd))

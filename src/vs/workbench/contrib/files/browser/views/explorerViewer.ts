@@ -22,10 +22,7 @@ import {
 	FileSystemProviderCapabilities
 } from '../../../../../platform/files/common/files.js';
 import { IWorkbenchLayoutService } from '../../../../services/layout/browser/layoutService.js';
-import {
-	IWorkspaceContextService,
-	WorkbenchState
-} from '../../../../../platform/workspace/common/workspace.js';
+import { IWorkspaceContextService, WorkbenchState } from '../../../../../platform/workspace/common/workspace.js';
 import {
 	IDisposable,
 	Disposable,
@@ -139,11 +136,11 @@ import { asCssVariable } from '../../../../../platform/theme/common/colorUtils.j
 export class ExplorerDelegate implements IListVirtualDelegate<ExplorerItem> {
 	static readonly ITEM_HEIGHT = 22;
 
-	getHeight(element: ExplorerItem): number {
+	getHeight(_element: ExplorerItem): number {
 		return ExplorerDelegate.ITEM_HEIGHT;
 	}
 
-	getTemplateId(element: ExplorerItem): string {
+	getTemplateId(_element: ExplorerItem): string {
 		return FilesRenderer.ID;
 	}
 }
@@ -908,7 +905,6 @@ export class CompressedNavigationController implements ICompressedNavigationCont
 	}
 
 	private updateLabels(templateData: IFileTemplateData): void {
-		 
 		this._labels = Array.from(templateData.container.querySelectorAll('.label-name'));
 		let parents = '';
 		for (let i = 0; i < this.labels.length; i++) {
@@ -1058,7 +1054,7 @@ export class FilesRenderer
 						if (templateData.currentContext) {
 							this.updateWidth(templateData.currentContext);
 						}
-					} catch (e) {
+					} catch (_e) {
 						// noop since the element might no longer be in the tree, no update of width necessary
 					}
 				});
@@ -1206,7 +1202,7 @@ export class FilesRenderer
 		const theme = this.themeService.getFileIconTheme();
 
 		// Hack to always render chevrons for file nests, or else may not be able to identify them.
-		 
+
 		const twistieContainer = templateData.container.parentElement?.parentElement?.querySelector('.monaco-tl-twistie');
 		twistieContainer?.classList.toggle('force-twistie', stat.hasNests && theme.hidesExplorerArrows);
 
@@ -1359,7 +1355,7 @@ export class FilesRenderer
 					done(false, true);
 				}
 			}),
-			DOM.addStandardDisposableListener(inputBox.inputElement, DOM.EventType.KEY_UP, (e: IKeyboardEvent) => {
+			DOM.addStandardDisposableListener(inputBox.inputElement, DOM.EventType.KEY_UP, (_e: IKeyboardEvent) => {
 				showInputBoxNotification();
 			}),
 			DOM.addDisposableListener(inputBox.inputElement, DOM.EventType.BLUR, async () => {
