@@ -149,7 +149,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find release/bundle \( \
+          find src-tauri/target \( \
             -name "*-setup.exe" \
             -o -name "*.exe.zip" \
             -o -name "*.exe.zip.sig" \
@@ -161,7 +161,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find release/bundle \( \
+          find src-tauri/target \( \
             -name "*.deb" \
             -o -name "*.AppImage" \
             -o -name "*.AppImage.tar.gz" \
