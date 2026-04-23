@@ -137,7 +137,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find sidex/target \( \
+          find target \( \
             -name "*.dmg" \
             -o -name "*.app.tar.gz" \
             -o -name "*.app.tar.gz.sig" \
@@ -149,19 +149,22 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find sidex/target \( \
+          find target \( \
             -name "*-setup.exe" \
             -o -name "*.exe.zip" \
             -o -name "*.exe.zip.sig" \
           \) -exec cp {} dist-artifacts/ \; 2>/dev/null || true
           ls -la dist-artifacts/
 
+      - name: test current path
+        if: runner.os == 'Linux'
+        run: pwd
       - name: Collect Linux artifacts
         if: runner.os == 'Linux'
         shell: bash
         run: |
           mkdir -p dist-artifacts
-          find sidex/target \( \
+          find target \( \
             -name "*.deb" \
             -o -name "*.AppImage" \
             -o -name "*.AppImage.tar.gz" \
