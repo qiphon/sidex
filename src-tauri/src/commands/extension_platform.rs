@@ -421,8 +421,8 @@ pub fn read_extension_manifest(
     ext_dir: &Path,
 ) -> Result<ExtensionManifest, String> {
     let pkg_path = ext_dir.join("package.json");
-    let raw =
-        fs::read_to_string(&pkg_path).map_err(|e| format!("read {}: {e}", pkg_path.display()))?;
+    let raw = sidex_extensions::encoding::read_manifest_file(&pkg_path)
+        .map_err(|e| format!("read {}: {e}", pkg_path.display()))?;
     let val: serde_json::Value =
         serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", pkg_path.display()))?;
 
@@ -636,7 +636,7 @@ pub fn build_extension_descriptions(manifests: &[ExtensionManifest]) -> Vec<Exte
         .filter(|m| m.kind == ExtensionKind::Node && (m.main.is_some() || m.browser.is_some()))
         .map(|m| {
             let pkg_path = Path::new(&m.path).join("package.json");
-            let package_json = fs::read_to_string(&pkg_path)
+            let package_json = sidex_extensions::encoding::read_manifest_file(&pkg_path)
                 .ok()
                 .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
                 .unwrap_or(serde_json::Value::Null);

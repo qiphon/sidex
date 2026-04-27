@@ -7,6 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::encoding::decode_manifest_text;
 use crate::manifest::{parse_manifest, ExtensionManifest};
 use crate::marketplace::MarketplaceClient;
 
@@ -22,9 +23,9 @@ pub fn install_from_vsix(vsix_path: &Path, target_dir: &Path) -> Result<Extensio
         let mut manifest_file = archive
             .by_name("extension/package.json")
             .context("missing extension/package.json in .vsix")?;
-        let mut buf = String::new();
-        std::io::Read::read_to_string(&mut manifest_file, &mut buf)?;
-        buf
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut manifest_file, &mut buf)?;
+        decode_manifest_text(&buf)?
     };
 
     let manifest: ExtensionManifest =

@@ -935,6 +935,9 @@ pub async fn exec(
         }
     }
 
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+
     // Spawn the process
     let mut child = cmd
         .spawn()

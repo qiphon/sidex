@@ -209,14 +209,17 @@ impl ExtensionHost {
         host_script: &Path,
         extensions_dir: &Path,
     ) -> Result<Self> {
-        let mut child = Command::new(node_path)
-            .arg(host_script)
+        let mut cmd = Command::new(node_path);
+        cmd.arg(host_script)
             .arg("--extensions-dir")
             .arg(extensions_dir)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
+        let mut child = cmd
             .spawn()
             .context("failed to spawn Node.js extension host")?;
 

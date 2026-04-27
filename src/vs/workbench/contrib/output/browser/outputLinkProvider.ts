@@ -111,6 +111,7 @@ class OutputLinkWorkerClient extends Disposable {
 			webWorkerService.createWorkerClient<OutputLinkComputer>(
 				new WebWorkerDescriptor({
 					esmModuleLocation: FileAccess.asBrowserUri('vs/workbench/contrib/output/common/outputLinkComputerMain.js'),
+					esmModuleLocationBundler: new URL('../common/outputLinkComputerMain.ts', import.meta.url),
 					label: 'OutputLinkDetectionWorker'
 				})
 			)

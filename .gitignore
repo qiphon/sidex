@@ -50,6 +50,10 @@ ehthumbs.db
 *.sublime-project
 *.sublime-workspace
 
+# ── Local dev tooling (Cargo overrides, Claude Code state) ───────────────────
+.cargo/
+.claude/
+
 # ── Environment / Secrets ────────────────────────────────────────────────────
 .env
 .env.*

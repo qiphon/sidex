@@ -538,10 +538,14 @@ impl ContainerTransport {
 
         let service = config.service.as_deref().unwrap_or("devcontainer");
 
-        let output = tokio::process::Command::new("docker")
+        let mut up_cmd = tokio::process::Command::new("docker");
+        up_cmd
             .args(["compose", "-f"])
             .arg(&compose_path)
-            .args(["up", "-d", service])
+            .args(["up", "-d", service]);
+        #[cfg(windows)]
+        up_cmd.creation_flags(0x0800_0000);
+        let output = up_cmd
             .output()
             .await
             .context("running docker compose up")?;
@@ -553,12 +557,14 @@ impl ContainerTransport {
             );
         }
 
-        let ps_output = tokio::process::Command::new("docker")
+        let mut ps_cmd = tokio::process::Command::new("docker");
+        ps_cmd
             .args(["compose", "-f"])
             .arg(&compose_path)
-            .args(["ps", "-q", service])
-            .output()
-            .await?;
+            .args(["ps", "-q", service]);
+        #[cfg(windows)]
+        ps_cmd.creation_flags(0x0800_0000);
+        let ps_output = ps_cmd.output().await?;
 
         let container_id = String::from_utf8_lossy(&ps_output.stdout)
             .trim()

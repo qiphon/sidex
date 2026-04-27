@@ -48,6 +48,9 @@ pub async fn exec(
         }
     }
 
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("failed to spawn '{command}': {e}"))?;

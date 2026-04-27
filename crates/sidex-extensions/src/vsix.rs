@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::encoding::decode_manifest_text;
 use crate::manifest::{parse_manifest_str, ExtensionManifest};
 
 // ---------------------------------------------------------------------------
@@ -105,7 +106,7 @@ pub fn unpack_vsix(vsix_path: &Path) -> Result<VsixPackage> {
         let rel_lower = rel.to_lowercase();
         match rel_lower.as_str() {
             "package.json" => {
-                manifest_json = Some(String::from_utf8_lossy(&buf).to_string());
+                manifest_json = Some(decode_manifest_text(&buf)?);
             }
             "readme.md" => {
                 readme = Some(String::from_utf8_lossy(&buf).to_string());

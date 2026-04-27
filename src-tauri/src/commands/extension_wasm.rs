@@ -59,10 +59,14 @@ impl TsServerProcess {
         } else {
             "which"
         };
-        if let Ok(out) = std::process::Command::new(which_cmd)
-            .arg("tsserver")
-            .output()
+        let mut which_cmd_builder = std::process::Command::new(which_cmd);
+        which_cmd_builder.arg("tsserver");
+        #[cfg(windows)]
         {
+            use std::os::windows::process::CommandExt;
+            which_cmd_builder.creation_flags(0x0800_0000);
+        }
+        if let Ok(out) = which_cmd_builder.output() {
             if out.status.success() {
                 let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !path.is_empty() {
@@ -84,6 +88,11 @@ impl TsServerProcess {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
 
         let mut child = cmd
             .spawn()
@@ -347,7 +356,14 @@ fn find_binary(name: &str, extra_paths: &[&str]) -> Option<String> {
     } else {
         "which"
     };
-    if let Ok(out) = std::process::Command::new(which_cmd).arg(name).output() {
+    let mut find_cmd = std::process::Command::new(which_cmd);
+    find_cmd.arg(name);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        find_cmd.creation_flags(0x0800_0000);
+    }
+    if let Ok(out) = find_cmd.output() {
         if out.status.success() {
             let path = String::from_utf8_lossy(&out.stdout)
                 .lines()

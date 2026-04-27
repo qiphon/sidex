@@ -81,8 +81,10 @@ pub fn translate_path_to_windows(wsl_path: &str, distro: &str) -> PathBuf {
 /// Execute a single command inside a WSL distro (standalone helper).
 #[cfg(target_os = "windows")]
 pub fn exec_in_wsl(distro: &str, command: &str) -> Result<ExecOutput> {
+    use std::os::windows::process::CommandExt;
     let output = std::process::Command::new("wsl")
         .args(["-d", distro, "--", "sh", "-c", command])
+        .creation_flags(0x0800_0000)
         .output()
         .context("wsl exec")?;
     Ok(ExecOutput {
@@ -166,8 +168,10 @@ fn wsl_unavailable<T>() -> Result<T> {
 /// List installed WSL distributions by parsing `wsl --list --verbose`.
 #[cfg(target_os = "windows")]
 pub fn list_distributions() -> Result<Vec<WslDistro>> {
+    use std::os::windows::process::CommandExt;
     let output = std::process::Command::new("wsl")
         .args(["--list", "--verbose"])
+        .creation_flags(0x0800_0000)
         .output()
         .context("running wsl --list --verbose")?;
 
@@ -219,8 +223,10 @@ pub(crate) fn parse_wsl_list(text: &str) -> Result<Vec<WslDistro>> {
 impl WslTransport {
     /// Connect to a named WSL distribution.
     pub async fn connect(distro: &str) -> Result<Self> {
+        use std::os::windows::process::CommandExt;
         let output = std::process::Command::new("wsl")
             .args(["-d", distro, "--", "echo", "ok"])
+            .creation_flags(0x0800_0000)
             .output()?;
 
         if !output.status.success() {
@@ -236,8 +242,10 @@ impl WslTransport {
     }
 
     fn wsl_exec(&self, command: &str) -> Result<ExecOutput> {
+        use std::os::windows::process::CommandExt;
         let output = std::process::Command::new("wsl")
             .args(["-d", &self.distro, "--", "sh", "-c", command])
+            .creation_flags(0x0800_0000)
             .output()?;
 
         Ok(ExecOutput {

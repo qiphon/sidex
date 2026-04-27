@@ -34,6 +34,7 @@
 pub mod activation;
 pub mod contribution_handler;
 pub mod contributions;
+pub mod encoding;
 pub mod host;
 pub mod installer;
 pub mod manifest;

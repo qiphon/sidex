@@ -38,11 +38,15 @@ impl DebugClient {
             .split_first()
             .ok_or_else(|| anyhow::anyhow!("empty adapter command"))?;
 
-        let mut child = Command::new(cmd)
+        let mut builder = Command::new(cmd);
+        builder
             .args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        builder.creation_flags(0x0800_0000);
+        let mut child = builder
             .spawn()
             .with_context(|| format!("failed to spawn debug adapter: {adapter_command}"))?;
 
@@ -75,11 +79,15 @@ impl DebugClient {
             .split_first()
             .ok_or_else(|| anyhow::anyhow!("empty adapter command"))?;
 
-        let mut child = Command::new(cmd)
+        let mut builder = Command::new(cmd);
+        builder
             .args(args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        builder.creation_flags(0x0800_0000);
+        let mut child = builder
             .spawn()
             .with_context(|| format!("failed to spawn debug adapter: {adapter_command}"))?;
 

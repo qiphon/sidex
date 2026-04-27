@@ -81,11 +81,16 @@ pub struct NodeRuntime {
 }
 
 fn read_node_version(binary: &str) -> Option<String> {
-    std::process::Command::new(binary)
-        .arg("--version")
+    let mut cmd = std::process::Command::new(binary);
+    cmd.arg("--version")
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.output()
         .ok()
         .and_then(|out| String::from_utf8(out.stdout).ok())
         .map(|v| v.trim().to_string())
@@ -93,10 +98,14 @@ fn read_node_version(binary: &str) -> Option<String> {
 }
 
 fn is_usable_node(binary: &str) -> bool {
-    std::process::Command::new(binary)
-        .arg("--version")
+    let mut cmd = std::process::Command::new(binary);
+    cmd.arg("--version")
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.status().is_ok_and(|s| s.success())
 }

@@ -10,6 +10,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::encoding::read_manifest_file;
+
 // ---------------------------------------------------------------------------
 // Extension kind
 // ---------------------------------------------------------------------------
@@ -308,7 +310,7 @@ pub struct InitDataRemote {
 
 /// Parses an extension manifest from a `package.json` file.
 pub fn parse_manifest(path: &Path) -> Result<ExtensionManifest> {
-    let content = std::fs::read_to_string(path).context("failed to read extension manifest")?;
+    let content = read_manifest_file(path).context("failed to read extension manifest")?;
     parse_manifest_str(&content)
 }
 
@@ -388,7 +390,7 @@ pub fn read_wasm_manifest(ext_dir: &Path) -> Result<ExtensionManifest> {
 /// populating the full `ExtensionManifest` with `contributes_keys` and path.
 pub fn read_node_manifest(ext_dir: &Path) -> Result<ExtensionManifest> {
     let pkg_path = ext_dir.join("package.json");
-    let raw = std::fs::read_to_string(&pkg_path)
+    let raw = read_manifest_file(&pkg_path)
         .with_context(|| format!("read {}", pkg_path.display()))?;
     let val: serde_json::Value =
         serde_json::from_str(&raw).with_context(|| format!("parse {}", pkg_path.display()))?;
@@ -529,7 +531,7 @@ pub fn build_extension_descriptions(manifests: &[ExtensionManifest]) -> Vec<Exte
         .filter(|m| m.kind == ExtensionKind::Node && (m.main.is_some() || m.browser.is_some()))
         .map(|m| {
             let pkg_path = Path::new(&m.path).join("package.json");
-            let package_json = std::fs::read_to_string(&pkg_path)
+            let package_json = read_manifest_file(&pkg_path)
                 .ok()
                 .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
                 .unwrap_or(serde_json::Value::Null);

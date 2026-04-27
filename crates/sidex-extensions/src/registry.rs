@@ -260,8 +260,9 @@ pub fn read_vsix_manifest<R: std::io::Read + std::io::Seek>(
     let mut entry = archive
         .by_name("extension/package.json")
         .map_err(|_| anyhow::anyhow!("VSIX missing extension/package.json"))?;
-    let mut buf = String::new();
-    entry.read_to_string(&mut buf)?;
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes)?;
+    let buf = crate::encoding::decode_manifest_text(&bytes)?;
     let val: serde_json::Value = serde_json::from_str(&buf)?;
     let publisher = val
         .get("publisher")

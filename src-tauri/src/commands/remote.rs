@@ -240,13 +240,16 @@ pub fn remote_list_wsl_distros() -> Result<Vec<WslDistroInfo>, String> {
 
 #[tauri::command]
 pub async fn remote_list_containers() -> Result<Vec<ContainerListEntry>, String> {
-    let output = tokio::process::Command::new("docker")
-        .args([
-            "ps",
-            "-a",
-            "--format",
-            "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
-        ])
+    let mut docker_cmd = tokio::process::Command::new("docker");
+    docker_cmd.args([
+        "ps",
+        "-a",
+        "--format",
+        "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+    ]);
+    #[cfg(windows)]
+    docker_cmd.creation_flags(0x0800_0000);
+    let output = docker_cmd
         .output()
         .await
         .map_err(|e| format!("failed to run docker ps: {e}"))?;
