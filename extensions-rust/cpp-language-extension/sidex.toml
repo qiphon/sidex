@@ -1,9 +1,0 @@
-[extension]
-id = "sidex.cpp-language"
-name = "cpp-language"
-version = "0.1.0"
-description = "SideX C/C++ language features via clangd"
-wasm = "../target/wasm32-wasip2/release/cpp_language_extension.wasm"
-
-[activation]
-events = ["onLanguage:c", "onLanguage:cpp"]

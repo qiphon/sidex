@@ -1,9 +1,0 @@
-[extension]
-id = "sidex.typescript-language"
-name = "typescript-language"
-version = "0.1.0"
-description = "SideX native typescript-language extension"
-wasm = "../target/wasm32-wasip2/release/typescript_language_extension.wasm"
-
-[activation]
-events = ["onStartupFinished"]

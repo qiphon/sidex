@@ -1,9 +1,0 @@
-[extension]
-id = "sidex.rust-language"
-name = "rust-language"
-version = "0.1.0"
-description = "SideX Rust language features via rust-analyzer"
-wasm = "../target/wasm32-wasip2/release/rust_language_extension.wasm"
-
-[activation]
-events = ["onLanguage:rust"]

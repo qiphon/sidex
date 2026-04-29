@@ -1,9 +1,0 @@
-dist/
-node_modules/
-src-tauri/target/
-*.min.js
-*.min.css
-extensions/
-src/vscode-dts/
-src/typings/
-**/test/**/fixtures/

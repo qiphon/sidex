@@ -1,9 +1,0 @@
-[extension]
-id = "sidex.css-language"
-name = "css-language"
-version = "0.1.0"
-description = "SideX native css-language extension"
-wasm = "../target/wasm32-wasip2/release/css_language_extension.wasm"
-
-[activation]
-events = ["onStartupFinished"]

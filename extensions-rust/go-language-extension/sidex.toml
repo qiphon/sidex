@@ -1,9 +1,0 @@
-[extension]
-id = "sidex.go-language"
-name = "go-language"
-version = "0.1.0"
-description = "SideX Go language features via gopls"
-wasm = "../target/wasm32-wasip2/release/go_language_extension.wasm"
-
-[activation]
-events = ["onLanguage:go"]

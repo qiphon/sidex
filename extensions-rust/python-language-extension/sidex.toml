@@ -1,9 +1,0 @@
-[extension]
-id = "sidex.python-language"
-name = "python-language"
-version = "0.1.0"
-description = "SideX Python language features via pyright"
-wasm = "../target/wasm32-wasip2/release/python_language_extension.wasm"
-
-[activation]
-events = ["onLanguage:python"]
