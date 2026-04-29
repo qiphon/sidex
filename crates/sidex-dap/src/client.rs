@@ -226,35 +226,35 @@ impl DebugClient {
 
     /// Continues execution of a thread.
     pub async fn continue_execution(&self, thread_id: i64) -> Result<()> {
-        self.send_request(DapCommand::Continue, json!({"threadId": thread_id}))
+        self.send_request(DapCommand::Continue, json!({ "threadId": thread_id }))
             .await?;
         Ok(())
     }
 
     /// Steps over (next) in a thread.
     pub async fn next(&self, thread_id: i64) -> Result<()> {
-        self.send_request(DapCommand::Next, json!({"threadId": thread_id}))
+        self.send_request(DapCommand::Next, json!({ "threadId": thread_id }))
             .await?;
         Ok(())
     }
 
     /// Steps into a function call.
     pub async fn step_in(&self, thread_id: i64) -> Result<()> {
-        self.send_request(DapCommand::StepIn, json!({"threadId": thread_id}))
+        self.send_request(DapCommand::StepIn, json!({ "threadId": thread_id }))
             .await?;
         Ok(())
     }
 
     /// Steps out of the current function.
     pub async fn step_out(&self, thread_id: i64) -> Result<()> {
-        self.send_request(DapCommand::StepOut, json!({"threadId": thread_id}))
+        self.send_request(DapCommand::StepOut, json!({ "threadId": thread_id }))
             .await?;
         Ok(())
     }
 
     /// Pauses a thread.
     pub async fn pause(&self, thread_id: i64) -> Result<()> {
-        self.send_request(DapCommand::Pause, json!({"threadId": thread_id}))
+        self.send_request(DapCommand::Pause, json!({ "threadId": thread_id }))
             .await?;
         Ok(())
     }
@@ -262,7 +262,7 @@ impl DebugClient {
     /// Gets the stack trace for a thread.
     pub async fn stack_trace(&self, thread_id: i64) -> Result<Vec<StackFrame>> {
         let resp = self
-            .send_request(DapCommand::StackTrace, json!({"threadId": thread_id}))
+            .send_request(DapCommand::StackTrace, json!({ "threadId": thread_id }))
             .await?;
         let frames: Vec<StackFrame> = resp
             .body
@@ -275,7 +275,7 @@ impl DebugClient {
     /// Gets the scopes for a stack frame.
     pub async fn scopes(&self, frame_id: i64) -> Result<Vec<Scope>> {
         let resp = self
-            .send_request(DapCommand::Scopes, json!({"frameId": frame_id}))
+            .send_request(DapCommand::Scopes, json!({ "frameId": frame_id }))
             .await?;
         let scopes: Vec<Scope> = resp
             .body
@@ -290,7 +290,7 @@ impl DebugClient {
         let resp = self
             .send_request(
                 DapCommand::Variables,
-                json!({"variablesReference": variables_reference}),
+                json!({ "variablesReference": variables_reference }),
             )
             .await?;
         let vars: Vec<Variable> = resp
@@ -330,21 +330,24 @@ impl DebugClient {
 
     /// Steps backward (reverse debugging).
     pub async fn step_back(&self, thread_id: i64) -> Result<()> {
-        self.send_request(DapCommand::StepBack, json!({"threadId": thread_id}))
+        self.send_request(DapCommand::StepBack, json!({ "threadId": thread_id }))
             .await?;
         Ok(())
     }
 
     /// Reverse-continues execution (reverse debugging).
     pub async fn reverse_continue(&self, thread_id: i64) -> Result<()> {
-        self.send_request(DapCommand::ReverseContinue, json!({"threadId": thread_id}))
-            .await?;
+        self.send_request(
+            DapCommand::ReverseContinue,
+            json!({ "threadId": thread_id }),
+        )
+        .await?;
         Ok(())
     }
 
     /// Restarts a specific stack frame.
     pub async fn restart_frame(&self, frame_id: i64) -> Result<()> {
-        self.send_request(DapCommand::RestartFrame, json!({"frameId": frame_id}))
+        self.send_request(DapCommand::RestartFrame, json!({ "frameId": frame_id }))
             .await?;
         Ok(())
     }
@@ -428,7 +431,7 @@ impl DebugClient {
     pub async fn set_exception_breakpoints(&self, filters: &[String]) -> Result<()> {
         self.send_request(
             DapCommand::SetExceptionBreakpoints,
-            json!({"filters": filters}),
+            json!({ "filters": filters }),
         )
         .await?;
         Ok(())
@@ -438,7 +441,7 @@ impl DebugClient {
     pub async fn terminate_threads(&self, thread_ids: &[i64]) -> Result<()> {
         self.send_request(
             DapCommand::TerminateThreads,
-            json!({"threadIds": thread_ids}),
+            json!({ "threadIds": thread_ids }),
         )
         .await?;
         Ok(())
@@ -521,7 +524,7 @@ impl DebugClient {
     /// Gets exception information for the given thread.
     pub async fn exception_info(&self, thread_id: i64) -> Result<ExceptionDetails> {
         let resp = self
-            .send_request(DapCommand::ExceptionInfo, json!({"threadId": thread_id}))
+            .send_request(DapCommand::ExceptionInfo, json!({ "threadId": thread_id }))
             .await?;
         let details: ExceptionDetails = serde_json::from_value(resp.body)?;
         Ok(details)

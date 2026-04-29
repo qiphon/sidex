@@ -545,10 +545,7 @@ impl ContainerTransport {
             .args(["up", "-d", service]);
         #[cfg(windows)]
         up_cmd.creation_flags(0x0800_0000);
-        let output = up_cmd
-            .output()
-            .await
-            .context("running docker compose up")?;
+        let output = up_cmd.output().await.context("running docker compose up")?;
 
         if !output.status.success() {
             bail!(

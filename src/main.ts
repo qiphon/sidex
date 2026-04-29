@@ -226,11 +226,7 @@ function setupTauriFolderDrop() {
 		return;
 	}
 
-	Promise.all([
-		import('@tauri-apps/api/webview'),
-		import('@tauri-apps/api/core'),
-		import('./vs/base/common/uri.js')
-	])
+	Promise.all([import('@tauri-apps/api/webview'), import('@tauri-apps/api/core'), import('./vs/base/common/uri.js')])
 		.then(([webview, { invoke }, { URI }]) => {
 			return webview.getCurrentWebview().onDragDropEvent(async (event: any) => {
 				if (event.payload?.type !== 'drop') {

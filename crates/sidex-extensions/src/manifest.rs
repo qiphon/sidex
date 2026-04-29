@@ -390,8 +390,8 @@ pub fn read_wasm_manifest(ext_dir: &Path) -> Result<ExtensionManifest> {
 /// populating the full `ExtensionManifest` with `contributes_keys` and path.
 pub fn read_node_manifest(ext_dir: &Path) -> Result<ExtensionManifest> {
     let pkg_path = ext_dir.join("package.json");
-    let raw = read_manifest_file(&pkg_path)
-        .with_context(|| format!("read {}", pkg_path.display()))?;
+    let raw =
+        read_manifest_file(&pkg_path).with_context(|| format!("read {}", pkg_path.display()))?;
     let val: serde_json::Value =
         serde_json::from_str(&raw).with_context(|| format!("parse {}", pkg_path.display()))?;
 
