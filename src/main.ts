@@ -211,6 +211,7 @@ async function boot() {
 	setupMenuActions();
 	setupWindowStateSave();
 	setupNativeWindowDragging();
+	setupTauriFolderDrop();
 	updateNativeMenuLabels();
 
 	console.log(
@@ -218,6 +219,42 @@ async function boot() {
 		'workspace:',
 		workspace
 	);
+}
+
+function setupTauriFolderDrop() {
+	if (!(globalThis as any).__SIDEX_TAURI__) {
+		return;
+	}
+
+	Promise.all([
+		import('@tauri-apps/api/webview'),
+		import('@tauri-apps/api/core'),
+		import('./vs/base/common/uri.js')
+	])
+		.then(([webview, { invoke }, { URI }]) => {
+			return webview.getCurrentWebview().onDragDropEvent(async (event: any) => {
+				if (event.payload?.type !== 'drop') {
+					return;
+				}
+
+				const droppedPath = event.payload.paths?.find((path: unknown) => typeof path === 'string');
+				if (!droppedPath) {
+					return;
+				}
+
+				try {
+					const stat = await invoke<{ is_dir: boolean }>('stat', { path: droppedPath });
+					if (stat?.is_dir) {
+						navigateToFolder(URI.file(droppedPath).toString());
+					}
+				} catch (e) {
+					console.warn('[SideX] Dropped path is not a folder:', droppedPath, e);
+				}
+			});
+		})
+		.catch(e => {
+			console.warn('[SideX] Failed to initialize folder drop:', e);
+		});
 }
 
 function setupTauriExternalOpener() {
