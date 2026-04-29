@@ -187,12 +187,78 @@ interface IFileTransferData {
 async function extractFilesDropData(accessor: ServicesAccessor, event: DragEvent): Promise<IFileTransferData[]> {
 	// SideX: drag/drop of filesystem handles is not supported — we use the Tauri
 	// backend exclusively for file I/O. Extract any files via the standard FileList API.
-	const files = event.dataTransfer?.files;
-	if (!files) {
+	// For folders, we need to use webkitGetAsEntry() API to detect directory entries.
+	const dataTransfer = event.dataTransfer;
+	if (!dataTransfer) {
+		return [];
+	}
+
+	// Check if we have webkit items (needed for folder detection)
+	const webkitItems = (dataTransfer as any).items as DataTransferItemList | undefined;
+	if (webkitItems && webkitItems.length > 0) {
+		// Try to get folder entries via webkitGetAsEntry
+		const entries: any[] = [];
+		for (let i = 0; i < webkitItems.length; i++) {
+			const item = webkitItems[i];
+			if (item && typeof (item as any).webkitGetAsEntry === 'function') {
+				const entry = (item as any).webkitGetAsEntry();
+				if (entry) {
+					entries.push(entry);
+				}
+			}
+		}
+
+		// If we found directory entries, handle them specially
+		if (entries.some(e => e.isDirectory)) {
+			return extractDirectoryEntries(accessor, entries);
+		}
+	}
+
+	// Fallback to FileList for regular files
+	const files = dataTransfer.files;
+	if (!files || files.length === 0) {
 		return [];
 	}
 
 	return extractFileListData(accessor, files);
+}
+
+async function extractDirectoryEntries(
+	accessor: ServicesAccessor,
+	entries: any[]
+): Promise<IFileTransferData[]> {
+	const results: IFileTransferData[] = [];
+
+	for (const entry of entries) {
+		if (entry.isFile) {
+			// Handle file entry
+			const fileData = await getFileFromEntry(entry);
+			if (fileData) {
+				results.push(fileData);
+			}
+		} else if (entry.isDirectory) {
+			// Handle directory entry - create a URI for the folder
+			results.push({
+				resource: URI.from({ scheme: Schemas.file, path: entry.fullPath || '/' + entry.name }),
+				isDirectory: true
+			});
+		}
+	}
+
+	return results;
+}
+
+async function getFileFromEntry(entry: any): Promise<IFileTransferData | undefined> {
+	return new Promise((resolve) => {
+		entry.file((file: File) => {
+			resolve({
+				resource: URI.from({ scheme: Schemas.untitled, path: file.name }),
+				contents: undefined // Will be read later if needed
+			});
+		}, () => {
+			resolve(undefined);
+		});
+	});
 }
 
 export async function extractFileListData(accessor: ServicesAccessor, files: FileList): Promise<IFileTransferData[]> {
