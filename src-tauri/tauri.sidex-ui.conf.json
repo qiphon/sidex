@@ -21,7 +21,7 @@
         "decorations": false,
         "shadow": true,
         "visible": true,
-        "dragDropEnabled": false,
+        "dragDropEnabled": true,
         "useHttpsScheme": false
       }
     ],
