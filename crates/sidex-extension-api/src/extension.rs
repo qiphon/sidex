@@ -273,9 +273,17 @@ pub enum ExtensionMode {
 }
 
 /// Environment variable collection for terminals.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct GlobalEnvironmentVariableCollection {
     variables: RwLock<HashMap<String, String>>,
+}
+
+impl Clone for GlobalEnvironmentVariableCollection {
+    fn clone(&self) -> Self {
+        Self {
+            variables: RwLock::new(self.variables.read().expect("lock").clone()),
+        }
+    }
 }
 
 impl GlobalEnvironmentVariableCollection {
@@ -586,10 +594,16 @@ impl ExtensionManager {
         if info.state == ExtensionState::Activated {
             drop(extensions);
             self.deactivate(extension_id)?;
-            extensions = self.extensions.write().expect("lock");
+            // Re-acquire lock after reactivation
+            let mut extensions = self.extensions.write().expect("lock");
+            let info = extensions
+                .get_mut(extension_id)
+                .ok_or_else(|| anyhow::anyhow!("Extension not found: {}", extension_id.0))?;
+            info.state = ExtensionState::Disabled;
+        } else {
+            info.state = ExtensionState::Disabled;
         }
-
-        info.state = ExtensionState::Disabled;
+        
         Ok(())
     }
 
