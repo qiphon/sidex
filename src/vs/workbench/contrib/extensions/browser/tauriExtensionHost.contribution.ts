@@ -263,16 +263,26 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		}
 	}
 
+	private _wssReadyUnlisten: (() => void) | null = null;
+
 	private _applyBootstrap(bootstrap: IExtensionPlatformBootstrap): void {
 		this._bootstrapExtensions = bootstrap.extensions || [];
 
 		const wasmExtensions = this._bootstrapExtensions.filter(e => e.kind === 'wasm');
+
+		listen<number>('sidex-wasm-extensions-ready', () => {
+			this.logService.info('[ExtHost] WASM extensions ready');
+			this._syncDocumentsToWasm();
+			setTimeout(() => this._registerWasmProviders(), 200);
+		}).then((unlisten) => {
+			this._wssReadyUnlisten = unlisten;
+			this.logService.info('[ExtHost] WASM ready listener registered');
+		}).catch((e) => {
+			this.logService.error('[ExtHost] Failed to register WASM ready listener:', e);
+		});
+
 		if (wasmExtensions.length > 0) {
-			listen<number>('sidex-wasm-extensions-ready', () => {
-				this.logService.info('[ExtHost] WASM extensions ready');
-				this._syncDocumentsToWasm();
-				setTimeout(() => this._registerWasmProviders(), 200);
-			}).catch(() => {});
+			this.logService.info(`[ExtHost] Found ${wasmExtensions.length} WASM extensions`);
 		}
 
 		const workspaceFolders = this.workspaceContextService
@@ -286,6 +296,7 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		}
 
 		this._syncDocumentsToWasm();
+		this._registerWasmProviders();
 	}
 
 	private _wasmDocSyncInitialized = false;
@@ -615,6 +626,8 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		this._tauriWatchUnlisten?.();
 		this._tauriWatchUnlisten = undefined;
 		this._tauriWatchListenerPromise = undefined;
+		this._wssReadyUnlisten?.();
+		this._wssReadyUnlisten = null;
 		clearTimeout(this._capabilityRetryTimer);
 		this._capabilityRetryTimer = undefined;
 		for (const [watcherId] of this._activeWatches) {
