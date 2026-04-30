@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Emitter};
 
 use super::storage::StorageDb;
 
@@ -166,5 +166,13 @@ pub fn save_window_state(
 
     let json = serde_json::to_string(&state).map_err(|e| e.to_string())?;
     db.set(WINDOW_STATE_KEY, &json)?;
+    Ok(())
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn open_file_preview(app: AppHandle, path: String) -> Result<(), String> {
+    app.emit("sidex-open-file-preview", path)
+        .map_err(|e| format!("Failed to emit event: {e}"))?;
     Ok(())
 }

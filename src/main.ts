@@ -229,10 +229,30 @@ function setupTauriFolderDrop() {
 	Promise.all([
 		import('@tauri-apps/api/webview'),
 		import('@tauri-apps/api/core'),
+		import('@tauri-apps/api/event'),
 		import('./vs/base/common/uri.js')
 	])
-		.then(([webview, { invoke }, { URI }]) => {
+		.then(([webview, { invoke }, { listen }, { URI }]) => {
 			let unlisten: (() => void) | null = null;
+			let filePreviewUnlisten: (() => void) | null = null;
+
+			filePreviewUnlisten = listen<string>('sidex-open-file-preview', async (event) => {
+				const filePath = event.payload;
+				console.log('[SideX] Open file preview:', filePath);
+				try {
+					const { EditorAndTelemetryService } = await import('./vs/workbench/browser/editor.js');
+					const service = EditorAndTelemetryService.getInstance();
+					if (service) {
+						const uri = URI.file(filePath);
+						await service.openEditor({ resource: uri });
+					}
+				} catch (e) {
+					console.error('[SideX] Failed to open file preview:', e);
+				}
+			}).catch((e) => {
+				console.error('[SideX] Failed to listen for file preview events:', e);
+			});
+
 			webview.getCurrentWebview().onDragDropEvent(async (event) => {
 				console.log('[SideX] DragDropEvent:', event.payload?.type, event.payload?.paths);
 				if (event.payload?.type !== 'drop') {
@@ -260,7 +280,8 @@ function setupTauriFolderDrop() {
 						console.log('[SideX] Navigating to folder:', droppedPath);
 						navigateToFolder(URI.file(droppedPath).toString());
 					} else {
-						console.warn('[SideX] Dropped path is not a folder:', droppedPath);
+						console.log('[SideX] Opening file preview:', droppedPath);
+						await invoke('open_file_preview', { path: droppedPath });
 					}
 				} catch (e) {
 					console.error('[SideX] Failed to stat dropped path:', droppedPath, e);
@@ -277,6 +298,10 @@ function setupTauriFolderDrop() {
 					unlisten();
 					unlisten = null;
 					console.log('[SideX] DragDropEvent listener unregistered');
+				}
+				if (filePreviewUnlisten) {
+					filePreviewUnlisten();
+					filePreviewUnlisten = null;
 				}
 			};
 		})
