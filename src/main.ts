@@ -232,28 +232,56 @@ function setupTauriFolderDrop() {
 		import('./vs/base/common/uri.js')
 	])
 		.then(([webview, { invoke }, { URI }]) => {
-			return webview.getCurrentWebview().onDragDropEvent(async (event: any) => {
+			let unlisten: (() => void) | null = null;
+			webview.getCurrentWebview().onDragDropEvent(async (event) => {
+				console.log('[SideX] DragDropEvent:', event.payload?.type, event.payload?.paths);
 				if (event.payload?.type !== 'drop') {
 					return;
 				}
 
-				const droppedPath = event.payload.paths?.find((path: unknown) => typeof path === 'string');
-				if (!droppedPath) {
+				const paths = event.payload.paths;
+				if (!paths || !Array.isArray(paths) || paths.length === 0) {
+					console.warn('[SideX] No paths in drop event');
 					return;
 				}
 
+				const droppedPath = paths.find((path) => typeof path === 'string');
+				if (!droppedPath) {
+					console.warn('[SideX] No valid string path found');
+					return;
+				}
+
+				console.log('[SideX] Processing dropped path:', droppedPath);
+
 				try {
 					const stat = await invoke<{ is_dir: boolean }>('stat', { path: droppedPath });
+					console.log('[SideX] Stat result:', stat);
 					if (stat?.is_dir) {
+						console.log('[SideX] Navigating to folder:', droppedPath);
 						navigateToFolder(URI.file(droppedPath).toString());
+					} else {
+						console.warn('[SideX] Dropped path is not a folder:', droppedPath);
 					}
 				} catch (e) {
-					console.warn('[SideX] Dropped path is not a folder:', droppedPath, e);
+					console.error('[SideX] Failed to stat dropped path:', droppedPath, e);
 				}
+			}).then((unlistenFn) => {
+				unlisten = unlistenFn;
+				console.log('[SideX] DragDropEvent listener registered');
+			}).catch((e) => {
+				console.error('[SideX] Failed to register DragDropEvent listener:', e);
 			});
+
+			(window as any).__sidex_dragDropUnlisten = () => {
+				if (unlisten) {
+					unlisten();
+					unlisten = null;
+					console.log('[SideX] DragDropEvent listener unregistered');
+				}
+			};
 		})
-		.catch(e => {
-			console.warn('[SideX] Failed to initialize folder drop:', e);
+		.catch((e) => {
+			console.error('[SideX] Failed to initialize folder drop:', e);
 		});
 }
 
