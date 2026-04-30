@@ -21,6 +21,7 @@
 //!   results, messages)
 //! - [`env_api`] — `vscode.env` (app name, language, clipboard, shell, UI kind,
 //!   log level, telemetry)
+//! - [`extension`] — Extension lifecycle, context, manifest, state management
 //! - [`types`] — Core types: `Uri`, `Position`, `Range`, `Selection`,
 //!   `Disposable`, `CancellationToken`, `EventEmitter`, `DiagnosticCollection`,
 //!   `AuthenticationProvider`, `NotebookSerializer`, `CustomEditorProvider`
@@ -29,6 +30,7 @@ pub mod api;
 pub mod commands_api;
 pub mod debug_api;
 pub mod env_api;
+pub mod extension;
 pub mod languages_api;
 pub mod message_handler;
 pub mod scm_api;
@@ -45,6 +47,11 @@ pub use debug_api::{
     DebugApi, DebugConfiguration, DebugSessionId,
 };
 pub use env_api::{EnvApi, LogLevel, UiKind};
+pub use extension::{
+    CommandContribution, ConfigurationContribution, Engines, ExtensionContext, ExtensionId,
+    ExtensionKind, ExtensionManager, ExtensionManifest, ExtensionMode, ExtensionState, Memento,
+    SecretStorage,
+};
 pub use languages_api::{LanguageConfiguration, LanguagesApi, ProviderKind, SemanticTokensLegend};
 pub use message_handler::{
     activate_extension, handle_ext_host_message, notify_active_editor_changed,
