@@ -605,6 +605,7 @@ pub fn run() {
             commands::set_window_title,
             commands::get_monitors,
             commands::save_window_state,
+            commands::open_file_preview,
             commands::update_check,
             commands::update_download,
             commands::update_apply,

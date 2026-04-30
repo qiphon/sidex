@@ -229,31 +229,85 @@ function setupTauriFolderDrop() {
 	Promise.all([
 		import('@tauri-apps/api/webview'),
 		import('@tauri-apps/api/core'),
+		import('@tauri-apps/api/event'),
 		import('./vs/base/common/uri.js')
 	])
-		.then(([webview, { invoke }, { URI }]) => {
-			return webview.getCurrentWebview().onDragDropEvent(async (event: any) => {
+		.then(([webview, { invoke }, { listen }, { URI }]) => {
+			let unlisten: (() => void) | null = null;
+			let filePreviewUnlisten: (() => void) | null = null;
+
+			filePreviewUnlisten = listen<string>('sidex-open-file-preview', async (event) => {
+				const filePath = event.payload;
+				console.log('[SideX] Open file preview:', filePath);
+				try {
+					const commandService = (window as any).__sidex_commandService;
+					if (commandService) {
+						const uri = URI.file(filePath);
+						await commandService.executeCommand('vscode.open', uri.toString());
+					} else {
+						console.error('[SideX] Command service not ready');
+					}
+				} catch (e) {
+					console.error('[SideX] Failed to open file preview:', e);
+				}
+			}).catch((e) => {
+				console.error('[SideX] Failed to listen for file preview events:', e);
+			});
+
+			webview.getCurrentWebview().onDragDropEvent(async (event) => {
+				console.log('[SideX] DragDropEvent:', event.payload?.type, event.payload?.paths);
 				if (event.payload?.type !== 'drop') {
 					return;
 				}
 
-				const droppedPath = event.payload.paths?.find((path: unknown) => typeof path === 'string');
-				if (!droppedPath) {
+				const paths = event.payload.paths;
+				if (!paths || !Array.isArray(paths) || paths.length === 0) {
+					console.warn('[SideX] No paths in drop event');
 					return;
 				}
 
+				const droppedPath = paths.find((path) => typeof path === 'string');
+				if (!droppedPath) {
+					console.warn('[SideX] No valid string path found');
+					return;
+				}
+
+				console.log('[SideX] Processing dropped path:', droppedPath);
+
 				try {
 					const stat = await invoke<{ is_dir: boolean }>('stat', { path: droppedPath });
+					console.log('[SideX] Stat result:', stat);
 					if (stat?.is_dir) {
+						console.log('[SideX] Navigating to folder:', droppedPath);
 						navigateToFolder(URI.file(droppedPath).toString());
+					} else {
+						console.log('[SideX] Opening file preview:', droppedPath);
+						await invoke('open_file_preview', { path: droppedPath });
 					}
 				} catch (e) {
-					console.warn('[SideX] Dropped path is not a folder:', droppedPath, e);
+					console.error('[SideX] Failed to stat dropped path:', droppedPath, e);
 				}
+			}).then((unlistenFn) => {
+				unlisten = unlistenFn;
+				console.log('[SideX] DragDropEvent listener registered');
+			}).catch((e) => {
+				console.error('[SideX] Failed to register DragDropEvent listener:', e);
 			});
+
+			(window as any).__sidex_dragDropUnlisten = () => {
+				if (unlisten) {
+					unlisten();
+					unlisten = null;
+					console.log('[SideX] DragDropEvent listener unregistered');
+				}
+				if (filePreviewUnlisten) {
+					filePreviewUnlisten();
+					filePreviewUnlisten = null;
+				}
+			};
 		})
-		.catch(e => {
-			console.warn('[SideX] Failed to initialize folder drop:', e);
+		.catch((e) => {
+			console.error('[SideX] Failed to initialize folder drop:', e);
 		});
 }
 
