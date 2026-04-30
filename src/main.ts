@@ -240,11 +240,12 @@ function setupTauriFolderDrop() {
 				const filePath = event.payload;
 				console.log('[SideX] Open file preview:', filePath);
 				try {
-					const { EditorAndTelemetryService } = await import('./vs/workbench/browser/editor.js');
-					const service = EditorAndTelemetryService.getInstance();
-					if (service) {
+					const commandService = (window as any).__sidex_commandService;
+					if (commandService) {
 						const uri = URI.file(filePath);
-						await service.openEditor({ resource: uri });
+						await commandService.executeCommand('vscode.open', uri.toString());
+					} else {
+						console.error('[SideX] Command service not ready');
 					}
 				} catch (e) {
 					console.error('[SideX] Failed to open file preview:', e);
