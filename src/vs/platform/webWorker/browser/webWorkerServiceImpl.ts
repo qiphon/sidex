@@ -65,6 +65,9 @@ export class WebWorkerService implements IWebWorkerService {
 			if (descriptor.label === 'extensionHostWorkerMain') {
 				return `${globalThis.location.origin}/assets/extensionHostWorker.js`;
 			}
+			if (descriptor.label === 'OutputLinkDetectionWorker') {
+				return `${globalThis.location.origin}/assets/outputLinkComputerMain.js`;
+			}
 		}
 
 		// Prefer bundler location for Vite/Webpack compatibility
