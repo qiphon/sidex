@@ -117,12 +117,13 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
+    plugins: () => [],
     rollupOptions: {
       input: {
         outputLinkComputerMain: path.resolve(__dirname, 'src/vs/workbench/contrib/output/common/outputLinkComputerMain.ts'),
       },
       output: {
-        entryFileNames: 'workers/[name]-[hash].js',
+        entryFileNames: 'assets/outputLinkComputerMain.js',
         chunkFileNames: 'workers/[name]-[hash].js',
       },
     },

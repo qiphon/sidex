@@ -465,22 +465,64 @@ function getRepositoryAsset(version: IRawGalleryExtensionVersion): IGalleryExten
 	return getVersionAsset(version, AssetType.Repository);
 }
 
-function getDownloadAsset(version: IRawGalleryExtensionVersion): IGalleryExtensionAsset {
+/**
+ * Primary marketplace base URL for extension assets.
+ * Used when the gallery response contains OpenVSX URLs for extensions
+ * that don't exist on OpenVSX (e.g., Microsoft-only extensions).
+ */
+const PRIMARY_MARKETPLACE_ASSET_BASE = 'https://marketplace.siden.ai/api/gallery/publishers';
+
+/**
+ * Check if a URL points to OpenVSX.
+ */
+function isOpenVSXUrl(url: string): boolean {
+	return url.includes('open-vsx.org');
+}
+
+function getDownloadAsset(
+	version: IRawGalleryExtensionVersion,
+	publisher: string,
+	name: string
+): IGalleryExtensionAsset {
+	// Rewrite OpenVSX URLs to use primary marketplace for extensions that don't exist on OpenVSX
+	const fallbackAssetUri = isOpenVSXUrl(version.fallbackAssetUri)
+		? `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/vsextensions/${name}/${version.version}/vspackage`
+		: version.fallbackAssetUri;
+
 	return {
 		// always use fallbackAssetUri for download asset to hit the Marketplace API so that downloads are counted
-		uri: `${version.fallbackAssetUri}/${AssetType.VSIX}?redirect=true${version.targetPlatform ? `&targetPlatform=${version.targetPlatform}` : ''}`,
-		fallbackUri: `${version.fallbackAssetUri}/${AssetType.VSIX}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`
+		uri: `${fallbackAssetUri}/${AssetType.VSIX}?redirect=true${version.targetPlatform ? `&targetPlatform=${version.targetPlatform}` : ''}`,
+		fallbackUri: `${fallbackAssetUri}/${AssetType.VSIX}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`
 	};
 }
 
 function getVersionAsset(version: IRawGalleryExtensionVersion, type: string): IGalleryExtensionAsset | null {
 	const result = version.files.filter(f => f.assetType === type)[0];
-	return result
-		? {
-				uri: `${version.assetUri}/${type}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`,
-				fallbackUri: `${version.fallbackAssetUri}/${type}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`
-			}
-		: null;
+	if (!result) {
+		return null;
+	}
+
+	// Rewrite OpenVSX URLs to use primary marketplace for extensions that don't exist on OpenVSX
+	let assetUri = version.assetUri;
+	let fallbackAssetUri = version.fallbackAssetUri;
+
+	if (isOpenVSXUrl(fallbackAssetUri)) {
+		// Extract publisher, name, version from OpenVSX URL
+		// Format: https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}
+		const openVSXMatch = fallbackAssetUri.match(
+			/^https:\/\/open-vsx\.org\/vscode\/unpkg\/([^/]+)\/([^/]+)\/([^/]+)/
+		);
+		if (openVSXMatch) {
+			const [, publisher, name, ver] = openVSXMatch;
+			fallbackAssetUri = `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/vsextensions/${name}/${ver}/vspackage`;
+			assetUri = fallbackAssetUri;
+		}
+	}
+
+	return {
+		uri: `${assetUri}/${type}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`,
+		fallbackUri: `${fallbackAssetUri}/${type}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`
+	};
 }
 
 function getExtensions(version: IRawGalleryExtensionVersion, property: string): string[] {
@@ -697,7 +739,7 @@ function toExtension(
 		changelog: getVersionAsset(version, AssetType.Changelog),
 		license: getVersionAsset(version, AssetType.License),
 		repository: getRepositoryAsset(version),
-		download: getDownloadAsset(version),
+		download: getDownloadAsset(version, galleryExtension.publisher.publisherName, galleryExtension.extensionName),
 		icon: getVersionAsset(version, AssetType.Icon),
 		signature: getVersionAsset(version, AssetType.Signature),
 		coreTranslations: getCoreTranslationAssets(version)

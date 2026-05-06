@@ -154,18 +154,13 @@ async function loadFromGallery(extensionId: string): Promise<Translations | null
 		return null;
 	}
 
-	const urls = [
-		`https://marketplace.siden.ai/api/gallery/publishers/${publisher}/vsextensions/${name}/latest/vspackage`,
-		`https://open-vsx.org/api/${publisher}/${name}/latest`
-	];
-
-	for (const metaUrl of urls) {
-		try {
-			const meta = await fetch(metaUrl).then(r => (r.ok ? r.json() : null));
-			if (!meta?.version) {
-				continue;
-			}
-			const translationUrl = `https://open-vsx.org/vscode/unpkg/${publisher}/${name}/${meta.version}/extension/translations/main.i18n.json`;
+	// Try primary marketplace first
+	const primaryMetaUrl = `https://marketplace.siden.ai/api/gallery/publishers/${publisher}/vsextensions/${name}/latest/vspackage`;
+	try {
+		const meta = await fetch(primaryMetaUrl).then(r => (r.ok ? r.json() : null));
+		if (meta?.version) {
+			// Try to load translations from the same marketplace
+			const translationUrl = `https://marketplace.siden.ai/api/gallery/publishers/${publisher}/vsextensions/${name}/${meta.version}/vspackage/extension/translations/main.i18n.json`;
 			const res = await fetch(translationUrl);
 			if (res.ok) {
 				const result = parseBundle(await res.text());
@@ -174,10 +169,30 @@ async function loadFromGallery(extensionId: string): Promise<Translations | null
 					return result;
 				}
 			}
-		} catch {
-			continue;
 		}
+	} catch {
+		// Continue to fallback
 	}
+
+	// Fallback to OpenVSX (only for extensions that exist on OpenVSX)
+	const fallbackMetaUrl = `https://open-vsx.org/api/${publisher}/${name}/latest`;
+	try {
+		const meta = await fetch(fallbackMetaUrl).then(r => (r.ok ? r.json() : null));
+		if (meta?.version) {
+			const translationUrl = `https://open-vsx.org/vscode/unpkg/${publisher}/${name}/${meta.version}/extension/translations/main.i18n.json`;
+			const res = await fetch(translationUrl);
+			if (res.ok) {
+				const result = parseBundle(await res.text());
+				if (result) {
+					console.log(`[SideX NLS] Loaded translations from OpenVSX`);
+					return result;
+				}
+			}
+		}
+	} catch {
+		// No fallback available
+	}
+
 	return null;
 }
 
