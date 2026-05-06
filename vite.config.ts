@@ -50,6 +50,7 @@ export default defineConfig({
         textMateWorker: path.resolve(__dirname, 'src/vs/workbench/services/textMate/browser/backgroundTokenization/worker/textMateTokenizationWorker.workerMain.ts'),
         editorWorker: path.resolve(__dirname, 'src/vs/editor/common/services/editorWebWorkerMain.ts'),
         extensionHostWorker: path.resolve(__dirname, 'src/vs/workbench/api/worker/extensionHostWorkerMain.ts'),
+        outputLinkComputerMain: path.resolve(__dirname, 'src/vs/workbench/contrib/output/common/outputLinkComputerMain.ts'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
@@ -61,6 +62,9 @@ export default defineConfig({
           }
           if (chunkInfo.name === 'extensionHostWorker') {
             return 'assets/extensionHostWorker.js';
+          }
+          if (chunkInfo.name === 'outputLinkComputerMain') {
+            return 'assets/outputLinkComputerMain.js';
           }
           return 'assets/[name]-[hash].js';
         },
