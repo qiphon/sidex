@@ -31,6 +31,15 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 
 ## 条目
 
+[任务完成后自动推送到远端]
+- Date: 2026-05-06
+- Context: 用户要求每次任务完成自动推送代码到远端
+- Instructions:
+  - 当任务完成且本地分支存在未推送提交（ahead 远端）时，自动执行 `git push` 推送到远端分支。
+  - 若未设置 upstream，则使用 `git push -u origin <current-branch>` 建立追踪关系。
+  - 推送过程中不得输出或记录任何敏感信息（token、密钥、证书等）。
+  - 对应 workspace skill：`.ai-skills/auto-push-after-task/SKILL.md`。
+
 [兼容 void 源码优先]
 - Date: 2026-05-06
 - Context: 用户要求项目明确基于 void 改造，并保证每次修改兼容 void 已实现功能
