@@ -694,11 +694,12 @@ class TauriGitHistoryProvider implements ISCMHistoryProvider {
 				.map(line => {
 					const parts = line.split('\t');
 					const filePath = parts.length > 1 ? parts[parts.length - 1] : parts[0];
-					const fileUri = URI.joinPath(this._rootUri, filePath.trim());
+					const relPath = filePath.trim();
+					const fileUri = URI.joinPath(this._rootUri, relPath);
 					return {
 						uri: fileUri,
-						originalUri: fileUri.with({ scheme: GIT_ORIGINAL_SCHEME, query: parentRef }),
-						modifiedUri: fileUri.with({ scheme: GIT_ORIGINAL_SCHEME, query: historyItemId })
+						originalUri: URI.from({ scheme: GIT_ORIGINAL_SCHEME, path: `/${relPath}`, query: parentRef }),
+						modifiedUri: URI.from({ scheme: GIT_ORIGINAL_SCHEME, path: `/${relPath}`, query: historyItemId })
 					} satisfies ISCMHistoryItemChange;
 				});
 		} catch (err) {
