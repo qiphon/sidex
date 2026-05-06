@@ -114,6 +114,105 @@ async function invokeGit<T>(cmd: string, args?: Record<string, unknown>): Promis
 	return invoke(cmd, args) as Promise<T>;
 }
 
+// ─── Git Graph File System Provider ─────────────────────────────────────────
+
+const GIT_GRAPH_SCHEME = 'git-graph';
+
+interface GitGraphQueryParams {
+	filePath: string;
+	commit: string;
+	repo: string;
+	exists: boolean;
+}
+
+class TauriGitGraphFileProvider implements IFileSystemProvider {
+	readonly capabilities = FileSystemProviderCapabilities.FileReadWrite | FileSystemProviderCapabilities.Readonly;
+
+	private readonly _onDidChangeCapabilities = new Emitter<void>();
+	readonly onDidChangeCapabilities: Event<void> = this._onDidChangeCapabilities.event;
+
+	private readonly _onDidChangeFile = new Emitter<readonly IFileChange[]>();
+	readonly onDidChangeFile: Event<readonly IFileChange[]> = this._onDidChangeFile.event;
+
+	constructor(private readonly _workspaceRoot: string) {}
+
+	watch(_resource: URI, _opts: IWatchOptions): IDisposable {
+		return Disposable.None;
+	}
+
+	async stat(_resource: URI): Promise<IStat> {
+		return { type: FileType.File, ctime: 0, mtime: 0, size: 0, permissions: FilePermission.Readonly };
+	}
+
+	async mkdir(_resource: URI): Promise<void> {
+		throw new Error('git-graph is read-only');
+	}
+
+	async readdir(_resource: URI): Promise<[string, FileType][]> {
+		return [];
+	}
+
+	async delete(_resource: URI, _opts: IFileDeleteOptions): Promise<void> {
+		throw new Error('git-graph is read-only');
+	}
+
+	async rename(_from: URI, _to: URI, _opts: IFileOverwriteOptions): Promise<void> {
+		throw new Error('git-graph is read-only');
+	}
+
+	async readFile(resource: URI): Promise<Uint8Array> {
+		const invoke = await getTauriInvoke();
+		if (!invoke) {
+			return new Uint8Array();
+		}
+
+		// Decode base64 query parameter
+		const queryParams = decodeGitGraphQuery(resource.query);
+		if (!queryParams) {
+			return new Uint8Array();
+		}
+
+		const repoPath = queryParams.repo || this._workspaceRoot;
+		const commit = queryParams.commit;
+		const filePath = queryParams.filePath;
+
+		// Remove ^ suffix from commit (e.g., "03a0a0f^" -> "03a0a0f^")
+		const revFile = `${commit}:${filePath}`;
+		try {
+			const output = (await invoke('git_run', {
+				path: repoPath,
+				args: ['show', revFile]
+			})) as string;
+			return new TextEncoder().encode(output);
+		} catch {
+			try {
+				const bytes = (await invoke('git_show', { path: repoPath, file: filePath })) as number[];
+				return new Uint8Array(bytes);
+			} catch {
+				return new Uint8Array();
+			}
+		}
+	}
+
+	async writeFile(_resource: URI, _content: Uint8Array, _opts: IFileWriteOptions): Promise<void> {
+		throw new Error('git-graph is read-only');
+	}
+}
+
+function decodeGitGraphQuery(query: string | null): GitGraphQueryParams | null {
+	if (!query) {
+		return null;
+	}
+	try {
+		// Decode URL-encoded base64 string
+		const decoded = decodeURIComponent(query);
+		const json = atob(decoded);
+		return JSON.parse(json);
+	} catch {
+		return null;
+	}
+}
+
 // ─── Git Original File System Provider ──────────────────────────────────────
 
 const GIT_ORIGINAL_SCHEME = 'git-original';
@@ -1110,6 +1209,11 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 		const originalProvider = new TauriGitOriginalFileProvider(rootPath);
 		try {
 			this._register(this.fileService.registerProvider(GIT_ORIGINAL_SCHEME, originalProvider));
+		} catch {}
+
+		const graphProvider = new TauriGitGraphFileProvider(rootPath);
+		try {
+			this._register(this.fileService.registerProvider(GIT_GRAPH_SCHEME, graphProvider));
 		} catch {}
 
 		let isRepo: boolean | undefined;
