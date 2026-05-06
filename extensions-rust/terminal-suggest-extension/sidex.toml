@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.terminal-suggest"
+name = "Terminal Suggestions"
+version = "0.1.0"
+description = "Command suggestions in terminal for SideX"
+wasm = "../target/wasm32-wasip2/release/terminal_suggest_extension.wasm"
+
+[activation]
+events = ["onTerminalShellIntegrationReady"]

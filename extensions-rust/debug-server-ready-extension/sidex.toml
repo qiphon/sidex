@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.debug-server-ready"
+name = "Debug Server Ready"
+version = "0.1.0"
+description = "Open browser when debug server is ready for SideX"
+wasm = "../target/wasm32-wasip2/release/debug_server_ready_extension.wasm"
+
+[activation]
+events = ["onStartupFinished"]

@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.references-view"
+name = "References View"
+version = "0.1.0"
+description = "References and implementation view for SideX"
+wasm = "../target/wasm32-wasip2/release/references_view_extension.wasm"
+
+[activation]
+events = ["onStartupFinished"]

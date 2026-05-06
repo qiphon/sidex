@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.grunt"
+name = "Grunt Support"
+version = "0.1.0"
+description = "Grunt task runner support for SideX"
+wasm = "../target/wasm32-wasip2/release/grunt_extension.wasm"
+
+[activation]
+events = ["workspaceContains:Gruntfile.js"]

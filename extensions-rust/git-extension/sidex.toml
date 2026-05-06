@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.git"
+name = "Git"
+version = "0.1.0"
+description = "Git integration for SideX"
+wasm = "../target/wasm32-wasip2/release/git_extension.wasm"
+
+[activation]
+events = ["onStartupFinished"]

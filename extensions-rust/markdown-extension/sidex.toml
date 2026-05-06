@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.markdown"
+name = "Markdown Support"
+version = "0.1.0"
+description = "Markdown language features for SideX"
+wasm = "../target/wasm32-wasip2/release/markdown_extension.wasm"
+
+[activation]
+events = ["onLanguage:markdown"]

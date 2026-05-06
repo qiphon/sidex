@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.npm"
+name = "NPM Support"
+version = "0.1.0"
+description = "NPM script support for SideX"
+wasm = "../target/wasm32-wasip2/release/npm_extension.wasm"
+
+[activation]
+events = ["workspaceContains:package.json"]

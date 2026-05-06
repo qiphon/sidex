@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.php-language"
+name = "PHP Language Features"
+version = "0.1.0"
+description = "PHP language features for SideX"
+wasm = "../target/wasm32-wasip2/release/php_language_extension.wasm"
+
+[activation]
+events = ["onLanguage:php", "onLanguage:php4", "onLanguage:php5", "onLanguage:php7", "onLanguage:php8"]

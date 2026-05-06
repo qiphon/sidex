@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.emmet"
+name = "Emmet"
+version = "0.1.0"
+description = "Emmet abbreviation expansion for SideX"
+wasm = "../target/wasm32-wasip2/release/emmet_extension.wasm"
+
+[activation]
+events = ["onStartupFinished"]

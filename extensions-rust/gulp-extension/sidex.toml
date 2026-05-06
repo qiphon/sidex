@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.gulp"
+name = "Gulp Support"
+version = "0.1.0"
+description = "Gulp task runner support for SideX"
+wasm = "../target/wasm32-wasip2/release/gulp_extension.wasm"
+
+[activation]
+events = ["workspaceContains:gulpfile.js"]

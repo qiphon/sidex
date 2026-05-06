@@ -62,6 +62,9 @@ export default defineConfig({
           if (chunkInfo.name === 'extensionHostWorker') {
             return 'assets/extensionHostWorker.js';
           }
+          if (chunkInfo.name === 'outputLinkComputerMain') {
+            return 'assets/outputLinkComputerMain.js';
+          }
           return 'assets/[name]-[hash].js';
         },
         chunkFileNames: 'assets/[name]-[hash].js',
@@ -115,6 +118,9 @@ export default defineConfig({
   worker: {
     format: 'es',
     rollupOptions: {
+      input: {
+        outputLinkComputerMain: path.resolve(__dirname, 'src/vs/workbench/contrib/output/common/outputLinkComputerMain.ts'),
+      },
       output: {
         entryFileNames: 'workers/[name]-[hash].js',
         chunkFileNames: 'workers/[name]-[hash].js',

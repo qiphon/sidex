@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.debug-auto-launch"
+name = "Debug Auto Launch"
+version = "0.1.0"
+description = "Automatically launch debug sessions for SideX"
+wasm = "../target/wasm32-wasip2/release/debug_auto_launch_extension.wasm"
+
+[activation]
+events = ["onStartupFinished"]

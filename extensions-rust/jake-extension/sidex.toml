@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.jake"
+name = "Jake Support"
+version = "0.1.0"
+description = "Jake build tool support for SideX"
+wasm = "../target/wasm32-wasip2/release/jake_extension.wasm"
+
+[activation]
+events = ["workspaceContains:Jakefile.js"]

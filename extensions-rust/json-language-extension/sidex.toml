@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.json-language"
+name = "JSON Language Features"
+version = "0.1.0"
+description = "JSON language features for SideX"
+wasm = "../target/wasm32-wasip2/release/json_language_extension.wasm"
+
+[activation]
+events = ["onLanguage:json"]

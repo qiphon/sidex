@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.html-language"
+name = "HTML Language Features"
+version = "0.1.0"
+description = "HTML language features for SideX"
+wasm = "../target/wasm32-wasip2/release/html_language_extension.wasm"
+
+[activation]
+events = ["onLanguage:html", "onLanguage:htm"]

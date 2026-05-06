@@ -1,0 +1,9 @@
+[extension]
+id = "sidex.merge-conflict"
+name = "Merge Conflict"
+version = "0.1.0"
+description = "Merge conflict detection and resolution for SideX"
+wasm = "../target/wasm32-wasip2/release/merge_conflict_extension.wasm"
+
+[activation]
+events = ["onStartupFinished"]
