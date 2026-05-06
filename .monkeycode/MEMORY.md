@@ -31,6 +31,14 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 
 ## 条目
 
+[开发完成后自动提交代码]
+- Date: 2026-05-06
+- Context: 用户要求每次修改完代码自动提交
+- Instructions:
+  - 当完成任何涉及代码修改的任务且工作区存在未提交变更时，自动执行 `git add -A` 并创建一次提交。
+  - 提交信息使用 Conventional Commits 风格，且不得包含任何敏感信息。
+  - 对应 workspace skill：`.ai-skills/auto-commit-after-change/SKILL.md`。
+
 [SideX Tauri 启动入口与项目打开流程]
 - Date: 2026-04-29
 - Context: Agent 在执行修复拖拽文件夹进入窗口无法添加项目问题时发现
