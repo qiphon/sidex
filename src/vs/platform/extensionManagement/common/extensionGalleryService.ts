@@ -508,9 +508,9 @@ function getVersionAsset(version: IRawGalleryExtensionVersion, type: string): IG
 
 	if (isOpenVSXUrl(fallbackAssetUri)) {
 		// Extract publisher, name, version from OpenVSX URL
-		// Format: https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}
+		// Format: https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version} or .../{version}/extension
 		const openVSXMatch = fallbackAssetUri.match(
-			/^https:\/\/open-vsx\.org\/vscode\/unpkg\/([^/]+)\/([^/]+)\/([^/]+)/
+			/^https:\/\/open-vsx\.org\/vscode\/unpkg\/([^/]+)\/([^/]+)\/([^/]+)(?:\/extension)?/
 		);
 		if (openVSXMatch) {
 			const [, publisher, name, ver] = openVSXMatch;
