@@ -14,7 +14,7 @@
 ## P0：扩展与调试（生态核心）
 
 ### B1. Node 扩展宿主生命周期
-**状态**: 🟡 部分完成
+**状态**: 🟡 部分完成（API 覆盖审计完成，剩余缺口已记录）
 **代码落点**: `src-tauri/src/commands/ext_host.rs`, `src-tauri/extension-host/host.cjs`
 
 | 子任务 | 状态 | 说明 |
@@ -24,7 +24,15 @@
 | 扩展激活/停用 | ✅ | 生命周期事件已记录 |
 | 崩溃自动重启 | 🟡 | 崩溃计数存在，限频策略需完善 |
 | 环境变量注入 | ✅ | SIDEX_EXTENSIONS_DIR 等已注入 |
-| API 覆盖度验证 | 🔴 | 需建立最小 API 列表并验证 |
+| API 覆盖度验证 | ✅ | 已完成完整审计，报告见 `EXTENSION_API_COVERAGE.md` |
+
+### B1 后续改进项
+| 改进项 | 优先级 | 说明 |
+|--------|--------|------|
+| 文件事件桥接 | P1 | `onDidCreateFiles`/`onDidDeleteFiles`/`onDidRenameFiles` 当前为 noop |
+| 终端事件桥接 | P1 | `onDidOpenTerminal`/`onDidCloseTerminal` 当前为 noop |
+| 工作区文件夹事件 | P2 | `onDidChangeWorkspaceFolders` 当前为 noop |
+| Notebook 事件 | P2 | 所有 notebook 相关事件为 noop |
 
 ### B2. 扩展诊断与可观测性
 **状态**: 🟡 部分完成
