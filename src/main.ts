@@ -4,6 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { loadNlsMessages } from './nls-loader.js';
+import { URI, UriComponents } from './vs/base/common/uri.js';
+import { Event, Emitter } from './vs/base/common/event.js';
+import type { IURLCallbackProvider } from './vs/workbench/services/url/browser/urlService.js';
 
 async function sidexOpenFolder() {
 	try {
@@ -18,6 +21,39 @@ async function sidexOpenFolder() {
 	}
 }
 (window as any).__sidex_openFolder = sidexOpenFolder;
+
+/**
+ * Tauri-specific URL callback provider.
+ * Listens for deep-link events from the Rust side (sidex:// URIs) and
+ * forwards them to the workbench URL service, enabling OAuth flows.
+ */
+class TauriURLCallbackProvider implements IURLCallbackProvider {
+	private readonly _onCallback = new Emitter<URI>();
+	readonly onCallback: Event<URI> = this._onCallback.event;
+
+	constructor() {
+		window.addEventListener('sidex-deep-link', ((e: CustomEvent) => {
+			const uriStr = e.detail as string;
+			if (typeof uriStr === 'string') {
+				const uri = URI.parse(uriStr);
+				this._onCallback.fire(uri);
+			}
+		}) as EventListener);
+	}
+
+	create(options?: Partial<UriComponents>): URI {
+		// Build a URI from the provided components. When this URI is opened
+		// by the OS (via the browser redirecting to sidex://...), the deep-link
+		// plugin will deliver it back to us through the sidex-deep-link event.
+		return URI.from({
+			scheme: options?.scheme ?? 'sidex',
+			authority: options?.authority ?? '',
+			path: options?.path ?? '',
+			query: options?.query ?? '',
+			fragment: options?.fragment ?? ''
+		});
+	}
+}
 
 function navigateToFolder(folderUri: string) {
 	const url = new URL(window.location.href);
@@ -95,7 +131,11 @@ async function boot() {
 		}
 	}
 
+	// Create the URL callback provider for OAuth deep links
+	const urlCallbackProvider = new TauriURLCallbackProvider();
+
 	const options: any = {
+		urlCallbackProvider,
 		initialColorTheme: {
 			themeType: 'dark'
 		},

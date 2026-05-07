@@ -373,6 +373,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_deep_link::init())
         .manage(UpdateManagerState::new())
         .manage(Arc::new(commands::textmate::TextMateStore::new()))
         .manage(Arc::new(commands::extensions::MarketplaceClientState::new()))
@@ -504,6 +505,22 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     window.open_devtools();
                 }
+            }
+
+            // Set up deep link handler for OAuth callbacks (sidex://)
+            if let Err(err) = app.deep_link().on_open_url(move |event| {
+                let urls = event.urls();
+                for uri in urls {
+                    log::info!("[deep-link] received URI: {}", uri.as_str());
+                    if let Some(window) = app.get_webview_window("main") {
+                        let escaped = uri.as_str().replace('\\', "\\\\").replace('\'', "\\'");
+                        let _ = window.eval(format!(
+                            "window.dispatchEvent(new CustomEvent('sidex-deep-link', {{ detail: '{escaped}' }}))"
+                        ));
+                    }
+                }
+            }) {
+                log::warn!("deep link handler disabled: {err}");
             }
 
             Ok(())
