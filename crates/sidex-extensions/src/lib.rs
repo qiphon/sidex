@@ -92,7 +92,10 @@ pub use protocol::{
     StatusBarAlignment as ProtoStatusBarAlignment, TextEdit, TreeItem as ProtoTreeItem,
     ViewColumn as ProtoViewColumn, WebviewOptions, WorkspaceEdit,
 };
-pub use registry::{read_vsix_manifest, ExtensionRegistry, VsixManifest};
+pub use registry::{
+    read_vsix_manifest, scan_all_extensions_for_debuggers, scan_extensions_for_debuggers,
+    ExtensionRegistry, VsixManifest,
+};
 pub use tree_view::{
     CollapsibleState, ExtensionTreeView, TreeItem, TreeItemCommand, TreeItemIcon, TreeViewEvent,
     TreeViewRegistry, ViewContainer,

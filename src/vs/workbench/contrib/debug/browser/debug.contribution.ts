@@ -38,6 +38,7 @@ import {
 	WorkbenchPhase,
 	registerWorkbenchContribution2
 } from '../../../common/contributions.js';
+import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
 import { EditorExtensions } from '../../../common/editor.js';
 import {
 	IViewContainersRegistry,
@@ -199,6 +200,7 @@ import { ReplAccessibilityHelp } from './replAccessibilityHelp.js';
 import { ReplAccessibleView } from './replAccessibleView.js';
 import { RunAndDebugAccessibilityHelp } from './runAndDebugAccessibilityHelp.js';
 import { StatusBarColorProvider } from './statusbarColorProvider.js';
+import { TauriDebugContribution } from './tauriDebugContribution.js';
 import { SET_VARIABLE_ID, VIEW_MEMORY_ID, VariablesView } from './variablesView.js';
 import {
 	ADD_WATCH_ID,
@@ -248,6 +250,13 @@ Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).regi
 Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution(
 	DebugLifecycle,
 	LifecyclePhase.Eventually
+);
+
+// Tauri debug contribution — bridges Rust debug adapter registry with TS system
+Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution2(
+	'tauriDebugContribution',
+	TauriDebugContribution,
+	WorkbenchPhase.AfterRestored
 );
 
 // Register Quick Access

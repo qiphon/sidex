@@ -15,6 +15,7 @@ use crate::manifest::{
     is_version_greater, read_node_manifest, read_wasm_manifest, ExtensionKind, ExtensionManifest,
 };
 use crate::paths;
+use crate::contribution_handler::ResolvedDebugger;
 
 /// Registry of installed extensions.
 #[derive(Debug)]
@@ -285,6 +286,43 @@ pub fn read_vsix_manifest<R: std::io::Read + std::io::Seek>(
             .to_string(),
         version: version.to_string(),
     })
+}
+
+/// Scan an extensions directory for debugger contributions.
+/// Returns a list of all debuggers contributed by installed extensions.
+pub fn scan_extensions_for_debuggers(extensions_dir: &Path) -> Result<Vec<ResolvedDebugger>> {
+    let manifests = ExtensionRegistry::scan_directory(extensions_dir)?;
+    let mut debuggers = Vec::new();
+
+    for manifest in &manifests {
+        if manifest.contributes.debuggers.is_empty() {
+            continue;
+        }
+
+        let ext_debuggers = crate::contribution_handler::process_contributions(manifest).debuggers;
+        debuggers.extend(ext_debuggers);
+    }
+
+    Ok(debuggers)
+}
+
+/// Scan multiple extension directories for debugger contributions.
+pub fn scan_all_extensions_for_debuggers(search_paths: &[PathBuf]) -> Vec<ResolvedDebugger> {
+    let mut by_type: HashMap<String, ResolvedDebugger> = HashMap::new();
+
+    for search_path in search_paths {
+        let Ok(debuggers) = scan_extensions_for_debuggers(search_path) else {
+            continue;
+        };
+        for debugger in debuggers {
+            // Keep the first one found for each debug type
+            by_type
+                .entry(debugger.debug_type.clone())
+                .or_insert(debugger);
+        }
+    }
+
+    by_type.into_values().collect()
 }
 
 // ---------------------------------------------------------------------------

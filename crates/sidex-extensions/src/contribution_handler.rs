@@ -122,6 +122,12 @@ pub struct ResolvedDebugger {
     pub program: Option<String>,
     #[serde(default)]
     pub runtime: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub languages: Vec<String>,
+    #[serde(default)]
+    pub extension_path: Option<String>,
 }
 
 /// A fully-resolved task definition contribution.
@@ -191,7 +197,7 @@ pub fn process_contributions(manifest: &ExtensionManifest) -> ContributionSet {
         snippets: resolve_snippets(&ext_id, ext_dir, &c.snippets),
         configurations: resolve_configurations(&ext_id, &c.configuration),
         views: resolve_views(&ext_id, &c.views),
-        debuggers: resolve_debuggers(&ext_id, &c.debuggers),
+        debuggers: resolve_debuggers(&ext_id, &c.debuggers, Some(&manifest.path)),
         task_definitions: resolve_task_definitions(&ext_id, &c.task_definitions),
     }
 }
@@ -369,7 +375,7 @@ fn resolve_views(ext_id: &str, views: &Value) -> Vec<ResolvedView> {
     out
 }
 
-fn resolve_debuggers(ext_id: &str, debuggers: &[Value]) -> Vec<ResolvedDebugger> {
+fn resolve_debuggers(ext_id: &str, debuggers: &[Value], extension_path: Option<&str>) -> Vec<ResolvedDebugger> {
     debuggers
         .iter()
         .filter_map(|v| {
@@ -379,12 +385,24 @@ fn resolve_debuggers(ext_id: &str, debuggers: &[Value]) -> Vec<ResolvedDebugger>
                 .and_then(Value::as_str)
                 .unwrap_or(&debug_type)
                 .to_owned();
+            let languages = v
+                .get("languages")
+                .and_then(Value::as_array)
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                .unwrap_or_default();
             Some(ResolvedDebugger {
                 extension_id: ext_id.to_owned(),
                 debug_type,
                 label,
                 program: v.get("program").and_then(Value::as_str).map(str::to_owned),
                 runtime: v.get("runtime").and_then(Value::as_str).map(str::to_owned),
+                args: v
+                    .get("args")
+                    .and_then(Value::as_array)
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                    .unwrap_or_default(),
+                languages,
+                extension_path: extension_path.map(str::to_owned),
             })
         })
         .collect()

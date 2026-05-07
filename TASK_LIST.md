@@ -69,14 +69,14 @@
 | 多会话管理 | ✅ | session.rs 状态机 |
 
 ### B5. 调试适配器管理 🔴 **新增**
-**状态**: 🔴 未开始
-**代码落点**: debug 相关模块
+**状态**: ✅ 基本完成（自动发现 + 市场下载 + UI 集成）
+**代码落点**: `crates/sidex-dap/src/adapter.rs`, `src-tauri/src/commands/debug.rs`, `crates/sidex-extensions/src/contribution_handler.rs`, `src-tauri/src/commands/extensions.rs`, `src/vs/workbench/contrib/debug/tauri/`
 
 | 子任务 | 状态 | 说明 |
 |--------|------|------|
-| Adapter 自动发现 | 🔴 | 扫描扩展中的 debugger 贡献 |
-| Adapter 下载 | 🔴 | 从市场下载调试适配器 |
-| Adapter 配置 UI | 🔴 | 用户配置界面 |
+| Adapter 自动发现 | ✅ | 扫描扩展 debugger 贡献，动态注册/注销 |
+| Adapter 下载 | ✅ | 从市场搜索/下载安装 debug adapter 扩展 |
+| Adapter 配置 UI | ✅ | 市场搜索 + Quick Pick 安装界面 + launch.json IntelliSense |
 | 沙箱运行策略 | 🔴 | 隔离调试适配器进程 |
 
 ---
@@ -292,7 +292,7 @@
 
 | 状态 | 数量 | 占比 |
 |------|------|------|
-| ✅ 已完成 | 5 | 13% |
-| 🟡 部分完成 | 10 | 26% |
+| ✅ 已完成 | 6 | 16% |
+| 🟡 部分完成 | 9 | 24% |
 | 🔴 未开始 | 23 | 61% |
 | **总计** | **38** | **100%** |

@@ -272,6 +272,10 @@ pub struct DebugAdapterInfo {
     pub args: Vec<String>,
     pub runtime: Option<String>,
     pub command_line: String,
+    pub source: Option<String>,
+    pub extension_id: Option<String>,
+    pub label: Option<String>,
+    pub languages: Vec<String>,
 }
 
 /// Parse `.vscode/launch.json` (JSONC) from the given workspace root.
@@ -290,26 +294,151 @@ pub fn dap_get_launch_configs(workspace: String) -> Result<DapLaunchConfigRespon
     Ok(DapLaunchConfigResponse { configs, compounds })
 }
 
-/// Return the built-in debug adapter registry.
+/// Return the full debug adapter registry (builtins + extension-contributed).
 #[tauri::command]
-#[allow(clippy::unnecessary_wraps)]
-pub fn dap_get_adapter_registry() -> Result<Vec<DebugAdapterInfo>, String> {
-    let registry = sidex_dap::DebugAdapterRegistry::with_builtins();
-    let infos = registry
-        .registered_types()
+pub fn dap_get_adapter_registry(
+    registry: State<'_, Arc<Mutex<sidex_dap::DebugAdapterRegistry>>>,
+) -> Result<Vec<DebugAdapterInfo>, String> {
+    let reg = registry.lock().map_err(|e| e.to_string())?;
+    let infos = reg
+        .all_adapters()
         .into_iter()
-        .filter_map(|t| {
-            let desc = registry.get(t)?;
-            Some(DebugAdapterInfo {
+        .map(|desc| {
+            let source_label = match &desc.source {
+                Some(sidex_dap::AdapterSource::Builtin) => Some("builtin".to_owned()),
+                Some(sidex_dap::AdapterSource::Extension { extension_id }) => {
+                    Some(format!("extension:{extension_id}"))
+                }
+                None => None,
+            };
+            let extension_id = match &desc.source {
+                Some(sidex_dap::AdapterSource::Extension { extension_id }) => {
+                    Some(extension_id.clone())
+                }
+                _ => None,
+            };
+            DebugAdapterInfo {
                 type_name: desc.type_name.clone(),
                 command: desc.command.clone(),
                 args: desc.args.clone(),
                 runtime: desc.runtime.clone(),
-                command_line: registry.command_line(t).unwrap_or_default(),
-            })
+                command_line: reg.command_line(&desc.type_name).unwrap_or_default(),
+                source: source_label,
+                extension_id,
+                label: desc.label.clone(),
+                languages: desc.languages.clone(),
+            }
         })
         .collect();
     Ok(infos)
+}
+
+/// Scan installed extensions for debugger contributions and register them.
+#[tauri::command]
+pub fn dap_scan_extension_debuggers(
+    registry: State<'_, Arc<Mutex<sidex_dap::DebugAdapterRegistry>>>,
+    extensions_dir: String,
+) -> Result<Vec<DebugAdapterInfo>, String> {
+    use sidex_extensions::scan_extensions_for_debuggers;
+
+    let discovered = scan_extensions_for_debuggers(&extensions_dir)
+        .map_err(|e| format!("Failed to scan extensions: {e}"))?;
+
+    let mut reg = registry.lock().map_err(|e| e.to_string())?;
+    let mut registered = Vec::new();
+
+    for debugger in &discovered {
+        let is_new = reg.register_from_extension(
+            &debugger.extension_id,
+            &debugger.debug_type,
+            &debugger.label,
+            debugger.program.as_deref(),
+            debugger.runtime.as_deref(),
+            None, // args - will be resolved from launch config
+            debugger.extension_path.as_deref(),
+            debugger.languages.clone(),
+        );
+
+        if is_new {
+            if let Some(desc) = reg.get(&debugger.debug_type) {
+                registered.push(DebugAdapterInfo {
+                    type_name: desc.type_name.clone(),
+                    command: desc.command.clone(),
+                    args: desc.args.clone(),
+                    runtime: desc.runtime.clone(),
+                    command_line: reg.command_line(&desc.type_name).unwrap_or_default(),
+                    source: Some(format!("extension:{}", debugger.extension_id)),
+                    extension_id: Some(debugger.extension_id.clone()),
+                    label: desc.label.clone(),
+                    languages: desc.languages.clone(),
+                });
+            }
+        }
+    }
+
+    log::info!(
+        "[DAP] Scanned {} debuggers from extensions, {} newly registered",
+        discovered.len(),
+        registered.len()
+    );
+
+    Ok(registered)
+}
+
+/// Register a debug adapter from an extension contribution.
+#[tauri::command]
+pub fn dap_register_extension_adapter(
+    registry: State<'_, Arc<Mutex<sidex_dap::DebugAdapterRegistry>>>,
+    extension_id: String,
+    debug_type: String,
+    label: String,
+    program: Option<String>,
+    runtime: Option<String>,
+    args: Option<Vec<String>>,
+    extension_path: Option<String>,
+    languages: Vec<String>,
+) -> Result<bool, String> {
+    let mut reg = registry.lock().map_err(|e| e.to_string())?;
+    let is_new = reg.register_from_extension(
+        &extension_id,
+        &debug_type,
+        &label,
+        program.as_deref(),
+        runtime.as_deref(),
+        args,
+        extension_path.as_deref(),
+        languages,
+    );
+
+    log::info!(
+        "[DAP] {} adapter '{}' from extension {}",
+        if is_new { "Registered new" } else { "Updated" },
+        debug_type,
+        extension_id
+    );
+
+    Ok(is_new)
+}
+
+/// Unregister all debug adapters contributed by a specific extension.
+#[tauri::command]
+pub fn dap_unregister_extension_adapters(
+    registry: State<'_, Arc<Mutex<sidex_dap::DebugAdapterRegistry>>>,
+    extension_id: String,
+) -> Result<Vec<String>, String> {
+    let mut reg = registry.lock().map_err(|e| e.to_string())?;
+    let removed = reg.unregister_extension(&extension_id);
+
+    if !removed.is_empty() {
+        log::info!(
+            "[DAP] Unregistered {} adapters from extension {}: {:?}",
+            removed.len(),
+            extension_id,
+            removed
+        );
+    }
+
+    Ok(removed)
 }
 
 // ---------------------------------------------------------------------------
@@ -540,4 +669,256 @@ pub async fn dap_stop_adapter(
     };
     client.disconnect().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Debug Adapter Marketplace Discovery
+// ---------------------------------------------------------------------------
+
+/// Result item for marketplace debug adapter search.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceDebugAdapter {
+    /// Extension id (publisher.name).
+    pub extension_id: String,
+    /// Extension display name.
+    pub extension_name: String,
+    /// Publisher display name.
+    pub publisher: String,
+    /// Description.
+    pub description: String,
+    /// Version string.
+    pub version: String,
+    /// Debugger type contributed by this extension.
+    pub debug_type: String,
+    /// Debugger label.
+    pub debug_label: String,
+    /// Languages this debugger supports.
+    pub languages: Vec<String>,
+    /// Install count.
+    pub install_count: u64,
+    /// Rating (0.0-5.0).
+    pub rating: f32,
+    /// Icon URL.
+    pub icon_url: Option<String>,
+    /// Whether this adapter is already installed locally.
+    pub is_installed: bool,
+}
+
+/// Search the marketplace for extensions that contribute debug adapters.
+/// Optionally filter by debug type (e.g. "python", "cppdbg").
+#[tauri::command]
+pub async fn dap_find_marketplace_adapters(
+    state: tauri::State<'_, Arc<crate::commands::extensions::MarketplaceClientState>>,
+    query: Option<String>,
+    extensions_dir: Option<String>,
+) -> Result<Vec<MarketplaceDebugAdapter>, String> {
+    use sidex_extensions::contribution_handler::process_contributions;
+    use sidex_extensions::manifest::parse_manifest;
+    use sidex_extensions::paths::user_extensions_dir;
+
+    let search_query = query.unwrap_or_else(|| "debugger".to_string());
+
+    // Search marketplace
+    let results = {
+        let mut client = state.inner.lock().await;
+        client
+            .search(&search_query, 0, 50)
+            .await
+            .map_err(|e| format!("marketplace search: {e}"))?
+    };
+
+    // Build set of installed extension ids
+    let installed_ids: std::collections::HashSet<String> = if let Some(dir) = extensions_dir {
+        let path = std::path::Path::new(&dir);
+        if path.exists() {
+            std::fs::read_dir(path)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| parse_manifest(&e.path().join("package.json")).ok())
+                .map(|m| m.canonical_id())
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        }
+    } else {
+        let dir = user_extensions_dir();
+        if dir.exists() {
+            std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| parse_manifest(&e.path().join("package.json")).ok())
+                .map(|m| m.canonical_id())
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        }
+    };
+
+    // Filter to extensions that contribute debuggers
+    let mut adapters = Vec::new();
+
+    for ext in results.results {
+        // Check if we have the package.json to inspect contributions
+        // Since we can't download and inspect each one, use tags/categories as a heuristic
+        let has_debugger_tag = ext
+            .tags
+            .iter()
+            .any(|t| t.to_lowercase().contains("debug"));
+
+        if !has_debugger_tag && !ext.id.to_lowercase().contains("debug") {
+            continue;
+        }
+
+        // Try to get more details by fetching the extension metadata
+        let ext_detail = {
+            let mut client = state.inner.lock().await;
+            client.get_extension(&ext.id).await.ok()
+        };
+
+        if let Some(detail) = ext_detail {
+            // For now, we return one entry per extension
+            // The frontend should install the extension first, then scan for debuggers
+            adapters.push(MarketplaceDebugAdapter {
+                extension_id: detail.id.clone(),
+                extension_name: detail.display_name,
+                publisher: detail.publisher.display_name,
+                description: if detail.short_description.is_empty() {
+                    detail.description
+                } else {
+                    detail.short_description
+                },
+                version: detail.version.clone(),
+                debug_type: ext.id.clone(), // placeholder
+                debug_label: detail.display_name,
+                languages: Vec::new(),
+                install_count: detail.install_count,
+                rating: detail.rating,
+                icon_url: detail.icon_url,
+                is_installed: installed_ids.contains(&detail.id),
+            });
+        }
+    }
+
+    // Sort by install count (most popular first)
+    adapters.sort_by(|a, b| b.install_count.cmp(&a.install_count));
+
+    log::info!(
+        "[DAP] Found {} marketplace debug adapters for query '{}'",
+        adapters.len(),
+        search_query
+    );
+
+    Ok(adapters)
+}
+
+/// Install a debug adapter extension from the marketplace and register it.
+#[tauri::command]
+pub async fn dap_install_adapter(
+    app: tauri::AppHandle,
+    extension_id: String,
+    registry: State<'_, Arc<Mutex<sidex_dap::DebugAdapterRegistry>>>,
+    state: tauri::State<'_, Arc<crate::commands::extensions::MarketplaceClientState>>,
+) -> Result<DapInstallAdapterResult, String> {
+    use sidex_extensions::contribution_handler::process_contributions;
+    use sidex_extensions::manifest::parse_manifest;
+    use sidex_extensions::paths::user_extensions_dir;
+
+    log::info!("[DAP] Installing debug adapter extension '{extension_id}'");
+
+    let target_dir = user_extensions_dir();
+    std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("failed to create extensions directory: {e}"))?;
+
+    // Fetch extension metadata
+    let ext_detail = {
+        let mut client = state.inner.lock().await;
+        client
+            .get_extension(&extension_id)
+            .await
+            .map_err(|e| format!("failed to fetch extension metadata: {e}"))?
+    };
+
+    // Download and install
+    sidex_extensions::installer::install_from_marketplace(&extension_id, &target_dir)
+        .await
+        .map_err(|e| format!("install failed: {e:#}"))?;
+
+    let safe_id = sidex_extensions::manifest::sanitize_ext_id(&extension_id)
+        .map_err(|e| format!("{e:#}"))?;
+    let ext_dir = target_dir.join(&safe_id);
+
+    // Parse manifest and scan for debugger contributions
+    let manifest = parse_manifest(&ext_dir.join("package.json"))
+        .map_err(|e| format!("failed to parse manifest: {e}"))?;
+
+    let contributions = process_contributions(&manifest);
+    let mut registered_adapters = Vec::new();
+
+    for debugger in &contributions.debuggers {
+        let mut reg = registry.lock().map_err(|e| e.to_string())?;
+        let is_new = reg.register_from_extension(
+            &debugger.extension_id,
+            &debugger.debug_type,
+            &debugger.label,
+            debugger.program.as_deref(),
+            debugger.runtime.as_deref(),
+            None,
+            debugger.extension_path.as_deref(),
+            debugger.languages.clone(),
+        );
+
+        if is_new {
+            if let Some(desc) = reg.get(&debugger.debug_type) {
+                registered_adapters.push(DebugAdapterInfo {
+                    type_name: desc.type_name.clone(),
+                    command: desc.command.clone(),
+                    args: desc.args.clone(),
+                    runtime: desc.runtime.clone(),
+                    command_line: reg.command_line(&desc.type_name).unwrap_or_default(),
+                    source: Some(format!("extension:{}", debugger.extension_id)),
+                    extension_id: Some(debugger.extension_id.clone()),
+                    label: desc.label.clone(),
+                    languages: desc.languages.clone(),
+                });
+            }
+        }
+    }
+
+    log::info!(
+        "[DAP] Installed {} and registered {} debug adapter(s)",
+        safe_id,
+        registered_adapters.len()
+    );
+
+    // Notify frontend
+    let _ = app.emit(
+        "debug-adapter-installed",
+        DapInstallAdapterResult {
+            extension_id: safe_id,
+            extension_name: ext_detail.display_name,
+            version: ext_detail.version,
+            registered_adapters,
+        },
+    );
+
+    Ok(DapInstallAdapterResult {
+        extension_id: safe_id,
+        extension_name: ext_detail.display_name,
+        version: ext_detail.version,
+        registered_adapters,
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DapInstallAdapterResult {
+    pub extension_id: String,
+    pub extension_name: String,
+    pub version: String,
+    pub registered_adapters: Vec<DebugAdapterInfo>,
 }

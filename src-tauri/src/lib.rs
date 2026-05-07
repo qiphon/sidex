@@ -380,6 +380,7 @@ pub fn run() {
         .manage(Arc::new(ProcessStore::new()))
         .manage(Arc::new(DebugAdapterStore::new()))
         .manage(Arc::new(DapClientStore::new()))
+        .manage(Arc::new(Mutex::new(sidex_dap::DebugAdapterRegistry::with_builtins())))
         .manage(Arc::new(LspState::new()))
         .manage(Arc::new(TaskProcessStore::new()))
         .manage(Arc::new(WatchStore::new()))
@@ -715,6 +716,11 @@ pub fn run() {
             commands::dap_start_adapter,
             commands::dap_send_request,
             commands::dap_stop_adapter,
+            commands::dap_scan_extension_debuggers,
+            commands::dap_register_extension_adapter,
+            commands::dap_unregister_extension_adapters,
+            commands::dap_find_marketplace_adapters,
+            commands::dap_install_adapter,
             commands::task_spawn,
             commands::task_kill,
             commands::task_list,
@@ -735,6 +741,7 @@ pub fn run() {
             // Marketplace & contributions (sidex-extensions)
             commands::extension_search_marketplace,
             commands::extension_get_contributions,
+            commands::install_extension_from_marketplace,
             // WASM extensions
             commands::wasm_load_extension,
             commands::wasm_unload_extension,

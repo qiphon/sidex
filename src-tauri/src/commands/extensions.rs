@@ -2,6 +2,7 @@ use crate::commands::extension_platform::{read_extension_manifest, ExtensionMani
 use serde::Serialize;
 use sidex_extensions::contributions::{parse_contributions, ContributionPoint};
 use sidex_extensions::installer::{
+    install_from_marketplace as crate_install_from_marketplace,
     install_from_vsix as crate_install_from_vsix, uninstall as crate_uninstall,
 };
 use sidex_extensions::manifest::sanitize_ext_id;
@@ -306,4 +307,97 @@ pub async fn extension_get_contributions(
 
     let points = parse_contributions(&value);
     Ok(points.iter().map(summarize_point).collect())
+}
+
+/// Download and install an extension from the marketplace.
+/// Scans for debugger contributions after installation and returns them.
+#[derive(Debug, Serialize)]
+pub struct InstallMarketplaceResult {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub path: String,
+    pub debuggers: Vec<DebuggerContributionInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DebuggerContributionInfo {
+    pub debug_type: String,
+    pub label: String,
+    pub languages: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn install_extension_from_marketplace(
+    extension_id: String,
+    state: tauri::State<'_, Arc<MarketplaceClientState>>,
+) -> Result<InstallMarketplaceResult, String> {
+    log::info!("[Marketplace] Installing extension '{extension_id}'");
+
+    let target_dir = user_extensions_dir();
+    fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("failed to create extensions directory: {e}"))?;
+
+    // Fetch extension metadata first to get the version
+    let ext = {
+        let mut client = state.inner.lock().await;
+        client
+            .get_extension(&extension_id)
+            .await
+            .map_err(|e| format!("failed to fetch extension metadata: {e}"))?
+    };
+
+    // Download and install
+    crate_install_from_marketplace(&extension_id, &target_dir)
+        .await
+        .map_err(|e| format!("install failed: {e:#}"))?;
+
+    let safe_id = sanitize_ext_id(&extension_id).map_err(|e| format!("{e:#}"))?;
+    let ext_dir = target_dir.join(&safe_id);
+
+    // Scan for debugger contributions
+    let debuggers = scan_extension_debuggers(&ext_dir)?;
+
+    log::info!(
+        "[Marketplace] Installed {} with {} debugger(s)",
+        safe_id,
+        debuggers.len()
+    );
+
+    Ok(InstallMarketplaceResult {
+        id: safe_id.clone(),
+        name: ext.display_name,
+        version: ext.version,
+        path: ext_dir.to_string_lossy().to_string(),
+        debuggers,
+    })
+}
+
+fn scan_extension_debuggers(
+    ext_dir: &Path,
+) -> Result<Vec<DebuggerContributionInfo>, String> {
+    let pkg_path = ext_dir.join("package.json");
+    let raw = fs::read_to_string(&pkg_path).map_err(|e| format!("read package.json: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("parse package.json: {e}"))?;
+
+    let points = parse_contributions(&value);
+    let debuggers = points
+        .iter()
+        .filter_map(|point| {
+            if let ContributionPoint::Debuggers(list) = point {
+                Some(list)
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .map(|d| DebuggerContributionInfo {
+            debug_type: d.debug_type.clone(),
+            label: d.label.clone(),
+            languages: d.languages.clone(),
+        })
+        .collect();
+
+    Ok(debuggers)
 }
