@@ -48,13 +48,13 @@
 | 错误堆栈可视化 | 🔴 | 需在前端展示根因 |
 
 ### B3. Webview 扩展能力
-**状态**: 🟡 部分完成
-**代码落点**: `src-tauri/extension-host/host.cjs`
+**状态**: 🟡 部分完成（CSP 安全策略已对齐 void 默认策略）
+**代码落点**: `src-tauri/extension-host/host.cjs`, `crates/sidex-extensions/src/webview_host.rs`
 
 | 子任务 | 状态 | 说明 |
 |--------|------|------|
 | 资源 URL 映射 | 🟡 | host.cjs 有处理逻辑 |
-| CSP 安全策略 | 🔴 | 需对齐 void 默认策略 |
+| CSP 安全策略 | ✅ | 已对齐 void 默认策略，保留扩展 CSP，注入默认 CSP |
 | 消息通道 | 🟡 | 基础通信可用 |
 | 性能优化（大消息） | 🔴 | 二进制资源传输待优化 |
 | Webview 面板管理 | ✅ | sidex-extensions 已实现 |

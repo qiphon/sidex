@@ -78,7 +78,31 @@ function inlineWebviewResources(html) {
     } catch { return _match; }
   });
 
-  result = result.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '');
+  // Preserve existing CSP meta tags (set by extension via webview.options or Rust side)
+  // Don't strip them — they provide security controls for the webview content
+  // Instead, ensure a default CSP exists if none is present
+  const hasCsp = /<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi.test(result);
+  if (!hasCsp) {
+    // Inject a default CSP that matches Tauri's security model
+    // This aligns with void's default webview CSP strategy
+    const defaultCsp = [
+      "default-src 'none'",
+      "script-src 'unsafe-inline'",
+      "style-src 'unsafe-inline'",
+      "img-src 'self' data: https: blob:",
+      "font-src 'self' data: https:",
+      "connect-src 'self' https: wss: http://localhost:* ws://localhost:*",
+      "media-src 'self' data: https:",
+      "frame-src 'self' https://*.vscode-webview.net https://*.vscode-cdn.net"
+    ].join('; ');
+    const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${defaultCsp}">`;
+    // Insert after <head> or at the beginning of the document
+    if (/<head[^>]*>/i.test(result)) {
+      result = result.replace(/(<head[^>]*>)/i, `$1${cspMeta}`);
+    } else {
+      result = cspMeta + result;
+    }
+  }
 
   return result;
 }
