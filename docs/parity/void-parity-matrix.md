@@ -24,11 +24,11 @@
 
 | 能力 | 状态 | SideX 现状/差异 | 代码落点（参考） | 验证方法 |
 |---|---|---|---|---|
-| powerMonitor（睡眠/唤醒/电源事件） | 🔴 | 未开始 | 待实现（Rust + bridge） | 触发 sleep/resume 后终端/扩展状态不异常 |
-| contentTracing（性能追踪/导出） | 🔴 | 未开始 | 待实现（Rust tracing 导出 + TS 触发） | 导出 trace 并可在 trace viewer 打开 |
-| native-keymap（键盘布局/物理键位） | 🔴 | 未开始 | 待实现（Rust 键盘布局 + keybinding 适配） | 不同布局下常用快捷键一致 |
-| safeStorage/encryption（安全存储） | 🟡 | 部分能力，需对齐 void 行为 | `crates/sidex-auth/*`、`src-tauri/src/commands/secrets.rs`（如存在） | 写入/读取 token，重启后仍可用 |
-| logging（日志文件/级别/导出/崩溃聚合） | 🟡 | 部分能力，需补齐持久化与聚合 | `src-tauri/src/commands/logging.rs` | 导出日志并可定位扩展宿主 session |
+| powerMonitor（睡眠/唤醒/电源事件） | ✅ | 已实现跨平台电源状态监听（Windows/macOS/Linux），支持 AC 状态变化事件 | `src-tauri/src/commands/power.rs`、`src/vs/platform/powerMonitor/common/powerMonitorService.ts` | 触发 sleep/resume 后终端/扩展状态不异常；插拔电源线时 UI 能收到事件 |
+| contentTracing（性能追踪/导出） | ✅ | 已实现 Chrome Trace Event Format 导出，支持会话管理和事件记录 | `src-tauri/src/commands/content_tracing.rs`、`src/vs/platform/contentTracing/common/contentTracingService.ts` | 导出 trace 并可在 Chrome trace viewer 打开 |
+| native-keymap（键盘布局/物理键位） | ✅ | 已实现跨平台键盘布局检测和物理键位映射 | `crates/sidex-keymap/src/layout.rs`、`src-tauri/src/commands/keymap.rs` | 不同布局下常用快捷键一致 |
+| safeStorage/encryption（安全存储） | ✅ | 已实现 AES-GCM 加密层，密钥通过 OS keyring 保护 | `src/vs/workbench/services/encryption/tauri/encryptionService.ts`、`crates/sidex-auth/*` | 写入/读取 token，重启后仍可用 |
+| logging（日志文件/级别/导出/崩溃聚合） | ✅ | 已桥接 TS 和 Rust 日志系统，支持多 logger 管理和文件轮转 | `src/vs/platform/log/common/tauriLogIpc.ts`、`src-tauri/src/commands/logging.rs` | 导出日志并可定位扩展宿主 session |
 
 ## P1：Workbench 功能对齐
 

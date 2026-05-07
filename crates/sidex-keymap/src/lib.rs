@@ -8,6 +8,7 @@ pub mod context;
 pub mod defaults;
 pub mod keybinding;
 pub mod keyboard_shortcut_editor;
+pub mod layout;
 pub mod resolver;
 
 pub use context::{
@@ -23,4 +24,5 @@ pub use keyboard_shortcut_editor::{
     format_keybinding, get_all_keybinding_entries, keybinding_to_json, parse_keybinding_string,
     CommandInfo, KeybindingEntry, KeybindingRecorder,
 };
+pub use layout::{KeyboardLayoutInfo, PlatformKeyboardInfo};
 pub use resolver::KeybindingResolver;

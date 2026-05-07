@@ -122,3 +122,16 @@ pub fn keymap_get_all() -> Result<Vec<KeybindingEntry>, String> {
         .collect();
     Ok(entries)
 }
+
+/// 获取当前系统键盘布局
+#[tauri::command]
+pub async fn keymap_get_current_layout() -> Result<serde_json::Value, String> {
+    sidex_keymap::layout::get_keyboard_layout()
+        .map(|info| serde_json::to_value(&info).unwrap_or(serde_json::Value::Null))
+}
+
+/// 获取物理键位映射（扫描码到键名）
+#[tauri::command]
+pub async fn keymap_get_physical_mapping() -> Result<serde_json::Value, String> {
+    sidex_keymap::layout::get_physical_mapping()
+}

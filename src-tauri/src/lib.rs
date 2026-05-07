@@ -385,6 +385,7 @@ pub fn run() {
         .manage(Arc::new(WatchStore::new()))
         .manage(Arc::new(IndexStore::new(true)))
         .manage(Arc::new(LoggerStore::new()))
+        .manage(commands::content_tracing::TraceStore::new())
         .manage(ExtensionPlatformSupervisor::new())
         .manage(ExtensionDiagnosticsStore::new())
         .manage(Arc::new(SettingsStore::new()))
@@ -829,6 +830,8 @@ pub fn run() {
             commands::keymap_resolve,
             commands::keymap_resolve_chord,
             commands::keymap_get_all,
+            commands::keymap_get_current_layout,
+            commands::keymap_get_physical_mapping,
             // Editor intelligence
             commands::editor_detect_colors,
             commands::editor_compute_bracket_pairs,
@@ -850,6 +853,17 @@ pub fn run() {
             commands::ext_api_get_commands,
             // Menu i18n
             commands::update_menu_labels,
+            // Power monitor
+            commands::power_monitor_get_power_status,
+            commands::power_monitor_start_listening,
+            // Content tracing
+            commands::tracing_start_session,
+            commands::tracing_add_event,
+            commands::tracing_add_complete_event,
+            commands::tracing_stop_session,
+            commands::tracing_export_trace,
+            commands::tracing_get_state,
+            commands::tracing_clear_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

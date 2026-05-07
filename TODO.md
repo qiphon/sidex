@@ -15,11 +15,11 @@
 
 ## P0：核心平台能力差距（ARCHITECTURE 标注 Partial/Not started）
 
-- [ ] powerMonitor：系统睡眠/唤醒、电源状态监听等（ARCHITECTURE：Not started）
-- [ ] contentTracing：性能追踪/采样与导出（ARCHITECTURE：Not started）
-- [ ] native-keymap：键盘布局/物理键位映射与快捷键一致性（ARCHITECTURE：Not started）
-- [ ] safeStorage/encryption：安全存储与加密能力完整对齐（ARCHITECTURE：Partial）
-- [ ] logging：对齐 void 的日志能力（日志文件、级别、持久化、崩溃日志聚合）（ARCHITECTURE：Partial）
+- [x] powerMonitor：系统睡眠/唤醒、电源状态监听等（ARCHITECTURE：Not started） - **已实现**
+- [x] contentTracing：性能追踪/采样与导出（ARCHITECTURE：Not started） - **已实现**
+- [x] native-keymap：键盘布局/物理键位映射与快捷键一致性（ARCHITECTURE：Not started） - **已实现**
+- [x] safeStorage/encryption：安全存储与加密能力完整对齐（ARCHITECTURE：Partial） - **已实现**
+- [x] logging：对齐 void 的日志能力（日志文件、级别、持久化、崩溃日志聚合）（ARCHITECTURE：Partial） - **已实现**
 
 ## P1：Workbench 功能对齐（按 void 常用能力补齐）
 

@@ -47,6 +47,13 @@ reqwest = { version = "0.12", features = [
   "brotli",
 ] }
 
+# Platform-specific dependencies
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_System_Power",
+  "Win32_System_Threading",
+] }
+
 # Compression & encoding
 flate2 = "1"
 zip = "2"
