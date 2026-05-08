@@ -22,7 +22,7 @@
   "dependencies": {
     "@microsoft/1ds-core-js": "^4.3.11",
     "@microsoft/1ds-post-js": "^4.3.11",
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "~2.10.0",
     "@tauri-apps/plugin-shell": "^2",
     "@vscode/codicons": "^0.0.45",
     "@vscode/iconv-lite-umd": "^0.7.1",
