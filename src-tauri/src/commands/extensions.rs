@@ -13,7 +13,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tauri::AppHandle;
-use tokio::sync::Mutex;
 
 /// Shared marketplace client — one HTTP connection pool per process,
 /// so searches don't re-do TCP+TLS handshakes on every keystroke.
@@ -36,7 +35,7 @@ impl MarketplaceClientState {
         }
     }
 
-    pub fn inner(&self) -> &tokio::sync::Mutex<MarketplaceClient> {
+    pub fn client(&self) -> &tokio::sync::Mutex<MarketplaceClient> {
         &self.inner
     }
 }
@@ -182,7 +181,7 @@ pub async fn extension_search_marketplace(
     query: String,
     page: u32,
 ) -> Result<Vec<MarketplaceResult>, String> {
-    let mut client = state.inner().lock().await;
+    let mut client = state.client().lock().await;
     let result = client
         .search(&query, page, 20)
         .await
@@ -344,7 +343,7 @@ pub async fn install_extension_from_marketplace(
 
     // Fetch extension metadata first to get the version
     let ext = {
-        let mut client = state.inner().lock().await;
+        let mut client = state.client().lock().await;
         client
             .get_extension(&extension_id)
             .await

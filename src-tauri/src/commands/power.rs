@@ -133,7 +133,7 @@ fn listen_power_events_windows(app: &tauri::AppHandle) {
 
     loop {
         #[allow(unsafe_code)]
-        {
+        unsafe {
             use windows::Win32::System::Power::GetSystemPowerStatus;
             use windows::Win32::System::Power::SYSTEM_POWER_STATUS;
             let mut status = SYSTEM_POWER_STATUS::default();

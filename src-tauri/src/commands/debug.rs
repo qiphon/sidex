@@ -721,7 +721,7 @@ pub async fn dap_find_marketplace_adapters(
 
     // Search marketplace
     let results = {
-        let mut client = state.inner().lock().await;
+        let mut client = state.client().lock().await;
         client
             .search(&search_query, 0, 50)
             .await
@@ -776,7 +776,7 @@ pub async fn dap_find_marketplace_adapters(
 
         // Try to get more details by fetching the extension metadata
         let ext_detail = {
-        let mut client = state.inner().lock().await;
+        let mut client = state.client().lock().await;
             client.get_extension(&ext.id).await.ok()
         };
 
@@ -836,7 +836,7 @@ pub async fn dap_install_adapter(
 
     // Fetch extension metadata
     let ext_detail = {
-        let mut client = state.inner().lock().await;
+        let mut client = state.client().lock().await;
         client
             .get_extension(&extension_id)
             .await
