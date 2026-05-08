@@ -713,7 +713,6 @@ pub async fn dap_find_marketplace_adapters(
     query: Option<String>,
     extensions_dir: Option<String>,
 ) -> Result<Vec<MarketplaceDebugAdapter>, String> {
-    use sidex_extensions::contribution_handler::process_contributions;
     use sidex_extensions::manifest::parse_manifest;
     use sidex_extensions::paths::user_extensions_dir;
 
@@ -721,7 +720,7 @@ pub async fn dap_find_marketplace_adapters(
 
     // Search marketplace
     let results = {
-        let mut client = state.client().lock().await;
+        let client = state.client().lock().await;
         client
             .search(&search_query, 0, 50)
             .await
@@ -776,7 +775,7 @@ pub async fn dap_find_marketplace_adapters(
 
         // Try to get more details by fetching the extension metadata
         let ext_detail = {
-        let mut client = state.client().lock().await;
+        let client = state.client().lock().await;
             client.get_extension(&ext.id).await.ok()
         };
 
@@ -785,7 +784,7 @@ pub async fn dap_find_marketplace_adapters(
             // The frontend should install the extension first, then scan for debuggers
             adapters.push(MarketplaceDebugAdapter {
                 extension_id: detail.id.clone(),
-                extension_name: detail.display_name,
+                extension_name: detail.display_name.clone(),
                 publisher: detail.publisher.display_name,
                 description: if detail.short_description.is_empty() {
                     detail.description
@@ -836,7 +835,7 @@ pub async fn dap_install_adapter(
 
     // Fetch extension metadata
     let ext_detail = {
-        let mut client = state.client().lock().await;
+        let client = state.client().lock().await;
         client
             .get_extension(&extension_id)
             .await
@@ -900,9 +899,9 @@ pub async fn dap_install_adapter(
         "debug-adapter-installed",
         DapInstallAdapterResult {
             extension_id: safe_id,
-            extension_name: ext_detail.display_name,
-            version: ext_detail.version,
-            registered_adapters,
+            extension_name: ext_detail.display_name.clone(),
+            version: ext_detail.version.clone(),
+            registered_adapters: registered_adapters.clone(),
         },
     );
 

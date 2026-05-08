@@ -181,7 +181,7 @@ pub async fn extension_search_marketplace(
     query: String,
     page: u32,
 ) -> Result<Vec<MarketplaceResult>, String> {
-    let mut client = state.client().lock().await;
+    let client = state.client().lock().await;
     let result = client
         .search(&query, page, 20)
         .await
@@ -343,7 +343,7 @@ pub async fn install_extension_from_marketplace(
 
     // Fetch extension metadata first to get the version
     let ext = {
-        let mut client = state.client().lock().await;
+        let client = state.client().lock().await;
         client
             .get_extension(&extension_id)
             .await
