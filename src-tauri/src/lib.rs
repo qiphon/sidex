@@ -510,16 +510,23 @@ pub fn run() {
             }
 
             // Set up deep link handler for OAuth callbacks (sidex://)
+            // Clone AppHandle for use in the closure
+            let app_handle = app.clone();
             let _listener_id = app.deep_link().on_open_url(move |event| {
                 let urls = event.urls();
                 for uri in urls {
                     log::info!("[deep-link] received URI: {}", uri.as_str());
-                    if let Some(window) = app.get_webview_window("main") {
-                        let escaped = uri.as_str().replace('\\', "\\\\").replace('\'', "\\'");
-                        let _ = window.eval(format!(
-                            "window.dispatchEvent(new CustomEvent('sidex-deep-link', {{ detail: '{escaped}' }}))"
-                        ));
-                    }
+                    let uri_str = uri.as_str().to_owned();
+                    let app_handle = app_handle.clone();
+                    // Use spawn to move the non-Send closure to the main thread
+                    tauri::async_runtime::spawn(async move {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let escaped = uri_str.replace('\\', "\\\\").replace('\'', "\\'");
+                            let _ = window.eval(format!(
+                                "window.dispatchEvent(new CustomEvent('sidex-deep-link', {{ detail: '{escaped}' }}))"
+                            ));
+                        }
+                    });
                 }
             });
             log::info!("[deep-link] handler registered with listener id: {}", _listener_id);
