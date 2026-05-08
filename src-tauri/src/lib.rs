@@ -18,6 +18,7 @@ use commands::updater::UpdateManagerState;
 use commands::watch::WatchStore;
 use commands::window::restore_and_show;
 use std::sync::Arc;
+use std::sync::Mutex;
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::Manager;
@@ -509,7 +510,7 @@ pub fn run() {
             }
 
             // Set up deep link handler for OAuth callbacks (sidex://)
-            if let Err(err) = app.deep_link().on_open_url(move |event| {
+            let _listener_id = app.deep_link().on_open_url(move |event| {
                 let urls = event.urls();
                 for uri in urls {
                     log::info!("[deep-link] received URI: {}", uri.as_str());
@@ -520,9 +521,8 @@ pub fn run() {
                         ));
                     }
                 }
-            }) {
-                log::warn!("deep link handler disabled: {err}");
-            }
+            });
+            log::info!("[deep-link] handler registered with listener id: {}", _listener_id);
 
             Ok(())
         })

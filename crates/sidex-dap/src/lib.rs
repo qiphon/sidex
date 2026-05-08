@@ -12,7 +12,7 @@ pub mod protocol;
 pub mod session;
 pub mod transport;
 
-pub use adapter::{DebugAdapterDescriptor, DebugAdapterRegistry};
+pub use adapter::{AdapterSource, DebugAdapterDescriptor, DebugAdapterRegistry};
 pub use client::DebugClient;
 pub use launch_config::{
     builtin_templates, parse_launch_json, AttachConfig, CompoundLaunchConfig, ConsoleType,
