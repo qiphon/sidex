@@ -510,8 +510,8 @@ pub fn run() {
             }
 
             // Set up deep link handler for OAuth callbacks (sidex://)
-            // Clone AppHandle for use in the closure
-            let app_handle = app.clone();
+            // Get AppHandle for use in the closure (AppHandle is Clone + Send)
+            let app_handle = app.handle().clone();
             let _listener_id = app.deep_link().on_open_url(move |event| {
                 let urls = event.urls();
                 for uri in urls {
