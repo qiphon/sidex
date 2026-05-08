@@ -720,7 +720,7 @@ pub async fn dap_find_marketplace_adapters(
 
     // Search marketplace
     let results = {
-        let client = state.client().lock().await;
+        let mut client = state.client().lock().await;
         client
             .search(&search_query, 0, 50)
             .await
@@ -898,7 +898,7 @@ pub async fn dap_install_adapter(
     let _ = app.emit(
         "debug-adapter-installed",
         DapInstallAdapterResult {
-            extension_id: safe_id,
+            extension_id: safe_id.clone(),
             extension_name: ext_detail.display_name.clone(),
             version: ext_detail.version.clone(),
             registered_adapters: registered_adapters.clone(),

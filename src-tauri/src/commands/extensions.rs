@@ -181,7 +181,7 @@ pub async fn extension_search_marketplace(
     query: String,
     page: u32,
 ) -> Result<Vec<MarketplaceResult>, String> {
-    let client = state.client().lock().await;
+    let mut client = state.client().lock().await;
     let result = client
         .search(&query, page, 20)
         .await
