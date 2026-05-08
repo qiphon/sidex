@@ -8,7 +8,7 @@
 /// - lock-screen: 屏幕锁定
 /// - unlock-screen: 屏幕解锁
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 /// 电源事件类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +38,7 @@ pub struct PowerEvent {
 
 /// 获取当前电源状态（是否在电池模式）
 #[tauri::command]
+#[allow(unsafe_code)]
 pub async fn power_monitor_get_power_status() -> Result<serde_json::Value, String> {
     #[cfg(target_os = "windows")]
     {
@@ -126,19 +127,17 @@ fn emit_power_event(app: &tauri::AppHandle, event: PowerEventType) {
 
 #[cfg(target_os = "windows")]
 fn listen_power_events_windows(app: &tauri::AppHandle) {
-    use windows::Win32::System::Power::PowerRegisterSuspendResumeNotification;
-    use windows::Win32::System::Power::DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS;
-    use windows::Win32::System::Power::POWERBROADCAST_SETTING;
-    use windows::Win32::System::Threading::GetCurrentThread;
-
     // Windows 电源事件监听需要使用 RegisterPowerSettingNotification
     // 这里简化实现，使用轮询方式
     let mut last_ac_status = false;
 
     loop {
-        unsafe {
-            let mut status = windows::Win32::System::Power::SYSTEM_POWER_STATUS::default();
-            if windows::Win32::System::Power::GetSystemPowerStatus(&mut status).is_ok() {
+        #[allow(unsafe_code)]
+        {
+            use windows::Win32::System::Power::GetSystemPowerStatus;
+            use windows::Win32::System::Power::SYSTEM_POWER_STATUS;
+            let mut status = SYSTEM_POWER_STATUS::default();
+            if GetSystemPowerStatus(&mut status).is_ok() {
                 let current_ac = status.ACLineStatus == 1;
                 if current_ac != last_ac_status {
                     emit_power_event(

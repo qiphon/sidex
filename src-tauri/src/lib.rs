@@ -21,6 +21,7 @@ use std::sync::Arc;
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg(target_os = "macos")]
 #[allow(clippy::too_many_lines)]

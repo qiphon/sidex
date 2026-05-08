@@ -341,7 +341,7 @@ pub fn dap_scan_extension_debuggers(
 ) -> Result<Vec<DebugAdapterInfo>, String> {
     use sidex_extensions::scan_extensions_for_debuggers;
 
-    let discovered = scan_extensions_for_debuggers(&extensions_dir)
+    let discovered = scan_extensions_for_debuggers(std::path::Path::new(&extensions_dir))
         .map_err(|e| format!("Failed to scan extensions: {e}"))?;
 
     let mut reg = registry.lock().map_err(|e| e.to_string())?;
@@ -776,7 +776,7 @@ pub async fn dap_find_marketplace_adapters(
 
         // Try to get more details by fetching the extension metadata
         let ext_detail = {
-            let mut client = state.inner.lock().await;
+        let mut client = state.inner().lock().await;
             client.get_extension(&ext.id).await.ok()
         };
 
@@ -836,7 +836,7 @@ pub async fn dap_install_adapter(
 
     // Fetch extension metadata
     let ext_detail = {
-        let mut client = state.inner.lock().await;
+        let mut client = state.inner().lock().await;
         client
             .get_extension(&extension_id)
             .await
