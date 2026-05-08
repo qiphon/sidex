@@ -55,7 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || 'fix-extension' }}
+          ref: fix-extension
+          fetch-depth: 0
 
       - name: test key
         run: echo ${{secrets.TEST_KEY}}
