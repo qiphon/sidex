@@ -71,6 +71,9 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
+      - name: Update Cargo.lock
+        run: cargo update --manifest-path src-tauri/Cargo.toml
+
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
