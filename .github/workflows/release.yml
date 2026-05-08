@@ -116,6 +116,23 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=12288"
         run: npm run build
 
+      - name: Ensure Tauri bundle resources exist
+        shell: bash
+        run: |
+          # These directories should be in git, but verify they exist before build
+          if [ ! -d "src-tauri/extension-host" ]; then
+            echo "ERROR: src-tauri/extension-host/ is missing!"
+            exit 1
+          fi
+          if [ ! -d "src-tauri/shell-integration" ]; then
+            echo "ERROR: src-tauri/shell-integration/ is missing!"
+            exit 1
+          fi
+          echo "extension-host contents:"
+          ls -la src-tauri/extension-host/
+          echo "shell-integration contents:"
+          ls -la src-tauri/shell-integration/
+
       - name: Unlock keychain before signing
         if: runner.os == 'macOS'
         env:
