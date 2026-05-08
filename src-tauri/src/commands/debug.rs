@@ -721,7 +721,7 @@ pub async fn dap_find_marketplace_adapters(
 
     // Search marketplace
     let results = {
-        let mut client = state.inner.lock().await;
+        let mut client = state.inner().lock().await;
         client
             .search(&search_query, 0, 50)
             .await
