@@ -71,8 +71,18 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }}
 
-      - name: Update Cargo.lock
-        run: cargo update --manifest-path src-tauri/Cargo.toml
+      - name: Fix missing dependencies in Cargo.lock
+        run: |
+          # Only add missing packages to Cargo.lock without updating existing ones
+          MISSING=0
+          if ! grep -q "tauri-plugin-deep-link" src-tauri/Cargo.lock; then
+            echo "Adding tauri-plugin-deep-link to Cargo.lock..."
+            cargo update -p tauri-plugin-deep-link --manifest-path src-tauri/Cargo.toml
+            MISSING=1
+          fi
+          if [ "$MISSING" -eq 0 ]; then
+            echo "All dependencies present in Cargo.lock"
+          fi
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
