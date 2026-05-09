@@ -1226,8 +1226,9 @@ export function getActiveDocument(): Document {
  * the main window.
  */
 export function getActiveWindow(): CodeWindow {
-	const document = getActiveDocument();
-	return (document.defaultView?.window ?? mainWindow) as CodeWindow;
+	const doc = getActiveDocument();
+	const win = (doc as Document & { defaultView?: Window | null }).defaultView;
+	return (win?.window ?? mainWindow) as CodeWindow;
 }
 
 interface IMutationObserver {
