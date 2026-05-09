@@ -32,23 +32,32 @@ let mockDocument: any = null;
 if (typeof fallbackWindow.document !== 'object') {
 	// Create mock element factory that captures document reference
 	const createMockElement = (tag: string, ns?: string) => {
+		const children: any[] = [];
+		let idValue = '';
+		let classNameValue = '';
 		const el: any = {
 			tagName: tag.toUpperCase(),
 			namespaceURI: ns,
 			ownerDocument: mockDocument,
+			get id() { return idValue; },
+			set id(val: string) { idValue = val; },
+			get className() { return classNameValue; },
+			set className(val: string) { classNameValue = val; },
 			setAttribute: () => {},
 			removeAttribute: () => {},
 			addEventListener: () => {},
 			removeEventListener: () => {},
-			appendChild: () => {},
+			appendChild: (node: any) => { children.push(node); return node; },
 			removeChild: () => {},
 			insertBefore: () => {},
 			replaceChild: () => {},
+			append: (...nodes: any[]) => { nodes.forEach(n => children.push(n)); },
+			prepend: (...nodes: any[]) => { nodes.forEach(n => children.unshift(n)); },
 			remove: () => {},
 			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
 			style: {},
-			children: [],
-			childNodes: [],
+			children: children,
+			childNodes: children,
 			parentNode: null,
 			nextSibling: null,
 			previousSibling: null,
