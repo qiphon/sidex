@@ -7,6 +7,8 @@ import * as browser from './browser.js';
 import { mainWindow } from './window.js';
 import * as platform from '../common/platform.js';
 
+const safeDocument = typeof document === 'object' ? document : undefined;
+
 export const enum KeyboardSupport {
 	Always,
 	FullScreen,
@@ -20,7 +22,7 @@ export const BrowserFeatures = {
 	clipboard: {
 		writeText:
 			platform.isNative ||
-			(document.queryCommandSupported && document.queryCommandSupported('copy')) ||
+			(safeDocument?.queryCommandSupported && safeDocument.queryCommandSupported('copy')) ||
 			!!(navigator && navigator.clipboard && navigator.clipboard.writeText),
 		readText: platform.isNative || !!(navigator && navigator.clipboard && navigator.clipboard.readText)
 	},
