@@ -41,7 +41,7 @@ export default defineConfig({
   build: {
     target: ['es2022', 'chrome100', 'safari15'],
     minify: 'esbuild',
-    sourcemap: false,
+    sourcemap: true,
     cssCodeSplit: true,
     chunkSizeWarningLimit: 5000,
     rollupOptions: {
