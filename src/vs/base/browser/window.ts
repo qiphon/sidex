@@ -18,7 +18,15 @@ export function ensureCodeWindow(targetWindow: Window, fallbackWindowId: number)
 	}
 }
 
-export const mainWindow = window as CodeWindow;
+const fallbackWindow = globalThis as typeof globalThis & Partial<CodeWindow>;
+
+if (typeof fallbackWindow.window !== 'object') {
+	Object.defineProperty(fallbackWindow, 'window', {
+		get: () => fallbackWindow
+	});
+}
+
+export const mainWindow = (typeof window === 'object' ? window : fallbackWindow) as CodeWindow;
 
 export function isAuxiliaryWindow(obj: Window): obj is CodeWindow {
 	if (obj === mainWindow) {

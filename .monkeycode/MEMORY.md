@@ -64,3 +64,11 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
   - 桌面端前端启动入口位于 `src/main.ts`，Tauri 相关全局初始化在 `boot()` 创建 workbench 后执行。
   - 打开项目文件夹通过 URL 查询参数 `folder` 传递，`navigateToFolder()` 会写入该参数并刷新页面。
   - Tauri 窗口配置位于 `src-tauri/tauri.conf.json` 和 `src-tauri/tauri.sidex-ui.conf.json`，原生文件拖放能力由 `app.windows[].dragDropEnabled` 控制。
+
+[浏览器基础模块需兼容非浏览器上下文]
+- Date: 2026-05-09
+- Context: Agent 在执行修复 `core-D_VfAFCm.js` 中 `window is not defined` 问题时发现
+- Category: 代码模式
+- Instructions:
+  - `src/vs/base/browser/` 下的基础模块可能在非浏览器上下文中被提前加载，顶层代码不能直接访问 `window` 或 `navigator`。
+  - 需要通过 `globalThis`、`typeof window`、`typeof navigator` 等方式做安全兜底，避免模块加载阶段抛错。

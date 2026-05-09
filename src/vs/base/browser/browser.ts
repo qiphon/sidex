@@ -6,6 +6,8 @@
 import { CodeWindow, mainWindow } from './window.js';
 import { Emitter } from '../common/event.js';
 
+const safeNavigator = typeof navigator === 'object' ? navigator : undefined;
+
 class WindowManager {
 	static readonly INSTANCE = new WindowManager();
 
@@ -101,7 +103,7 @@ export function isFullscreen(targetWindow: Window): boolean {
 }
 export const onDidChangeFullscreen = WindowManager.INSTANCE.onDidChangeFullscreen;
 
-const userAgent = navigator.userAgent;
+const userAgent = safeNavigator?.userAgent ?? '';
 
 export const isFirefox = userAgent.indexOf('Firefox') >= 0;
 export const isWebKit = userAgent.indexOf('AppleWebKit') >= 0;
@@ -136,7 +138,8 @@ export function isStandalone(): boolean {
 // e.g. visible is true even in fullscreen mode where the controls are hidden
 // See docs at https://developer.mozilla.org/en-US/docs/Web/API/WindowControlsOverlay/visible
 export function isWCOEnabled(): boolean {
-	return !!(navigator as Navigator & { windowControlsOverlay?: { visible: boolean } })?.windowControlsOverlay?.visible;
+	return !!(safeNavigator as Navigator & { windowControlsOverlay?: { visible: boolean } } | undefined)?.windowControlsOverlay
+		?.visible;
 }
 
 // Returns the bounding rect of the titlebar area if it is supported and defined
