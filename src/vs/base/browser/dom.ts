@@ -3041,7 +3041,7 @@ type ElementAttributeKeys<T> = Partial<{
  * container.appendChild(observer);
  * ```
  */
-export class ConnectionObserverElement extends HTMLElement {
+export class ConnectionObserverElement extends (typeof HTMLElement !== 'undefined' ? HTMLElement : class {}) {
 	public onDidConnect?: () => void;
 	public onDidDisconnect?: () => void;
 
@@ -3054,6 +3054,6 @@ export class ConnectionObserverElement extends HTMLElement {
 	}
 }
 
-if (!customElements.get('connection-observer')) {
+if (typeof customElements !== 'undefined' && !customElements.get('connection-observer')) {
 	customElements.define('connection-observer', ConnectionObserverElement);
 }
