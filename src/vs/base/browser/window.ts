@@ -26,6 +26,18 @@ if (typeof fallbackWindow.window !== 'object') {
 	});
 }
 
+if (typeof fallbackWindow.document !== 'object') {
+	Object.defineProperty(fallbackWindow, 'document', {
+		get: () => ({
+			defaultView: fallbackWindow,
+			hasFocus: () => false,
+			activeElement: null,
+			addEventListener: () => {},
+			removeEventListener: () => {}
+		})
+	});
+}
+
 export const mainWindow = (typeof window === 'object' ? window : fallbackWindow) as CodeWindow;
 
 export function isAuxiliaryWindow(obj: Window): obj is CodeWindow {
