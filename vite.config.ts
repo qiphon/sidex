@@ -68,19 +68,7 @@ export default defineConfig({
           }
           return 'assets/[name]-[hash].js';
         },
-        chunkFileNames: (chunkInfo) => {
-          // Keep worker chunks with stable names for Tauri asset protocol
-          if (chunkInfo.name && chunkInfo.name.includes('editorWebWorker')) {
-            return 'assets/editorWebWorker.js';
-          }
-          if (chunkInfo.name && chunkInfo.name.includes('textMateTokenization')) {
-            return 'assets/textMateWorker.js';
-          }
-          if (chunkInfo.name && chunkInfo.name.includes('extensionHostWorker')) {
-            return 'assets/extensionHostWorker.js';
-          }
-          return 'assets/[name]-[hash].js';
-        },
+        chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: (assetInfo) => {
           if ((assetInfo.name ?? '').endsWith('.ts')) {
             const base = (assetInfo.name ?? 'asset').slice(0, -3);

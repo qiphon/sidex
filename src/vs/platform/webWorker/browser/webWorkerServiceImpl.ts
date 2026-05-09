@@ -54,7 +54,7 @@ export class WebWorkerService implements IWebWorkerService {
 	getWorkerUrl(descriptor: WebWorkerDescriptor): string {
 		const isTauriProduction =
 			(globalThis as typeof globalThis & { __SIDEX_TAURI__?: boolean }).__SIDEX_TAURI__ === true &&
-			globalThis.location?.protocol === 'tauri:';
+			(globalThis.location?.protocol === 'tauri:' || globalThis.location?.protocol === 'https:');
 		if (isTauriProduction) {
 			if (descriptor.label === 'editorWorkerService') {
 				return `${globalThis.location.origin}/assets/editorWorker.js`;
