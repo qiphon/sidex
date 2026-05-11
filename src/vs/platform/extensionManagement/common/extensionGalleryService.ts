@@ -2017,7 +2017,14 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 				token
 			);
 
+			// Handle 4xx errors gracefully - return empty results
 			if (context.res.statusCode && context.res.statusCode >= 400 && context.res.statusCode < 500) {
+				return { galleryExtensions: [], total };
+			}
+
+			// Handle 5xx server errors gracefully - return empty results
+			// This prevents disabling extensions from failing when the gallery service is down
+			if (context.res.statusCode && context.res.statusCode >= 500) {
 				return { galleryExtensions: [], total };
 			}
 
