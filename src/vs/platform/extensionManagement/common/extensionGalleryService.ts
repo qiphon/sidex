@@ -467,16 +467,15 @@ function getRepositoryAsset(version: IRawGalleryExtensionVersion): IGalleryExten
 
 /**
  * Primary marketplace base URL for extension assets.
- * Used when the gallery response contains OpenVSX URLs for extensions
- * that don't exist on OpenVSX (e.g., Microsoft-only extensions).
+ * Points to Open VSX directly for extension downloads.
  */
-const PRIMARY_MARKETPLACE_ASSET_BASE = 'https://marketplace.siden.ai/api/gallery/publishers';
+const PRIMARY_MARKETPLACE_ASSET_BASE = 'https://open-vsx.org/api';
 
 /**
- * Check if a URL points to OpenVSX.
+ * Check if a URL points to OpenVSX or the old SideX marketplace.
  */
 function isOpenVSXUrl(url: string): boolean {
-	return url.includes('open-vsx.org');
+	return url.includes('open-vsx.org') || url.includes('marketplace.siden.ai');
 }
 
 function getDownloadAsset(
@@ -484,15 +483,15 @@ function getDownloadAsset(
 	publisher: string,
 	name: string
 ): IGalleryExtensionAsset {
-	// Rewrite OpenVSX URLs to use primary marketplace for extensions that don't exist on OpenVSX
+	// Construct direct OpenVSX download URL
+	const openVSXDownloadUrl = `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/${name}/${version.version}/file/${publisher}.${name}-${version.version}.vsix`;
 	const fallbackAssetUri = isOpenVSXUrl(version.fallbackAssetUri)
-		? `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/vsextensions/${name}/${version.version}/vspackage`
+		? openVSXDownloadUrl
 		: version.fallbackAssetUri;
 
 	return {
-		// always use fallbackAssetUri for download asset to hit the Marketplace API so that downloads are counted
-		uri: `${fallbackAssetUri}/${AssetType.VSIX}?redirect=true${version.targetPlatform ? `&targetPlatform=${version.targetPlatform}` : ''}`,
-		fallbackUri: `${fallbackAssetUri}/${AssetType.VSIX}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`
+		uri: fallbackAssetUri,
+		fallbackUri: fallbackAssetUri
 	};
 }
 
@@ -502,7 +501,7 @@ function getVersionAsset(version: IRawGalleryExtensionVersion, type: string): IG
 		return null;
 	}
 
-	// Rewrite OpenVSX URLs to use primary marketplace for extensions that don't exist on OpenVSX
+	// Use OpenVSX URLs directly
 	let assetUri = version.assetUri;
 	let fallbackAssetUri = version.fallbackAssetUri;
 
@@ -514,7 +513,8 @@ function getVersionAsset(version: IRawGalleryExtensionVersion, type: string): IG
 		);
 		if (openVSXMatch) {
 			const [, publisher, name, ver] = openVSXMatch;
-			fallbackAssetUri = `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/vsextensions/${name}/${ver}/vspackage`;
+			// Use OpenVSX API URL for assets
+			fallbackAssetUri = `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/${name}/${ver}/file`;
 			assetUri = fallbackAssetUri;
 		}
 	}

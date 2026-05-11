@@ -13,15 +13,13 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// Default marketplace base URL. Points at the `SideX` Cloudflare
-/// Worker, which merges Microsoft Marketplace + Open VSX and exposes
-/// them under an Open-VSX-compatible `/api/-/search` endpoint so this
-/// client can keep using its existing JSON schema.
+/// Default marketplace base URL. Points at Open VSX directly, which
+/// exposes a full Open-VSX-compatible `/api/-/search` endpoint.
 ///
 /// Override via `MarketplaceClient::with_base_url` (e.g. tests, or
 /// users who want to point at a self-hosted proxy or at
-/// `https://open-vsx.org/api` directly).
-const DEFAULT_BASE_URL: &str = "https://marketplace.siden.ai/api";
+/// `https://marketplace.siden.ai/api`).
+const DEFAULT_BASE_URL: &str = "https://open-vsx.org/api";
 const DEFAULT_PAGE_SIZE: u32 = 20;
 const CACHE_TTL_SECS: u64 = 300;
 
