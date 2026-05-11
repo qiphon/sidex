@@ -467,15 +467,16 @@ function getRepositoryAsset(version: IRawGalleryExtensionVersion): IGalleryExten
 
 /**
  * Primary marketplace base URL for extension assets.
- * Points to Open VSX directly for extension downloads.
+ * Used when the gallery response contains OpenVSX URLs for extensions
+ * that don't exist on OpenVSX (e.g., Microsoft-only extensions).
  */
-const PRIMARY_MARKETPLACE_ASSET_BASE = 'https://open-vsx.org/api';
+const PRIMARY_MARKETPLACE_ASSET_BASE = 'https://marketplace.siden.ai/api/gallery/publishers';
 
 /**
- * Check if a URL points to OpenVSX or the old SideX marketplace.
+ * Check if a URL points to OpenVSX.
  */
 function isOpenVSXUrl(url: string): boolean {
-	return url.includes('open-vsx.org') || url.includes('marketplace.siden.ai');
+	return url.includes('open-vsx.org');
 }
 
 function getDownloadAsset(
@@ -483,15 +484,15 @@ function getDownloadAsset(
 	publisher: string,
 	name: string
 ): IGalleryExtensionAsset {
-	// Construct direct OpenVSX download URL
-	const openVSXDownloadUrl = `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/${name}/${version.version}/file/${publisher}.${name}-${version.version}.vsix`;
+	// Rewrite OpenVSX URLs to use primary marketplace for extensions that don't exist on OpenVSX
 	const fallbackAssetUri = isOpenVSXUrl(version.fallbackAssetUri)
-		? openVSXDownloadUrl
+		? `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/vsextensions/${name}/${version.version}/vspackage`
 		: version.fallbackAssetUri;
 
 	return {
-		uri: fallbackAssetUri,
-		fallbackUri: fallbackAssetUri
+		// always use fallbackAssetUri for download asset to hit the Marketplace API so that downloads are counted
+		uri: `${fallbackAssetUri}/${AssetType.VSIX}?redirect=true${version.targetPlatform ? `&targetPlatform=${version.targetPlatform}` : ''}`,
+		fallbackUri: `${fallbackAssetUri}/${AssetType.VSIX}${version.targetPlatform ? `?targetPlatform=${version.targetPlatform}` : ''}`
 	};
 }
 
@@ -501,20 +502,19 @@ function getVersionAsset(version: IRawGalleryExtensionVersion, type: string): IG
 		return null;
 	}
 
-	// Use OpenVSX URLs directly
+	// Rewrite OpenVSX URLs to use primary marketplace for extensions that don't exist on OpenVSX
 	let assetUri = version.assetUri;
 	let fallbackAssetUri = version.fallbackAssetUri;
 
 	if (isOpenVSXUrl(fallbackAssetUri)) {
 		// Extract publisher, name, version from OpenVSX URL
-		// Format: https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version} or .../{version}/extension
+		// Format: https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}
 		const openVSXMatch = fallbackAssetUri.match(
-			/^https:\/\/open-vsx\.org\/vscode\/unpkg\/([^/]+)\/([^/]+)\/([^/]+)(?:\/extension)?/
+			/^https:\/\/open-vsx\.org\/vscode\/unpkg\/([^/]+)\/([^/]+)\/([^/]+)/
 		);
 		if (openVSXMatch) {
 			const [, publisher, name, ver] = openVSXMatch;
-			// Use OpenVSX API URL for assets
-			fallbackAssetUri = `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/${name}/${ver}/file`;
+			fallbackAssetUri = `${PRIMARY_MARKETPLACE_ASSET_BASE}/${publisher}/vsextensions/${name}/${ver}/vspackage`;
 			assetUri = fallbackAssetUri;
 		}
 	}
@@ -2017,14 +2017,7 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 				token
 			);
 
-			// Handle 4xx errors gracefully - return empty results
 			if (context.res.statusCode && context.res.statusCode >= 400 && context.res.statusCode < 500) {
-				return { galleryExtensions: [], total };
-			}
-
-			// Handle 5xx server errors gracefully - return empty results
-			// This prevents disabling extensions from failing when the gallery service is down
-			if (context.res.statusCode && context.res.statusCode >= 500) {
 				return { galleryExtensions: [], total };
 			}
 
