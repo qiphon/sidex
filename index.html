@@ -18,7 +18,7 @@
 					globalThis.__SIDEX_ARCH__ = 'arm64';
 					try {
 						const gl = document.createElement('canvas').getContext('webgl');
-						const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+						const ext = gl && gl.getExtension('WEBGL_DEBUG_RENDERER_INFO');
 						const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
 						if (renderer && /Intel/i.test(renderer) && !/Apple/i.test(renderer)) {
 							globalThis.__SIDEX_ARCH__ = 'x64';
@@ -31,6 +31,13 @@
 				globalThis.__SIDEX_ARCH__ = 'x64';
 			}
 			globalThis._VSCODE_PACKAGE_JSON = { version: '1.110.0', name: 'sidex' };
+
+			// Use local Vite proxy in development, marketplace in production
+			const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+			const galleryServiceUrl = isDev
+				? '/api/gallery'
+				: 'https://marketplace.siden.ai/api/gallery';
+
 			globalThis._VSCODE_PRODUCT_JSON = {
 				nameShort: 'SideX',
 				nameLong: 'SideX',
@@ -45,7 +52,7 @@
 				licenseName: 'MIT',
 				licenseUrl: 'https://github.com/sidenai/sidex/blob/main/LICENSE',
 				extensionsGallery: {
-					serviceUrl: 'https://marketplace.siden.ai/api/gallery',
+					serviceUrl: galleryServiceUrl,
 					itemUrl: 'https://open-vsx.org/vscode/item',
 					resourceUrlTemplate: 'https://open-vsx.org/vscode/unpkg/{publisher}/{name}/{version}/{path}',
 					controlUrl: '',
