@@ -125,6 +125,60 @@ if (typeof fallbackWindow.document !== 'object') {
 	});
 }
 
+// Fallback event classes for non-browser environments
+const createEventClass = (name: string, Base: any = Event) => {
+	if (typeof (globalThis as any)[name] !== 'undefined') return (globalThis as any)[name];
+	return class MockEvent extends Base {
+		static readonly name = name;
+		constructor(type: string, eventInitDict?: EventInit) {
+			super(type, eventInitDict);
+			(this as any)[`${name.toLowerCase()}X`] = 0;
+			(this as any)[`${name.toLowerCase()}Y`] = 0;
+			(this as any).button = 0;
+			(this as any).buttons = 0;
+			(this as any).key = '';
+			(this as any).code = '';
+			(this as any).altKey = false;
+			(this as any).ctrlKey = false;
+			(this as any).metaKey = false;
+			(this as any).shiftKey = false;
+			(this as any).target = null;
+			(this as any).currentTarget = null;
+			(this as any).relatedTarget = null;
+		}
+		preventDefault() { super.preventDefault(); }
+		stopPropagation() { super.stopPropagation(); }
+		stopImmediatePropagation() { super.stopImmediatePropagation(); }
+	};
+};
+
+if (typeof (globalThis as any).Event === 'undefined') {
+	(globalThis as any).Event = class MockEvent {
+		type: string;
+		bubbles: boolean;
+		cancelable: boolean;
+		defaultPrevented = false;
+		target: any = null;
+		currentTarget: any = null;
+		constructor(type: string, eventInitDict?: EventInit) {
+			this.type = type;
+			this.bubbles = eventInitDict?.bubbles ?? false;
+			this.cancelable = eventInitDict?.cancelable ?? false;
+		}
+		preventDefault() { this.defaultPrevented = true; }
+		stopPropagation() {}
+		stopImmediatePropagation() {}
+	};
+}
+
+const BaseEvent = (globalThis as any).Event || class {};
+const EventClasses = ['UIEvent', 'MouseEvent', 'KeyboardEvent', 'FocusEvent', 'DragEvent', 'PointerEvent', 'TouchEvent', 'WheelEvent', 'InputEvent', 'ClipboardEvent', 'CustomEvent'];
+EventClasses.forEach(name => {
+	if (typeof (globalThis as any)[name] === 'undefined') {
+		(globalThis as any)[name] = createEventClass(name, BaseEvent);
+	}
+});
+
 export const mainWindow = (typeof window === 'object' ? window : fallbackWindow) as CodeWindow;
 
 export function isAuxiliaryWindow(obj: Window): obj is CodeWindow {
