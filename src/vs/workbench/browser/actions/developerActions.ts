@@ -64,6 +64,7 @@ import { IDefaultAccountService } from '../../services/accounts/browser/nullDefa
 import { IAuthenticationService } from '../../services/authentication/common/authentication.js';
 import { IAuthenticationAccessService } from '../../services/authentication/browser/authenticationAccessService.js';
 import { IPolicyService } from '../../../platform/policy/common/policy.js';
+import { IExtensionService } from '../../services/extensions/common/extensions.js';
 
 class InspectContextKeysAction extends Action2 {
 	constructor() {
@@ -804,6 +805,23 @@ class StopTrackDisposables extends Action2 {
 	}
 }
 
+class RestartExtensionHostAction extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.restartExtensionHost',
+			title: localize2('restartExtensionHost', 'Restart Extension Host'),
+			category: Categories.Developer,
+			f1: true
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const extensionService = accessor.get(IExtensionService);
+		await extensionService.stopExtensionHosts();
+		extensionService.startExtensionHosts();
+	}
+}
+
 class PolicyDiagnosticsAction extends Action2 {
 	constructor() {
 		super({
@@ -1067,6 +1085,7 @@ registerAction2(LogStorageAction);
 registerAction2(LogWorkingCopiesAction);
 registerAction2(RemoveLargeStorageEntriesAction);
 registerAction2(PolicyDiagnosticsAction);
+registerAction2(RestartExtensionHostAction);
 if (!product.commit) {
 	registerAction2(StartTrackDisposables);
 	registerAction2(SnapshotTrackedDisposables);
