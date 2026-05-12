@@ -20,6 +20,7 @@ const ALLOWED_HOSTS: &[&str] = &[
     "az764295.vo.msecnd.net",
     "vscode-unpkg.net",
     "gallery.vsassets.io",
+    "gallerycdn.vsassets.io",
     "vsmarketplacebadges.dev",
     "vscode.blob.core.windows.net",
     // VS Code asset CDN (VSIX packages + icons)

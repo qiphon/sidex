@@ -877,6 +877,52 @@ export class WebExtensionsScannerService extends Disposable implements IWebExten
 		galleryExtension: IGalleryExtension,
 		metadata?: Metadata
 	): Promise<IWebExtension> {
+		const isSidexTauri = (globalThis as any).__SIDEX_TAURI__ === true;
+
+		// In Tauri mode, prefer the gallery asset URLs over the resourceUrlTemplate.
+		// The template may point to a different marketplace (e.g., OpenVSX) that doesn't
+		// have extensions from the Microsoft Marketplace proxy.
+		if (isSidexTauri && galleryExtension.assets.manifest) {
+			const manifestUri = URI.parse(galleryExtension.assets.manifest.uri);
+			// Derive the extension root from the manifest URL (parent directory).
+			// The manifest URL points to package.json or the manifest asset itself.
+			const manifestPath = manifestUri.path;
+			const parentPath = manifestPath.substring(0, manifestPath.lastIndexOf('/'));
+			const extensionLocation = manifestUri.with({ path: parentPath });
+
+			// Try fetching the manifest from the gallery asset URL. If it fails,
+			// fall back to the template-based approach.
+			try {
+				const manifestContent = await this.extensionResourceLoaderService.readExtensionResource(manifestUri);
+				const manifest = JSON.parse(manifestContent) as IExtensionManifest;
+
+				// Get package.nls.json from the same location
+				let fallbackPackageNLSUri: URI | null = null;
+				try {
+					const nlsUri = joinPath(extensionLocation, 'package.nls.json');
+					await this.extensionResourceLoaderService.readExtensionResource(nlsUri);
+					fallbackPackageNLSUri = nlsUri;
+				} catch {
+					fallbackPackageNLSUri = null;
+				}
+
+				return this.toWebExtension(
+					extensionLocation,
+					galleryExtension.identifier,
+					manifest,
+					undefined,
+					fallbackPackageNLSUri,
+					galleryExtension.assets.readme ? URI.parse(galleryExtension.assets.readme.uri) : undefined,
+					galleryExtension.assets.changelog ? URI.parse(galleryExtension.assets.changelog.uri) : undefined,
+					metadata
+				);
+			} catch (error) {
+				this.logService.warn(
+					`Failed to fetch manifest from gallery asset URL, falling back to template: ${getErrorMessage(error)}`
+				);
+			}
+		}
+
 		const extensionLocation = await this.extensionResourceLoaderService.getExtensionGalleryResourceURL(
 			{
 				publisher: galleryExtension.publisher,
