@@ -161,16 +161,27 @@ class TauriGitGraphFileProvider implements IFileSystemProvider {
 	}
 
 	async readFile(resource: URI): Promise<Uint8Array> {
+		console.log('[TauriGitGraph] Reading file from URI:', resource.toString());
+		console.log('[TauriGitGraph] URI details:', {
+			scheme: resource.scheme,
+			path: resource.path,
+			query: resource.query,
+			authority: resource.authority
+		});
+		
 		const invoke = await getTauriInvoke();
 		if (!invoke) {
+			console.log('[TauriGitGraph] No invoke available');
 			return new Uint8Array();
 		}
 
 		// Decode base64 query parameter
-		const queryParams = decodeGitGraphQuery(resource.query);
+		const queryParams = decodeGitGraphQuery(resource);
 		if (!queryParams) {
+			console.log('[TauriGitGraph] Failed to decode query params');
 			return new Uint8Array();
 		}
+		console.log('[TauriGitGraph] Decoded query params:', queryParams);
 
 		const repoPath = queryParams.repo || this._workspaceRoot;
 		const commit = queryParams.commit;
@@ -199,7 +210,15 @@ class TauriGitGraphFileProvider implements IFileSystemProvider {
 	}
 }
 
-function decodeGitGraphQuery(query: string | null): GitGraphQueryParams | null {
+function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
+	let query = resource.query;
+	if (!query && resource.path && resource.path.includes('?')) {
+		// Handle case where query is in the path (e.g., git-graph:file.ts?base64)
+		const parts = resource.path.split('?');
+		if (parts.length > 1) {
+			query = parts[1];
+		}
+	}
 	if (!query) {
 		return null;
 	}
