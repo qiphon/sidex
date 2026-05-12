@@ -7,7 +7,12 @@
 	<meta http-equiv="Content-Security-Policy"
 		content="default-src 'none'; script-src 'unsafe-inline' 'self' https://tauri.localhost https://*.tauri.localhost; frame-src 'self' https://tauri.localhost https://*.tauri.localhost; style-src 'unsafe-inline'; img-src 'self' https: data: blob: https://tauri.localhost https://*.tauri.localhost asset:; font-src 'self' https: data: https://tauri.localhost; connect-src 'self' https://tauri.localhost https://*.tauri.localhost ws://localhost:*;">
 
-	<!-- Disable pinch zooming -->
+	<!-- Enable document.write for webview content -->
+	<script>
+		document.addEventListener('securitypolicyviolation', function(e) {
+			console.warn('[Webview] CSP violation:', e.violatedDirective, e.blockedURI);
+		});
+	</script>
 	<meta name="viewport"
 		content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
 </head>

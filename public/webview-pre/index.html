@@ -7,7 +7,12 @@
 	<meta http-equiv="Content-Security-Policy"
 		content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; font-src * data:; img-src * data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval'; frame-src *;">
 
-	<!-- Disable pinch zooming -->
+	<!-- Enable document.write for webview content -->
+	<script>
+		document.addEventListener('securitypolicyviolation', function(e) {
+			console.warn('[Webview] CSP violation:', e.violatedDirective, e.blockedURI);
+		});
+	</script>
 	<meta name="viewport"
 		content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
 </head>
