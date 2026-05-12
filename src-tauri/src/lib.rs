@@ -718,6 +718,7 @@ pub fn run() {
             commands::git_submodule_init,
             commands::git_submodule_update,
             commands::git_tag,
+            commands::git_find_repos,
             commands::extension_platform_bootstrap,
             commands::extension_platform_status,
             commands::extension_platform_restart,

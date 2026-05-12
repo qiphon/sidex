@@ -542,3 +542,14 @@ pub async fn git_get_remotes(path: String) -> Result<Vec<RemoteInfo>, String> {
     let repo = Path::new(&path);
     sidex_git::get_remotes(repo).map_err(git_err)
 }
+
+#[tauri::command]
+pub async fn git_find_repos(path: String, max_depth: Option<usize>) -> Result<Vec<String>, String> {
+    log::info!("git_find_repos called with path: {:?}, max_depth: {:?}", path, max_depth);
+    validate_path(&path)?;
+    let depth = max_depth.unwrap_or(3);
+    let repos = sidex_git::find_git_repos(Path::new(&path), depth);
+    let result: Vec<String> = repos.into_iter().map(|p| p.to_string_lossy().to_string()).collect();
+    log::info!("git_find_repos returning {} repositories: {:?}", result.len(), result);
+    Ok(result)
+}

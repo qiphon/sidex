@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cmd::{git_command, run_git};
 use crate::error::GitResult;
+use log::{debug, info, warn};
 
 /// Walk up from `path` to find the `.git` directory, returning the repo root.
 pub fn find_repo_root(path: &Path) -> Option<PathBuf> {
@@ -30,6 +31,62 @@ pub fn is_git_repo(path: &Path) -> bool {
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
         .is_ok_and(|o| o.status.success())
+}
+
+/// Find all git repositories in the given directory and its subdirectories up to the specified depth.
+/// Returns a list of repository root paths.
+pub fn find_git_repos(path: &Path, max_depth: usize) -> Vec<PathBuf> {
+    info!("Searching for git repositories in {:?} with max depth: {}", path, max_depth);
+    let mut repos = Vec::new();
+    
+    match std::fs::read_dir(path) {
+        Ok(entries) => {
+            debug!("Successfully opened directory for scanning: {:?}", path);
+            find_git_repos_recursive(path, entries, 0, max_depth, &mut repos);
+        },
+        Err(e) => {
+            warn!("Failed to open directory {:?} for scanning: {}", path, e);
+        }
+    }
+    
+    info!("Scan complete. Found {} git repositories.", repos.len());
+    repos
+}
+
+fn find_git_repos_recursive(
+    _parent: &Path,
+    entries: std::fs::ReadDir,
+    depth: usize,
+    max_depth: usize,
+    repos: &mut Vec<PathBuf>,
+) {
+    for entry in entries.flatten() {
+        let path = entry.path();
+        debug!("Scanning item: {:?} at depth {}", path, depth);
+        
+        let git_dir = path.join(".git");
+        if git_dir.exists() {
+            debug!("Found git repository at {:?}", path);
+            repos.push(path);
+            continue;
+        } else {
+            debug!("No .git directory at {:?}", git_dir);
+        }
+        
+        if depth < max_depth && path.is_dir() {
+            debug!("Recursing into subdirectory {:?} at depth {}", path, depth);
+            match std::fs::read_dir(&path) {
+                Ok(entries) => {
+                    find_git_repos_recursive(&path, entries, depth + 1, max_depth, repos);
+                },
+                Err(e) => {
+                    warn!("Failed to open subdirectory {:?}: {}", path, e);
+                }
+            }
+        } else if depth >= max_depth {
+            debug!("Reached max depth ({}) at {:?}, not recursing further", max_depth, path);
+        }
+    }
 }
 
 /// The name of the current branch (e.g. `"main"`).

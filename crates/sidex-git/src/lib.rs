@@ -28,5 +28,5 @@ pub use operations::{
     MergeResult, PullResult, PushResult, RebaseResult, RemoteInfo, StashAction, StashEntry,
     SubmoduleInfo, TagInfo,
 };
-pub use repo::{current_branch, find_repo_root, is_git_repo, remotes};
+pub use repo::{current_branch, find_git_repos, find_repo_root, is_git_repo, remotes};
 pub use status::{FileStatus, StatusEntry};

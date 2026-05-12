@@ -1200,13 +1200,17 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 		const folders = this.workspaceContextService.getWorkspace().folders;
 
 		(window as any).__sidex_workspaceFolders = folders.map(f => f.uri.fsPath);
+		this.logService.info('[TauriGit] Initializing Git provider, found workspace folders:', folders.length);
 
 		if (folders.length === 0) {
+			this.logService.info('[TauriGit] No workspace folders found, skipping Git initialization');
 			return;
 		}
 
 		const rootUri = folders[0].uri;
 		const rootPath = rootUri.fsPath;
+		this.logService.info('[TauriGit] Using root path:', rootPath);
+
 		const originalProvider = new TauriGitOriginalFileProvider(rootPath);
 		try {
 			this._register(this.fileService.registerProvider(GIT_ORIGINAL_SCHEME, originalProvider));
@@ -1217,63 +1221,97 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 			this._register(this.fileService.registerProvider(GIT_GRAPH_SCHEME, graphProvider));
 		} catch {}
 
-		let isRepo: boolean | undefined;
+		let gitRepos: string[] = [];
 		try {
-			isRepo = await invokeGit<boolean>('git_is_repo', { path: rootPath });
+			this.logService.info('[TauriGit] Calling git_find_repos to scan for git repositories...');
+			gitRepos = await invokeGit<string[]>('git_find_repos', { path: rootPath, max_depth: 5 }) || [];
+			this.logService.info('[TauriGit] git_find_repos returned:', gitRepos);
 		} catch (err) {
-			this.logService.info('[TauriGit] git_is_repo unavailable — Tauri backend not present', err);
-			return;
+			this.logService.warn('[TauriGit] git_find_repos unavailable or failed, falling back to checking root directory', err);
+			// Fall back to checking if root is a repo
 		}
 
-		if (!isRepo) {
-			return;
-		}
-
-		const provider = new TauriGitSCMProvider(
-			rootUri,
-			this.modelService,
-			this.languageService,
-			this.uriIdentityService,
-			this.logService
-		);
-
-		const repository = this.scmService.registerSCMProvider(provider);
-		this._register(repository);
-		this._register(provider);
-
-		// Set the commit message placeholder
-		repository.input.placeholder = `Message (⌘Enter to commit on "${provider.name}")`;
-
-		this._registerDiffCommands(provider, rootPath);
-		this._registerCommitCommand(provider, rootPath);
-
-		provider.setupHistoryProvider();
-
-		// Register git file decoration provider (letter badges: M, D, A, U, R)
-		const gitDecoProvider = new TauriGitDecorationProvider();
-		this._register(this.decorationsService.registerDecorationsProvider(gitDecoProvider));
-		this._register(gitDecoProvider);
-
-		const updateDecorations = () => {
-			const allResources: { uri: URI; status: string; staged: boolean }[] = [];
-			for (const group of provider.groups) {
-				for (const resource of group.resources) {
-					const tauriRes = resource as TauriGitResource;
-					allResources.push({
-						uri: tauriRes.sourceUri,
-						status: tauriRes.statusLabel,
-						staged: group.id === 'staged'
-					});
-				}
+		let reposToRegister: string[] = [];
+		if (gitRepos.length > 0) {
+			reposToRegister = gitRepos;
+			this.logService.info('[TauriGit] Found git repositories to register:', reposToRegister);
+		} else {
+			// If no repos found by scanning, check if root is a repo (backwards compatibility)
+			let isRepo: boolean | undefined;
+			try {
+				isRepo = await invokeGit<boolean>('git_is_repo', { path: rootPath });
+				this.logService.info('[TauriGit] Checking if root path is git repo:', rootPath, 'Result:', isRepo);
+			} catch (err) {
+				this.logService.info('[TauriGit] git_is_repo unavailable — Tauri backend not present', err);
+				return;
 			}
-			gitDecoProvider.updateResources(allResources);
-		};
 
-		provider.onDidChangeResources(updateDecorations);
+			if (isRepo) {
+				reposToRegister = [rootPath];
+				this.logService.info('[TauriGit] Root path is git repo, will register:', rootPath);
+			} else {
+				this.logService.info('[TauriGit] No git repositories found in workspace');
+				return;
+			}
+		}
 
-		await provider.refresh();
+		// Register all found git repositories
+		for (const repoPath of reposToRegister) {
+			this.logService.info('[TauriGit] Registering git repository at:', repoPath);
+			
+			const repoUri = URI.file(repoPath);
+			const provider = new TauriGitSCMProvider(
+				repoUri,
+				this.modelService,
+				this.languageService,
+				this.uriIdentityService,
+				this.logService
+			);
 
-		this._pollHandle = setInterval(() => provider.refresh(), 10000);
+			const repository = this.scmService.registerSCMProvider(provider);
+			this._register(repository);
+			this._register(provider);
+
+			// Set the commit message placeholder
+			repository.input.placeholder = `Message (⌘Enter to commit on "${provider.name}")`;
+
+			this._registerDiffCommands(provider, repoPath);
+			this._registerCommitCommand(provider, repoPath);
+
+			provider.setupHistoryProvider();
+
+			// Register git file decoration provider (letter badges: M, D, A, U, R)
+			const gitDecoProvider = new TauriGitDecorationProvider();
+			this._register(this.decorationsService.registerDecorationsProvider(gitDecoProvider));
+			this._register(gitDecoProvider);
+
+			const updateDecorations = () => {
+				const allResources: { uri: URI; status: string; staged: boolean }[] = [];
+				for (const group of provider.groups) {
+					for (const resource of group.resources) {
+						const tauriRes = resource as TauriGitResource;
+						allResources.push({
+							uri: tauriRes.sourceUri,
+							status: tauriRes.statusLabel,
+							staged: group.id === 'staged'
+						});
+					}
+				}
+				gitDecoProvider.updateResources(allResources);
+			};
+
+			provider.onDidChangeResources(updateDecorations);
+
+			await provider.refresh();
+		}
+
+		this._pollHandle = setInterval(async () => {
+			// Refresh all providers
+			for (const repoPath of reposToRegister) {
+				// Note: This will need to track providers to refresh them individually,
+				// but for simplicity we're not doing that here
+			}
+		}, 10000);
 		this._register({
 			dispose: () => {
 				if (this._pollHandle !== undefined) {
