@@ -1055,7 +1055,7 @@
 				const sandboxRules = new Set(['allow-same-origin', 'allow-pointer-lock', 'allow-scripts', 'allow-downloads', 'allow-forms']);
 				newFrame.setAttribute('sandbox', Array.from(sandboxRules).join(' '));
 
-				const allowRules = ['cross-origin-isolated;', 'autoplay;', 'local-network-access;'];
+				const allowRules = ['cross-origin-isolated;', 'autoplay;'];
 				if (!isFirefox && options.allowScripts) {
 					allowRules.push('clipboard-read;', 'clipboard-write;');
 				}
