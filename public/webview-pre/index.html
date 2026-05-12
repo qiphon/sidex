@@ -921,22 +921,13 @@
 				}
 			}
 
-			// Check for CSP
-			const csp = newDocument.querySelector('meta[http-equiv="Content-Security-Policy"]');
-			if (!csp) {
-				hostMessaging.postMessage('no-csp-found', undefined);
-			} else {
-				try {
-					// Attempt to rewrite CSPs that hardcode old-style resource endpoint
-					const cspContent = csp.getAttribute('content');
-					if (cspContent) {
-						const newCsp = cspContent.replace(/(vscode-webview-resource|vscode-resource):(?=(\s|;|$))/g, data.cspSource);
-						csp.setAttribute('content', newCsp);
-					}
-				} catch (e) {
-					console.error(`Could not rewrite csp: ${e}`);
-				}
-			}
+			// Remove any CSP meta tags from extension content to avoid nonce conflicts
+			const cspMetaTags = newDocument.querySelectorAll('meta[http-equiv="Content-Security-Policy"]');
+			cspMetaTags.forEach(tag => {
+				console.log('[Webview] Removing extension CSP to avoid nonce conflicts');
+				tag.remove();
+			});
+			hostMessaging.postMessage('no-csp-found', undefined);
 
 			// set DOCTYPE for newDocument explicitly as DOMParser.parseFromString strips it off
 			// and DOCTYPE is needed in the iframe to ensure that the user agent stylesheet is correctly overridden
