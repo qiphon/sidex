@@ -1221,97 +1221,83 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 			this._register(this.fileService.registerProvider(GIT_GRAPH_SCHEME, graphProvider));
 		} catch {}
 
-		let gitRepos: string[] = [];
+		let selectedRepoPath: string | null = null;
 		try {
 			this.logService.info('[TauriGit] Calling git_find_repos to scan for git repositories...');
-			gitRepos = await invokeGit<string[]>('git_find_repos', { path: rootPath, max_depth: 5 }) || [];
+			const gitRepos = await invokeGit<string[]>('git_find_repos', { path: rootPath, max_depth: 5 }) || [];
 			this.logService.info('[TauriGit] git_find_repos returned:', gitRepos);
+
+			if (gitRepos.length > 0) {
+				selectedRepoPath = gitRepos[0]; // 暂时只使用第一个找到的仓库
+				this.logService.info('[TauriGit] Using git repository at:', selectedRepoPath);
+			} else {
+				this.logService.info('[TauriGit] No repositories found by scan, checking root...');
+			}
 		} catch (err) {
 			this.logService.warn('[TauriGit] git_find_repos unavailable or failed, falling back to checking root directory', err);
-			// Fall back to checking if root is a repo
 		}
 
-		let reposToRegister: string[] = [];
-		if (gitRepos.length > 0) {
-			reposToRegister = gitRepos;
-			this.logService.info('[TauriGit] Found git repositories to register:', reposToRegister);
-		} else {
-			// If no repos found by scanning, check if root is a repo (backwards compatibility)
-			let isRepo: boolean | undefined;
-			try {
-				isRepo = await invokeGit<boolean>('git_is_repo', { path: rootPath });
-				this.logService.info('[TauriGit] Checking if root path is git repo:', rootPath, 'Result:', isRepo);
-			} catch (err) {
-				this.logService.info('[TauriGit] git_is_repo unavailable — Tauri backend not present', err);
-				return;
-			}
-
-			if (isRepo) {
-				reposToRegister = [rootPath];
-				this.logService.info('[TauriGit] Root path is git repo, will register:', rootPath);
-			} else {
-				this.logService.info('[TauriGit] No git repositories found in workspace');
-				return;
-			}
+		let isRepo: boolean = false;
+		let finalRepoPath = selectedRepoPath || rootPath;
+		try {
+			isRepo = await invokeGit<boolean>('git_is_repo', { path: finalRepoPath }) || false;
+			this.logService.info('[TauriGit] Checking if path is git repo:', finalRepoPath, 'Result:', isRepo);
+		} catch (err) {
+			this.logService.info('[TauriGit] git_is_repo unavailable — Tauri backend not present', err);
+			return;
 		}
 
-		// Register all found git repositories
-		for (const repoPath of reposToRegister) {
-			this.logService.info('[TauriGit] Registering git repository at:', repoPath);
-			
-			const repoUri = URI.file(repoPath);
-			const provider = new TauriGitSCMProvider(
-				repoUri,
-				this.modelService,
-				this.languageService,
-				this.uriIdentityService,
-				this.logService
-			);
+		if (!isRepo) {
+			this.logService.info('[TauriGit] No git repositories found, skipping Git initialization');
+			return;
+		}
 
-			const repository = this.scmService.registerSCMProvider(provider);
-			this._register(repository);
-			this._register(provider);
+		const finalRepoUri = URI.file(finalRepoPath);
+		const provider = new TauriGitSCMProvider(
+			finalRepoUri,
+			this.modelService,
+			this.languageService,
+			this.uriIdentityService,
+			this.logService
+		);
 
-			// Set the commit message placeholder
-			repository.input.placeholder = `Message (⌘Enter to commit on "${provider.name}")`;
+		const repository = this.scmService.registerSCMProvider(provider);
+		this._register(repository);
+		this._register(provider);
 
-			this._registerDiffCommands(provider, repoPath);
-			this._registerCommitCommand(provider, repoPath);
+		// Set the commit message placeholder
+		repository.input.placeholder = `Message (⌘Enter to commit on "${provider.name}")`;
 
-			provider.setupHistoryProvider();
+		this._registerDiffCommands(provider, finalRepoPath);
+		this._registerCommitCommand(provider, finalRepoPath);
 
-			// Register git file decoration provider (letter badges: M, D, A, U, R)
-			const gitDecoProvider = new TauriGitDecorationProvider();
-			this._register(this.decorationsService.registerDecorationsProvider(gitDecoProvider));
-			this._register(gitDecoProvider);
+		provider.setupHistoryProvider();
 
-			const updateDecorations = () => {
-				const allResources: { uri: URI; status: string; staged: boolean }[] = [];
-				for (const group of provider.groups) {
-					for (const resource of group.resources) {
-						const tauriRes = resource as TauriGitResource;
-						allResources.push({
-							uri: tauriRes.sourceUri,
-							status: tauriRes.statusLabel,
-							staged: group.id === 'staged'
-						});
-					}
+		// Register git file decoration provider (letter badges: M, D, A, U, R)
+		const gitDecoProvider = new TauriGitDecorationProvider();
+		this._register(this.decorationsService.registerDecorationsProvider(gitDecoProvider));
+		this._register(gitDecoProvider);
+
+		const updateDecorations = () => {
+			const allResources: { uri: URI; status: string; staged: boolean }[] = [];
+			for (const group of provider.groups) {
+				for (const resource of group.resources) {
+					const tauriRes = resource as TauriGitResource;
+					allResources.push({
+						uri: tauriRes.sourceUri,
+						status: tauriRes.statusLabel,
+						staged: group.id === 'staged'
+					});
 				}
-				gitDecoProvider.updateResources(allResources);
-			};
-
-			provider.onDidChangeResources(updateDecorations);
-
-			await provider.refresh();
-		}
-
-		this._pollHandle = setInterval(async () => {
-			// Refresh all providers
-			for (const repoPath of reposToRegister) {
-				// Note: This will need to track providers to refresh them individually,
-				// but for simplicity we're not doing that here
 			}
-		}, 10000);
+			gitDecoProvider.updateResources(allResources);
+		};
+
+		provider.onDidChangeResources(updateDecorations);
+
+		await provider.refresh();
+
+		this._pollHandle = setInterval(() => provider.refresh(), 10000);
 		this._register({
 			dispose: () => {
 				if (this._pollHandle !== undefined) {
