@@ -140,7 +140,14 @@ class TauriGitGraphFileProvider implements IFileSystemProvider {
 		return Disposable.None;
 	}
 
-	async stat(_resource: URI): Promise<IStat> {
+	async stat(resource: URI): Promise<IStat> {
+		console.log('[TauriGitGraph] stat called for:', resource.toString());
+		console.log('[TauriGitGraph] stat resource details:', {
+			scheme: resource.scheme,
+			path: resource.path,
+			query: resource.query,
+			authority: resource.authority
+		});
 		return { type: FileType.File, ctime: 0, mtime: 0, size: 0, permissions: FilePermission.Readonly };
 	}
 
@@ -211,23 +218,51 @@ class TauriGitGraphFileProvider implements IFileSystemProvider {
 }
 
 function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
-	let query = resource.query;
-	if (!query && resource.path && resource.path.includes('?')) {
-		// Handle case where query is in the path (e.g., git-graph:file.ts?base64)
+	console.log('[TauriGitGraph] decodeGitGraphQuery called with:', resource.toString());
+	
+	// Try to extract base64 data from anywhere in the URI
+	let base64Data: string | null = null;
+	
+	// First, check standard query parameter
+	if (resource.query) {
+		base64Data = resource.query;
+	}
+	
+	// If not found, check if path contains '?'
+	if (!base64Data && resource.path && resource.path.includes('?')) {
 		const parts = resource.path.split('?');
 		if (parts.length > 1) {
-			query = parts[1];
+			base64Data = parts[1];
 		}
 	}
-	if (!query) {
+	
+	// If still not found, check the entire URI string
+	if (!base64Data) {
+		const uriString = resource.toString();
+		if (uriString.includes('?')) {
+			const parts = uriString.split('?');
+			if (parts.length > 1) {
+				base64Data = parts[1];
+			}
+		}
+	}
+	
+	if (!base64Data) {
+		console.log('[TauriGitGraph] No base64 data found in URI');
 		return null;
 	}
+	
+	console.log('[TauriGitGraph] Found base64 data:', base64Data.substring(0, 50) + '...');
+	
 	try {
 		// Decode URL-encoded base64 string
-		const decoded = decodeURIComponent(query);
+		const decoded = decodeURIComponent(base64Data);
 		const json = atob(decoded);
-		return JSON.parse(json);
-	} catch {
+		const result = JSON.parse(json);
+		console.log('[TauriGitGraph] Successfully decoded:', result);
+		return result;
+	} catch (err) {
+		console.log('[TauriGitGraph] Decode error:', err);
 		return null;
 	}
 }
@@ -1232,13 +1267,21 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 
 		const originalProvider = new TauriGitOriginalFileProvider(rootPath);
 		try {
+			this.logService.info('[TauriGit] Registering TauriGitOriginalFileProvider for scheme:', GIT_ORIGINAL_SCHEME);
 			this._register(this.fileService.registerProvider(GIT_ORIGINAL_SCHEME, originalProvider));
-		} catch {}
+			this.logService.info('[TauriGit] TauriGitOriginalFileProvider registered successfully');
+		} catch (err) {
+			this.logService.error('[TauriGit] Failed to register TauriGitOriginalFileProvider:', err);
+		}
 
 		const graphProvider = new TauriGitGraphFileProvider(rootPath);
 		try {
+			this.logService.info('[TauriGit] Registering TauriGitGraphFileProvider for scheme:', GIT_GRAPH_SCHEME);
 			this._register(this.fileService.registerProvider(GIT_GRAPH_SCHEME, graphProvider));
-		} catch {}
+			this.logService.info('[TauriGit] TauriGitGraphFileProvider registered successfully');
+		} catch (err) {
+			this.logService.error('[TauriGit] Failed to register TauriGitGraphFileProvider:', err);
+		}
 
 		let selectedRepoPath: string | null = null;
 		try {
