@@ -43,6 +43,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { ITextModelService, ITextModelContentProvider } from '../../../../editor/common/services/resolverService.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { FileSystemProviderCapabilities, FileType, FilePermission } from '../../../../platform/files/common/files.js';
@@ -332,6 +333,70 @@ class TauriGitOriginalFileProvider implements IFileSystemProvider {
 
 	async writeFile(_resource: URI, _content: Uint8Array, _opts: IFileWriteOptions): Promise<void> {
 		throw new Error('git-original is read-only');
+	}
+}
+
+// ─── Git Graph Content Provider (TextModelContentProvider) ─────────────────
+
+class TauriGitGraphContentProvider implements ITextModelContentProvider {
+	constructor(
+		private readonly _workspaceRoot: string,
+		private readonly _modelService: IModelService,
+		private readonly _languageService: ILanguageService
+	) {}
+
+	async provideTextContent(resource: URI): Promise<ITextModel | null> {
+		console.log('[TauriGitGraph] provideTextContent called for:', resource.toString());
+		console.log('[TauriGitGraph] URI details:', {
+			scheme: resource.scheme,
+			path: resource.path,
+			query: resource.query,
+			authority: resource.authority
+		});
+
+		const invoke = await getTauriInvoke();
+		if (!invoke) {
+			console.log('[TauriGitGraph] No invoke available');
+			return null;
+		}
+
+		// Decode base64 query parameter
+		const queryParams = decodeGitGraphQuery(resource);
+		if (!queryParams) {
+			console.log('[TauriGitGraph] Failed to decode query params');
+			return null;
+		}
+		console.log('[TauriGitGraph] Decoded query params:', queryParams);
+
+		const repoPath = queryParams.repo || this._workspaceRoot;
+		const commit = queryParams.commit;
+		const filePath = queryParams.filePath;
+
+		let content: string | null = null;
+		try {
+			const revFile = `${commit}:${filePath}`;
+			content = (await invoke('git_run', {
+				path: repoPath,
+				args: ['show', revFile]
+			})) as string;
+		} catch {
+			try {
+				const bytes = (await invoke('git_show', { path: repoPath, file: filePath })) as number[];
+				content = new TextDecoder().decode(new Uint8Array(bytes));
+			} catch {
+				console.log('[TauriGitGraph] Failed to read file');
+				return null;
+			}
+		}
+
+		if (content === null) {
+			return null;
+		}
+
+		// Create a text model
+		const languageSelection = this._languageService.createByFilepathOrFirstLine(resource, content);
+		const model = this._modelService.createModel(content, languageSelection, resource);
+		return model;
 	}
 }
 
@@ -1243,7 +1308,8 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 		@ILogService private readonly logService: ILogService,
 		@IFileService private readonly fileService: IFileService,
 		@IDecorationsService private readonly decorationsService: IDecorationsService,
-		@IQuickInputService quickInputService: IQuickInputService
+		@IQuickInputService quickInputService: IQuickInputService,
+		@ITextModelService private readonly textModelService: ITextModelService
 	) {
 		super();
 		(globalThis as any).__sidex_quickInputService = quickInputService;
@@ -1274,13 +1340,13 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 			this.logService.error('[TauriGit] Failed to register TauriGitOriginalFileProvider:', err);
 		}
 
-		const graphProvider = new TauriGitGraphFileProvider(rootPath);
+		const graphContentProvider = new TauriGitGraphContentProvider(rootPath, this.modelService, this.languageService);
 		try {
-			this.logService.info('[TauriGit] Registering TauriGitGraphFileProvider for scheme:', GIT_GRAPH_SCHEME);
-			this._register(this.fileService.registerProvider(GIT_GRAPH_SCHEME, graphProvider));
-			this.logService.info('[TauriGit] TauriGitGraphFileProvider registered successfully');
+			this.logService.info('[TauriGit] Registering TauriGitGraphContentProvider for scheme:', GIT_GRAPH_SCHEME);
+			this._register(this.textModelService.registerTextModelContentProvider(GIT_GRAPH_SCHEME, graphContentProvider));
+			this.logService.info('[TauriGit] TauriGitGraphContentProvider registered successfully');
 		} catch (err) {
-			this.logService.error('[TauriGit] Failed to register TauriGitGraphFileProvider:', err);
+			this.logService.error('[TauriGit] Failed to register TauriGitGraphContentProvider:', err);
 		}
 
 		let selectedRepoPath: string | null = null;
