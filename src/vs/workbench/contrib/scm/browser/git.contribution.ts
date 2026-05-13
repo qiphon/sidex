@@ -267,39 +267,60 @@ function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
 	console.log('[TauriGitGraph] Found base64 data (first 100 chars):', base64Data.substring(0, 100));
 	
 	try {
-		// Try to decode the base64 data
-		let decoded: string;
+		// Try to decode the base64 data with multiple strategies
+		let decoded: string | null = null;
+		
+		// Strategy 1: URL decode then base64 decode (most common for Git Graph)
 		try {
-			// First try direct base64 decode
-			decoded = atob(base64Data);
-			console.log('[TauriGitGraph] Decoded directly from base64');
-		} catch {
-			// If that fails, try URL decoding first
+			const urlDecoded = decodeURIComponent(base64Data);
+			console.log('[TauriGitGraph] After URL decode:', urlDecoded.substring(0, 50));
+			decoded = atob(urlDecoded);
+			console.log('[TauriGitGraph] ✓ Strategy 1 worked: URL decode + base64 decode');
+		} catch (err1) {
+			console.log('[TauriGitGraph] Strategy 1 failed (URL decode + base64):', err1.message);
+			
+			// Strategy 2: Direct base64 decode (if already plain base64)
 			try {
-				const urlDecoded = decodeURIComponent(base64Data);
-				decoded = atob(urlDecoded);
-				console.log('[TauriGitGraph] Decoded after URL decode');
+				decoded = atob(base64Data);
+				console.log('[TauriGitGraph] ✓ Strategy 2 worked: direct base64 decode');
 			} catch (err2) {
-				console.log('[TauriGitGraph] Base64 decode failed:', err2);
-				// Try to decode the base64 data with URL encoding replacement
-				const normalized = base64Data.replace(/-/g, '+').replace(/_/g, '/');
+				console.log('[TauriGitGraph] Strategy 2 failed (direct base64):', err2.message);
+				
+				// Strategy 3: Base64 URL-safe format normalization
 				try {
-					decoded = atob(normalized);
-					console.log('[TauriGitGraph] Decoded with normalized base64');
+					const normalized = base64Data.replace(/-/g, '+').replace(/_/g, '/');
+					const withPadding = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '=');
+					decoded = atob(withPadding);
+					console.log('[TauriGitGraph] ✓ Strategy 3 worked: base64 URL-safe + padding');
 				} catch (err3) {
-					console.log('[TauriGitGraph] All decode attempts failed');
-					return null;
+					console.log('[TauriGitGraph] Strategy 3 failed:', err3.message);
+					
+					// Strategy 4: Try URL decode + URL-safe base64
+					try {
+						const urlDecoded = decodeURIComponent(base64Data);
+						const normalized = urlDecoded.replace(/-/g, '+').replace(/_/g, '/');
+						const withPadding = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '=');
+						decoded = atob(withPadding);
+						console.log('[TauriGitGraph] ✓ Strategy 4 worked: URL decode + URL-safe base64');
+					} catch (err4) {
+						console.log('[TauriGitGraph] Strategy 4 failed:', err4.message);
+						console.log('[TauriGitGraph] All decode strategies exhausted');
+					}
 				}
 			}
 		}
 		
+		if (decoded === null) {
+			console.log('[TauriGitGraph] Failed to decode base64 data with any strategy');
+			return null;
+		}
+		
 		const result = JSON.parse(decoded);
-		console.log('[TauriGitGraph] Successfully decoded:', result);
+		console.log('[TauriGitGraph] Successfully decoded JSON:', result);
 		return result;
 	} catch (err) {
-		console.log('[TauriGitGraph] Decode error:', err);
-		console.log('[TauriGitGraph] Base64 data length:', base64Data.length);
-		console.log('[TauriGitGraph] Base64 data sample:', base64Data.substring(0, 50));
+		console.log('[TauriGitGraph] JSON parse error:', err);
+		console.log('[TauriGitGraph] Decoded string sample:', decoded?.substring(0, 100));
 		return null;
 	}
 }
