@@ -220,6 +220,13 @@ class TauriGitGraphFileProvider implements IFileSystemProvider {
 
 function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
 	console.log('[TauriGitGraph] decodeGitGraphQuery called with:', resource.toString());
+	console.log('[TauriGitGraph] Full URI details:', {
+		scheme: resource.scheme,
+		authority: resource.authority,
+		path: resource.path,
+		query: resource.query,
+		fragment: resource.fragment
+	});
 	
 	// Try to extract base64 data from anywhere in the URI
 	let base64Data: string | null = null;
@@ -227,6 +234,7 @@ function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
 	// First, check standard query parameter
 	if (resource.query) {
 		base64Data = resource.query;
+		console.log('[TauriGitGraph] Using query parameter directly, length:', base64Data.length);
 	}
 	
 	// If not found, check if path contains '?'
@@ -234,16 +242,19 @@ function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
 		const parts = resource.path.split('?');
 		if (parts.length > 1) {
 			base64Data = parts[1];
+			console.log('[TauriGitGraph] Using path query part, length:', base64Data.length);
 		}
 	}
 	
 	// If still not found, check the entire URI string
 	if (!base64Data) {
 		const uriString = resource.toString();
+		console.log('[TauriGitGraph] Full URI string:', uriString);
 		if (uriString.includes('?')) {
 			const parts = uriString.split('?');
 			if (parts.length > 1) {
 				base64Data = parts[1];
+				console.log('[TauriGitGraph] Using full URI query part, length:', base64Data.length);
 			}
 		}
 	}
@@ -253,17 +264,42 @@ function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
 		return null;
 	}
 	
-	console.log('[TauriGitGraph] Found base64 data:', base64Data.substring(0, 50) + '...');
+	console.log('[TauriGitGraph] Found base64 data (first 100 chars):', base64Data.substring(0, 100));
 	
 	try {
-		// Decode URL-encoded base64 string
-		const decoded = decodeURIComponent(base64Data);
-		const json = atob(decoded);
-		const result = JSON.parse(json);
+		// Try to decode the base64 data
+		let decoded: string;
+		try {
+			// First try direct base64 decode
+			decoded = atob(base64Data);
+			console.log('[TauriGitGraph] Decoded directly from base64');
+		} catch {
+			// If that fails, try URL decoding first
+			try {
+				const urlDecoded = decodeURIComponent(base64Data);
+				decoded = atob(urlDecoded);
+				console.log('[TauriGitGraph] Decoded after URL decode');
+			} catch (err2) {
+				console.log('[TauriGitGraph] Base64 decode failed:', err2);
+				// Try to decode the base64 data with URL encoding replacement
+				const normalized = base64Data.replace(/-/g, '+').replace(/_/g, '/');
+				try {
+					decoded = atob(normalized);
+					console.log('[TauriGitGraph] Decoded with normalized base64');
+				} catch (err3) {
+					console.log('[TauriGitGraph] All decode attempts failed');
+					return null;
+				}
+			}
+		}
+		
+		const result = JSON.parse(decoded);
 		console.log('[TauriGitGraph] Successfully decoded:', result);
 		return result;
 	} catch (err) {
 		console.log('[TauriGitGraph] Decode error:', err);
+		console.log('[TauriGitGraph] Base64 data length:', base64Data.length);
+		console.log('[TauriGitGraph] Base64 data sample:', base64Data.substring(0, 50));
 		return null;
 	}
 }
