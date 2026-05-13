@@ -564,7 +564,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		this.dragRegion = prepend(this.rootContainer, $('div.titlebar-drag-region'));
 		if ((globalThis as any).__SIDEX_TAURI__) {
 			this.dragRegion.style.setProperty('-webkit-app-region', 'no-drag');
-			this.dragRegion.style.pointerEvents = 'none';
+			// this.dragRegion.style.pointerEvents = 'none';
 
 			this._register(
 				addDisposableListener(this.rootContainer, EventType.MOUSE_DOWN, e => {
@@ -573,6 +573,18 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 						e.preventDefault();
 						import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
 							getCurrentWindow().startDragging();
+						});
+					}
+				})
+			);
+
+			this._register(
+				addDisposableListener(this.rootContainer, EventType.DBLCLICK, e => {
+					const target = e.target as HTMLElement;
+					if (target === this.dragRegion || target === this.rootContainer) {
+						e.preventDefault();
+						import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+							getCurrentWindow().toggleMaximize();
 						});
 					}
 				})
