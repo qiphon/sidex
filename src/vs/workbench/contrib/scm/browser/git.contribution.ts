@@ -403,13 +403,21 @@ class TauriGitGraphContentProvider implements ITextModelContentProvider {
 	) {}
 
 	async provideTextContent(resource: URI): Promise<ITextModel | null> {
-		console.log('[TauriGitGraph] provideTextContent called for:', resource.toString());
+		console.log('[TauriGitGraph] ===========================================');
+		console.log('[TauriGitGraph] provideTextContent called!');
+		console.log('[TauriGitGraph] Full URI:', resource.toString());
 		console.log('[TauriGitGraph] URI details:', {
 			scheme: resource.scheme,
 			path: resource.path,
 			query: resource.query,
-			authority: resource.authority
+			authority: resource.authority,
+			fragment: resource.fragment
 		});
+		
+		if (resource.scheme !== GIT_GRAPH_SCHEME) {
+			console.log('[TauriGitGraph] ERROR: Wrong scheme! Expected:', GIT_GRAPH_SCHEME, 'Got:', resource.scheme);
+			return null;
+		}
 
 		const invoke = await getTauriInvoke();
 		if (!invoke) {
@@ -420,10 +428,10 @@ class TauriGitGraphContentProvider implements ITextModelContentProvider {
 		// Decode base64 query parameter
 		const queryParams = decodeGitGraphQuery(resource);
 		if (!queryParams) {
-			console.log('[TauriGitGraph] Failed to decode query params');
+			console.log('[TauriGitGraph] ERROR: Failed to decode query params - returning null');
 			return null;
 		}
-		console.log('[TauriGitGraph] Decoded query params:', queryParams);
+		console.log('[TauriGitGraph] ✓ Decoded query params:', queryParams);
 
 		const repoPath = queryParams.repo || this._workspaceRoot;
 		const commit = queryParams.commit;
@@ -1400,8 +1408,16 @@ class TauriGitContribution extends Disposable implements IWorkbenchContribution 
 		const graphContentProvider = new TauriGitGraphContentProvider(rootPath, this.modelService, this.languageService);
 		try {
 			this.logService.info('[TauriGit] Registering TauriGitGraphContentProvider for scheme:', GIT_GRAPH_SCHEME);
-			this._register(this.textModelService.registerTextModelContentProvider(GIT_GRAPH_SCHEME, graphContentProvider));
+			const disposable = this.textModelService.registerTextModelContentProvider(GIT_GRAPH_SCHEME, graphContentProvider);
+			this._register(disposable);
 			this.logService.info('[TauriGit] TauriGitGraphContentProvider registered successfully');
+			
+			// Verify registration by checking if the provider is available
+			if ((this.textModelService as any).resourceModelCollection?.providers?.has?.(GIT_GRAPH_SCHEME)) {
+				this.logService.info('[TauriGit] Verified: TauriGitGraphContentProvider is in providers map');
+			} else {
+				this.logService.warn('[TauriGit] Warning: TauriGitGraphContentProvider might not be registered properly');
+			}
 		} catch (err) {
 			this.logService.error('[TauriGit] Failed to register TauriGitGraphContentProvider:', err);
 		}
