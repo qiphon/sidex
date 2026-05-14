@@ -271,37 +271,53 @@ function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
 		let decoded: string | null = null;
 		
 		// Strategy 1: URL decode then base64 decode (most common for Git Graph)
+		// Important: atob() returns Latin-1 string, we need to convert to UTF-8 properly
 		try {
 			const urlDecoded = decodeURIComponent(base64Data);
 			console.log('[TauriGitGraph] After URL decode:', urlDecoded.substring(0, 50));
-			decoded = atob(urlDecoded);
-			console.log('[TauriGitGraph] ✓ Strategy 1 worked: URL decode + base64 decode');
-		} catch (err1) {
-			console.log('[TauriGitGraph] Strategy 1 failed (URL decode + base64):', err1.message);
 			
-			// Strategy 2: Direct base64 decode (if already plain base64)
+			// Convert Latin-1 string (from atob) to UTF-8 bytes, then to UTF-8 string
+			const binaryString = atob(urlDecoded);
+			const bytes = new Uint8Array(binaryString.length);
+			for (let i = 0; i < binaryString.length; i++) {
+				bytes[i] = binaryString.charCodeAt(i);
+			}
+			decoded = new TextDecoder('utf-8').decode(bytes);
+			console.log('[TauriGitGraph] ✓ Strategy 1 worked: URL decode + base64 + UTF-8 conversion');
+		} catch (err1) {
+			console.log('[TauriGitGraph] Strategy 1 failed (URL decode + base64 + UTF-8):', err1.message);
+			
+			// Strategy 2: Direct base64 decode with UTF-8 conversion
 			try {
-				decoded = atob(base64Data);
-				console.log('[TauriGitGraph] ✓ Strategy 2 worked: direct base64 decode');
+				const binaryString = atob(base64Data);
+				const bytes = new Uint8Array(binaryString.length);
+				for (let i = 0; i < binaryString.length; i++) {
+					bytes[i] = binaryString.charCodeAt(i);
+				}
+				decoded = new TextDecoder('utf-8').decode(bytes);
+				console.log('[TauriGitGraph] ✓ Strategy 2 worked: direct base64 + UTF-8 conversion');
 			} catch (err2) {
-				console.log('[TauriGitGraph] Strategy 2 failed (direct base64):', err2.message);
+				console.log('[TauriGitGraph] Strategy 2 failed (direct base64 + UTF-8):', err2.message);
 				
-				// Strategy 3: Base64 URL-safe format normalization
+				// Strategy 3: Base64 URL-safe format normalization + UTF-8 conversion
 				try {
 					const normalized = base64Data.replace(/-/g, '+').replace(/_/g, '/');
 					const withPadding = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '=');
-					decoded = atob(withPadding);
-					console.log('[TauriGitGraph] ✓ Strategy 3 worked: base64 URL-safe + padding');
+					const binaryString = atob(withPadding);
+					const bytes = new Uint8Array(binaryString.length);
+					for (let i = 0; i < binaryString.length; i++) {
+						bytes[i] = binaryString.charCodeAt(i);
+					}
+					decoded = new TextDecoder('utf-8').decode(bytes);
+					console.log('[TauriGitGraph] ✓ Strategy 3 worked: URL-safe base64 + UTF-8 conversion');
 				} catch (err3) {
 					console.log('[TauriGitGraph] Strategy 3 failed:', err3.message);
 					
-					// Strategy 4: Try URL decode + URL-safe base64
+					// Strategy 4: Legacy support - try decodeURIComponent first, then atob
 					try {
 						const urlDecoded = decodeURIComponent(base64Data);
-						const normalized = urlDecoded.replace(/-/g, '+').replace(/_/g, '/');
-						const withPadding = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '=');
-						decoded = atob(withPadding);
-						console.log('[TauriGitGraph] ✓ Strategy 4 worked: URL decode + URL-safe base64');
+						decoded = urlDecoded;
+						console.log('[TauriGitGraph] ✓ Strategy 4 worked: legacy direct decode');
 					} catch (err4) {
 						console.log('[TauriGitGraph] Strategy 4 failed:', err4.message);
 						console.log('[TauriGitGraph] All decode strategies exhausted');
@@ -315,12 +331,14 @@ function decodeGitGraphQuery(resource: URI): GitGraphQueryParams | null {
 			return null;
 		}
 		
+		console.log('[TauriGitGraph] Decoded string sample:', decoded.substring(0, 100));
+		
 		const result = JSON.parse(decoded);
 		console.log('[TauriGitGraph] Successfully decoded JSON:', result);
 		return result;
 	} catch (err) {
 		console.log('[TauriGitGraph] JSON parse error:', err);
-		console.log('[TauriGitGraph] Decoded string sample:', decoded?.substring(0, 100));
+		console.log('[TauriGitGraph] Decoded string for debugging:', decoded);
 		return null;
 	}
 }
