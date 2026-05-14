@@ -512,31 +512,10 @@ class TauriGitGraphContentProvider implements ITextModelContentProvider {
 		
 		console.log('[TauriGitGraph] Final language ID:', languageId);
 		
-		// Create language selection with fallback
-		let languageSelection: ILanguageSelection;
-		try {
-			languageSelection = this._languageService.createById(languageId);
-		} catch (err) {
-			console.warn('[TauriGitGraph] Failed to create language selection for', languageId, 'fallback to plaintext', err);
-			languageSelection = this._languageService.createById('plaintext');
-		}
-		
-		// Create text model with error handling
-		let model: ITextModel | null = null;
-		try {
-			model = this._modelService.createModel(content, languageSelection, resource);
-			console.log('[TauriGitGraph] Model created successfully');
-		} catch (err) {
-			console.error('[TauriGitGraph] Failed to create model, trying with plaintext fallback', err);
-			try {
-				const plaintextSelection = this._languageService.createById('plaintext');
-				model = this._modelService.createModel(content, plaintextSelection, resource);
-				console.log('[TauriGitGraph] Model created with plaintext fallback');
-			} catch (fallbackErr) {
-				console.error('[TauriGitGraph] All fallback attempts failed', fallbackErr);
-			}
-		}
-		
+		// Create language selection and model
+		const languageSelection = this._languageService.createById(languageId);
+		const model = this._modelService.createModel(content, languageSelection, resource);
+		console.log('[TauriGitGraph] Model created successfully');
 		return model;
 	}
 }
