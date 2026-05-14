@@ -19,6 +19,7 @@ use commands::watch::WatchStore;
 use commands::window::restore_and_show;
 use std::sync::Arc;
 use std::sync::Mutex;
+use urlencoding;
 #[cfg(target_os = "macos")]
 use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::Manager;
