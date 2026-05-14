@@ -436,7 +436,7 @@ class TauriGitGraphContentProvider implements ITextModelContentProvider {
 			console.log('[TauriGitGraph] ERROR: Wrong scheme! Expected:', GIT_GRAPH_SCHEME, 'Got:', resource.scheme);
 			return null;
 		}
-
+		
 		const invoke = await getTauriInvoke();
 		if (!invoke) {
 			console.log('[TauriGitGraph] No invoke available');
@@ -476,9 +476,47 @@ class TauriGitGraphContentProvider implements ITextModelContentProvider {
 			return null;
 		}
 
-		// Create a text model
-		const languageSelection = this._languageService.createByFilepathOrFirstLine(resource, content);
+		// Extract file name and extension from the decoded file path
+		const filePath = queryParams.filePath;
+		const fileName = filePath.split('/').pop() || 'file.md';
+		const ext = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : '';
+		console.log('[TauriGitGraph] File path:', filePath);
+		console.log('[TauriGitGraph] File name:', fileName, 'Extension:', ext);
+		
+		// Determine language ID from extension
+		let languageId: string;
+		try {
+			// Try to get language by extension
+			if (ext) {
+				languageId = this._languageService.getLanguageIdByExtension(ext) || 'plaintext';
+			} else {
+				languageId = 'plaintext';
+			}
+			console.log('[TauriGitGraph] Language ID from extension:', languageId);
+			
+			// If it's markdown, detect the actual language from content
+			if (languageId === 'markdown' && ext === 'md') {
+				// Check first line for language hints
+				const firstLine = content.split('\n')[0];
+				if (firstLine.startsWith('```')) {
+					const codeLang = firstLine.substring(3).trim().split(/\s/)[0];
+					if (codeLang) {
+						languageId = codeLang;
+						console.log('[TauriGitGraph] Detected code language from content:', languageId);
+					}
+				}
+			}
+		} catch (err) {
+			console.log('[TauriGitGraph] Language detection error:', err);
+			languageId = 'plaintext';
+		}
+		
+		console.log('[TauriGitGraph] Final language ID:', languageId);
+		
+		// Create language selection and model
+		const languageSelection = this._languageService.createById(languageId);
 		const model = this._modelService.createModel(content, languageSelection, resource);
+		console.log('[TauriGitGraph] Model created successfully');
 		return model;
 	}
 }
