@@ -477,7 +477,6 @@ class TauriGitGraphContentProvider implements ITextModelContentProvider {
 		}
 
 		// Extract file name and extension from the decoded file path
-		const filePath = queryParams.filePath;
 		const fileName = filePath.split('/').pop() || 'file.md';
 		const ext = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : '';
 		console.log('[TauriGitGraph] File path:', filePath);
