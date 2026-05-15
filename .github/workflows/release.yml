@@ -82,7 +82,11 @@ jobs:
             librsvg2-dev \
             patchelf \
             libssl-dev \
-            libfuse2
+            libfuse2 \
+            libglib2.0-dev \
+            pkg-config \
+            build-essential \
+            cmake              
 
       - name: Install frontend dependencies
         run: npm ci
