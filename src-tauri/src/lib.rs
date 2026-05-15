@@ -902,3 +902,99 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_urlencoding_decode() {
+        let encoded_path = "%2Fhome%2Fuser%2Fproject%2Fsrc%2Fmain.rs";
+        let decoded = urlencoding::decode(encoded_path).unwrap();
+        
+        assert_eq!(decoded, "/home/user/project/src/main.rs");
+    }
+
+    #[test]
+    fn test_urlencoding_decode_with_special_chars() {
+        let encoded_path = "%2Fpath%2Fwith%20space%2Ffile%2Bname.txt";
+        let decoded = urlencoding::decode(encoded_path).unwrap();
+        
+        assert_eq!(decoded, "/path/with space/file+name.txt");
+    }
+
+    #[test]
+    fn test_urlencoding_decode_with_unicode() {
+        let encoded_path = "%2Fdocs%2F中文%2F测试文件.md";
+        let decoded = urlencoding::decode(encoded_path).unwrap();
+        
+        assert_eq!(decoded, "/docs/中文/测试文件.md");
+    }
+
+    #[test]
+    fn test_urlencoding_decode_empty() {
+        let decoded = urlencoding::decode("").unwrap();
+        assert_eq!(decoded, "");
+    }
+
+    #[test]
+    fn test_urlencoding_decode_already_decoded() {
+        let decoded = urlencoding::decode("/home/user/file.txt").unwrap();
+        assert_eq!(decoded, "/home/user/file.txt");
+    }
+
+    #[test]
+    fn test_strip_prefix_and_decode() {
+        let raw_path = "/%2Fhome%2Fuser%2Fproject";
+        let path_without_prefix = raw_path.strip_prefix('/').unwrap_or(raw_path);
+        let decoded = urlencoding::decode(path_without_prefix).unwrap();
+        
+        assert_eq!(decoded, "/home/user/project");
+    }
+
+    #[test]
+    fn test_strip_prefix_no_prefix() {
+        let raw_path = "%2Fhome%2Fuser%2Fproject";
+        let path_without_prefix = raw_path.strip_prefix('/').unwrap_or(raw_path);
+        
+        assert_eq!(path_without_prefix, "%2Fhome%2Fuser%2Fproject");
+        
+        let decoded = urlencoding::decode(path_without_prefix).unwrap();
+        assert_eq!(decoded, "/home/user/project");
+    }
+
+    #[test]
+    fn test_urlencoding_encode() {
+        let path = "/home/user/project/src/main.rs";
+        let encoded = urlencoding::encode(path);
+        
+        assert_eq!(encoded, "%2Fhome%2Fuser%2Fproject%2Fsrc%2Fmain.rs");
+    }
+
+    #[test]
+    fn test_urlencoding_encode_with_unicode() {
+        let path = "/docs/中文/测试文件.md";
+        let encoded = urlencoding::encode(path);
+        
+        assert!(encoded.contains("%E4%B8%AD%E6%96%87"));
+        assert!(encoded.contains("%E6%B5%8B%E8%AF%95%E6%96%87%E4%BB%B6"));
+    }
+
+    #[test]
+    fn test_roundtrip_encode_decode() {
+        let original = "/path/with special chars/file.txt";
+        let encoded = urlencoding::encode(original);
+        let decoded = urlencoding::decode(&encoded).unwrap();
+        
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn test_roundtrip_unicode() {
+        let original = "/docs/中文测试/文件路径.md";
+        let encoded = urlencoding::encode(original);
+        let decoded = urlencoding::decode(&encoded).unwrap();
+        
+        assert_eq!(decoded, original);
+    }
+}
