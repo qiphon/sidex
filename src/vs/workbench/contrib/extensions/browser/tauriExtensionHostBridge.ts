@@ -17,6 +17,21 @@ import { URI } from '../../../../base/common/uri.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 
+async function invokeWasmProvider<T>(command: string, uri: string, languageId: string, version: number, line: number, character: number): Promise<T | null> {
+	try {
+		const result = await invoke<T>(command, {
+			uri,
+			language_id: languageId,
+			version,
+			line,
+			character,
+		});
+		return result;
+	} catch {
+		return null;
+	}
+}
+
 interface ExtHostMessage {
 	id?: number;
 	type?: string;
@@ -197,13 +212,17 @@ export class TauriExtensionHostBridge extends Disposable implements IWorkbenchCo
 			provideDefinition: async (model: ITextModel, position: Position, token: CancellationToken) => {
 				if (token.isCancellationRequested) { return null; }
 				try {
-					const result = await conn.request('provideDefinition', {
-						uri: model.uri.toString(),
-						position: toExtPos(position),
-					});
-					if (!result) { return null; }
-					const locs = Array.isArray(result) ? result : [result];
-					return locs.filter((l: any) => l?.uri).map((l: any) => ({
+					const result = await invokeWasmProvider<Array<any>>('wasm_provide_definition_all',
+						model.uri.toString(),
+						model.getLanguageId(),
+						model.getVersionId(),
+						position.lineNumber - 1,
+						position.column - 1
+					);
+					if (!result || !Array.isArray(result)) { return null; }
+					return result.filter((l: any) => l?.uri).map((l: any) => ({
+						originSelectionRange: undefined,
+						targetSelectionRange: undefined,
 						uri: URI.parse(l.uri),
 						range: toMonacoRange(l.range),
 					}));
@@ -215,11 +234,14 @@ export class TauriExtensionHostBridge extends Disposable implements IWorkbenchCo
 			provideReferences: async (model: ITextModel, position: Position, _context, token: CancellationToken) => {
 				if (token.isCancellationRequested) { return null; }
 				try {
-					const result = await conn.request('provideReferences', {
-						uri: model.uri.toString(),
-						position: toExtPos(position),
-					});
-					if (!Array.isArray(result)) { return null; }
+					const result = await invokeWasmProvider<Array<any>>('wasm_provide_references_all',
+						model.uri.toString(),
+						model.getLanguageId(),
+						model.getVersionId(),
+						position.lineNumber - 1,
+						position.column - 1
+					);
+					if (!result || !Array.isArray(result)) { return null; }
 					return result.filter((l: any) => l?.uri).map((l: any) => ({
 						uri: URI.parse(l.uri),
 						range: toMonacoRange(l.range),
