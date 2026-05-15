@@ -299,6 +299,9 @@ import './contrib/accessibilitySignals/browser/accessibilitySignal.contribution.
 // Opener
 import './contrib/opener/browser/opener.contribution.js';
 
+// Word Wrap Toggle
+import './contrib/codeEditor/browser/toggleWordWrap.js';
+
 // Null stubs for stripped services
 import '../editor/browser/services/renameSymbolTrackerService.js';
 
