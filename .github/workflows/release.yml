@@ -170,11 +170,11 @@ jobs:
           echo "shell-integration contents:"
           ls -la src-tauri/shell-integration/
 
-      - name: Unlock keychain before signing
-        if: runner.os == 'macOS'
-        env:
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+      # - name: Unlock keychain before signing
+      #   if: runner.os == 'macOS'
+      #   env:
+      #     KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      #   run: security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
 
       - name: Build Tauri app
         timeout-minutes: 40
