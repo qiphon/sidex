@@ -43,7 +43,7 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IEditorProgressService, Progress } from '../../../../platform/progress/common/progress.js';
-import { IExtensionsWorkbenchService } from '../../../extensions/common/extensions.js';
+import { IExtensionsWorkbenchService } from '../../../../workbench/contrib/extensions/common/extensions.js';
 
 export class FormatOnType implements IEditorContribution {
 	public static readonly ID = 'editor.contrib.autoFormat';
