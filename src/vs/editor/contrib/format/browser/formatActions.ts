@@ -38,9 +38,12 @@ import {
 } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { CommandsRegistry, ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IEditorProgressService, Progress } from '../../../../platform/progress/common/progress.js';
+import { IExtensionsWorkbenchService } from '../../../extensions/common/extensions.js';
 
 export class FormatOnType implements IEditorContribution {
 	public static readonly ID = 'editor.contrib.autoFormat';
@@ -243,8 +246,7 @@ class FormatDocumentAction extends EditorAction {
 			label: nls.localize2('formatDocument.label', 'Format Document'),
 			precondition: ContextKeyExpr.and(
 				EditorContextKeys.notInCompositeEditor,
-				EditorContextKeys.writable,
-				EditorContextKeys.hasDocumentFormattingProvider
+				EditorContextKeys.writable
 			),
 			kbOpts: {
 				kbExpr: EditorContextKeys.editorTextFocus,
@@ -262,18 +264,46 @@ class FormatDocumentAction extends EditorAction {
 	async run(accessor: ServicesAccessor, editor: ICodeEditor): Promise<void> {
 		if (editor.hasModel()) {
 			const instaService = accessor.get(IInstantiationService);
-			const progressService = accessor.get(IEditorProgressService);
-			await progressService.showWhile(
-				instaService.invokeFunction(
-					formatDocumentWithSelectedProvider,
-					editor,
-					FormattingMode.Explicit,
-					Progress.None,
-					CancellationToken.None,
-					true
-				),
-				250
-			);
+			const languageFeaturesService = accessor.get(ILanguageFeaturesService);
+			const commandService = accessor.get(ICommandService);
+			const extensionsWorkbenchService = accessor.get(IExtensionsWorkbenchService);
+			const notificationService = accessor.get(INotificationService);
+			const dialogService = accessor.get(IDialogService);
+
+			const model = editor.getModel();
+			const formatterCount = languageFeaturesService.documentFormattingEditProvider.all(model).length;
+
+			if (formatterCount > 1) {
+				return commandService.executeCommand('editor.action.formatDocument.multiple');
+			} else if (formatterCount === 1) {
+				const progressService = accessor.get(IEditorProgressService);
+				await progressService.showWhile(
+					instaService.invokeFunction(
+						formatDocumentWithSelectedProvider,
+						editor,
+						FormattingMode.Explicit,
+						Progress.None,
+						CancellationToken.None,
+						true
+					),
+					250
+				);
+			} else if (model.isTooLargeForSyncing()) {
+				notificationService.warn(nls.localize('too.large', 'This file cannot be formatted because it is too large'));
+			} else {
+				const langName = model.getLanguageId();
+				const message = nls.localize('no.provider', "There is no formatter for '{0}' files installed.", langName);
+				const { confirmed } = await dialogService.confirm({
+					message,
+					primaryButton: nls.localize(
+						{ key: 'install.formatter', comment: ['&& denotes a mnemonic'] },
+						'&&Install Formatter...'
+					)
+				});
+				if (confirmed) {
+					extensionsWorkbenchService.openSearch(`category:formatters ${langName}`);
+				}
+			}
 		}
 	}
 }
