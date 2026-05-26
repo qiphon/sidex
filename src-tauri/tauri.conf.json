@@ -22,7 +22,7 @@
         "decorations": false,
         "shadow": true,
         "visible": false,
-        "dragDropEnabled": true,
+        "dragDropEnabled": false,
         "useHttpsScheme": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
