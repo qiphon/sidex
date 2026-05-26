@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Current schema version. Bump when adding migrations.
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 /// Wraps a `SQLite` connection and ensures schema migrations run on open.
 pub struct Database {
@@ -100,6 +100,9 @@ impl Database {
         if current < 3 {
             self.migration_v3()?;
         }
+        if current < 4 {
+            self.migration_v4()?;
+        }
 
         self.conn
             .execute_batch(&format!("PRAGMA user_version = {target_version}"))
@@ -140,10 +143,7 @@ impl Database {
                     y               INTEGER NOT NULL,
                     width           INTEGER NOT NULL,
                     height          INTEGER NOT NULL,
-                    is_maximized    INTEGER NOT NULL DEFAULT 0,
-                    sidebar_width   REAL    NOT NULL DEFAULT 260.0,
-                    panel_height    REAL    NOT NULL DEFAULT 200.0,
-                    active_editor   TEXT
+                    is_maximized    INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS session_data (
@@ -290,6 +290,31 @@ impl Database {
                 ",
             )
             .context("migration v3")?;
+        Ok(())
+    }
+
+    /// V4: `window_state` stores OS frame geometry only; workbench layout lives in `kv_store`.
+    fn migration_v4(&self) -> Result<()> {
+        self.conn
+            .execute_batch(
+                "
+                CREATE TABLE IF NOT EXISTS window_state_v4 (
+                    id              INTEGER PRIMARY KEY CHECK (id = 1),
+                    x               INTEGER NOT NULL,
+                    y               INTEGER NOT NULL,
+                    width           INTEGER NOT NULL,
+                    height          INTEGER NOT NULL,
+                    is_maximized    INTEGER NOT NULL DEFAULT 0
+                );
+
+                INSERT OR IGNORE INTO window_state_v4 (id, x, y, width, height, is_maximized)
+                SELECT id, x, y, width, height, is_maximized FROM window_state;
+
+                DROP TABLE IF EXISTS window_state;
+                ALTER TABLE window_state_v4 RENAME TO window_state;
+                ",
+            )
+            .context("migration v4")?;
         Ok(())
     }
 }

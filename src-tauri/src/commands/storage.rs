@@ -38,6 +38,26 @@ impl StorageDb {
         Ok(stmt.query_row([key], |row| row.get::<_, String>(0)).ok())
     }
 
+    pub fn list_by_prefix(&self, prefix: &str) -> Result<Vec<(String, String)>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let pattern = format!("{prefix}%");
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM kv_store WHERE key LIKE ?1 ORDER BY key")
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([&pattern], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(items)
+    }
+
     pub fn set(&self, key: &str, value: &str) -> Result<(), String> {
         // SECURITY: Enforce size limits to prevent resource exhaustion (CWE-400)
         if key.len() > MAX_KEY_LENGTH {
@@ -111,6 +131,15 @@ pub fn storage_set(
     )
     .map_err(|e| format!("Failed to set key '{key}': {e}"))?;
     Ok(())
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn storage_list(
+    state: State<'_, Arc<StorageDb>>,
+    prefix: String,
+) -> Result<Vec<(String, String)>, String> {
+    state.list_by_prefix(&prefix)
 }
 
 #[allow(clippy::needless_pass_by_value)]

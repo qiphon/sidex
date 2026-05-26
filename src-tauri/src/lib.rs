@@ -634,6 +634,7 @@ pub fn run() {
             commands::storage_get,
             commands::storage_set,
             commands::storage_delete,
+            commands::storage_list,
             // sidex-db state persistence
             commands::db_get_recent_files,
             commands::db_get_recent_workspaces,

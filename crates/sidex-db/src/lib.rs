@@ -13,7 +13,7 @@
 //!   compatibility with the legacy Tauri `StorageDb`.
 //! - Workspace state, global state, and extension state functions.
 //! - [`recent`] — recently opened files and workspaces.
-//! - [`window_state`] — window position/layout persistence.
+//! - [`window_state`] — OS window frame geometry (workbench layout uses `kv_store`).
 //! - [`history`] — search history, terminal sessions, clipboard history,
 //!   breakpoints, and bookmarks.
 //! - [`validation`] — security-critical input validation (path traversal,
