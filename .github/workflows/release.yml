@@ -69,7 +69,15 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_targets }}
+          targets: ${{ matrix.rust_targets }},wasm32-wasip2
+
+      - name: Build WASM extensions
+        run: |
+          cargo build --release --manifest-path extensions-rust/Cargo.toml -p typescript-language-extension
+          cargo build --release --manifest-path extensions-rust/Cargo.toml -p rust-language-extension
+          cargo build --release --manifest-path extensions-rust/Cargo.toml -p go-language-extension
+          cargo build --release --manifest-path extensions-rust/Cargo.toml -p python-language-extension
+          cargo build --release --manifest-path extensions-rust/Cargo.toml -p cpp-language-extension
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
