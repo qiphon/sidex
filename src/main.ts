@@ -205,12 +205,18 @@ async function boot() {
 		}
 	};
 
-	create(document.body, options);
+	const workbenchContainer = document.getElementById('workbench');
+	if (workbenchContainer) {
+		create(workbenchContainer, options);
+	} else {
+		create(document.body, options);
+	}
 
 	setupTauriExternalOpener();
 	setupMenuActions();
 	setupWindowStateSave();
 	setupNativeWindowDragging();
+	setupWindowsEditorNewlineKeybindings();
 	updateNativeMenuLabels();
 
 	console.log(
@@ -251,6 +257,13 @@ function setupWindowStateSave() {
 		.catch(() => {});
 }
 
+const TITLEBAR_NO_DRAG_SELECTOR =
+	'a, button, input, select, textarea, [contenteditable="true"], [draggable="true"], ' +
+	'.action-item, .command-center, .window-controls-container, .window-icon, ' +
+	'.menubar, .monaco-menu, .monaco-action-bar, .window-title, .action-toolbar-container, ' +
+	'.center-adjacent-toolbar-container, .tabs-container, .tab, .monaco-list, .pane-header, ' +
+	'.composite.title, .split-view-view, .editor-group-container';
+
 function setupNativeWindowDragging() {
 	let appWindow: { startDragging(): Promise<void> } | null = null;
 	import('@tauri-apps/api/window')
@@ -259,28 +272,51 @@ function setupNativeWindowDragging() {
 		})
 		.catch(() => {});
 
-	document.addEventListener(
-		'mousedown',
-		(e: MouseEvent) => {
-			if (e.button !== 0 || !appWindow) {
-				return;
-			}
-			const target = e.target as HTMLElement | null;
-			if (!target?.closest('.part.titlebar')) {
-				return;
-			}
-			if (
-				target.closest('a, button, input, select, textarea, .action-item, .command-center, .window-controls-container')
-			) {
-				return;
-			}
-			if (target.closest('[draggable="true"]') || target.getAttribute('draggable') === 'true') {
-				return;
-			}
-			appWindow.startDragging().catch(() => {});
-		},
-		true
-	);
+	document.addEventListener('mousedown', (e: MouseEvent) => {
+		if (e.button !== 0 || e.defaultPrevented || !appWindow) {
+			return;
+		}
+		const target = e.target as HTMLElement | null;
+		if (!target?.closest('.part.titlebar')) {
+			return;
+		}
+		if (target.closest(TITLEBAR_NO_DRAG_SELECTOR)) {
+			return;
+		}
+		appWindow.startDragging().catch(() => {});
+	});
+}
+
+function setupWindowsEditorNewlineKeybindings() {
+	if (!navigator.userAgent.includes('Windows')) {
+		return;
+	}
+
+	window.addEventListener('keydown', event => {
+		if (event.defaultPrevented || event.key !== 'Enter' || !event.ctrlKey || event.altKey || event.metaKey) {
+			return;
+		}
+
+		const target = event.target instanceof HTMLElement ? event.target : document.activeElement;
+		if (!(target instanceof HTMLElement) || !target.closest('.monaco-editor')) {
+			return;
+		}
+
+		const commandService = (
+			window as { __sidex_commandService?: { executeCommand(commandId: string): Promise<unknown> } }
+		).__sidex_commandService;
+		if (!commandService) {
+			return;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+
+		const commandId = event.shiftKey ? 'editor.action.insertLineBefore' : 'editor.action.insertLineAfter';
+		commandService.executeCommand(commandId).catch(error => {
+			console.error(`[SideX] Failed to execute ${commandId}:`, error);
+		});
+	});
 }
 
 function setupMenuActions() {

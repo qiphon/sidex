@@ -79,7 +79,7 @@ import { Extensions as ViewExtensions, type IViewsRegistry, type ITreeViewDescri
 import { TreeView, TreeViewPane } from '../../../browser/parts/views/treeView.js';
 import { SyncDescriptor } from '../../../../platform/instantiation/common/descriptors.js';
 import { IWorkbenchExtensionManagementService } from '../../../services/extensionManagement/common/extensionManagement.js';
-import type { InstallExtensionResult, IGalleryExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
+import type { DidUninstallExtensionEvent, InstallExtensionResult, IGalleryExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IWebviewViewService } from '../../webviewView/browser/webviewViewService.js';
@@ -214,6 +214,11 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 				}
 			}
 		}));
+		this._register(this.extensionManagementService.onDidUninstallExtension((event) => {
+			if (!event.error) {
+				this._removeUninstalledExtension(event);
+			}
+		}));
 		try {
 			const bootstrap = await bootstrapExtensionPlatform();
 			this._applyBootstrap(bootstrap);
@@ -260,6 +265,17 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 			}
 		} catch (err: any) {
 			this.logService.warn(`[ExtHost] Failed to hot-load ${extId}: ${err?.message ?? err}`);
+		}
+	}
+
+	private async _removeUninstalledExtension(event: DidUninstallExtensionEvent): Promise<void> {
+		const extId = event.identifier.id;
+		try {
+			const { invoke } = await import('@tauri-apps/api/core');
+			await invoke('uninstall_extension', { extensionId: extId });
+			this.logService.info(`[ExtHost] Removed extension ${extId} from disk`);
+		} catch (err: any) {
+			this.logService.warn(`[ExtHost] Failed to remove ${extId} from disk: ${err?.message ?? err}`);
 		}
 	}
 

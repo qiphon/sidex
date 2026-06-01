@@ -135,8 +135,6 @@ function getExtensionSearchPaths() {
     EXTENSIONS_DIR,
     builtinExt,
     path.resolve(process.cwd(), 'dist', 'extensions'),
-    path.join(os.homedir(), '.vscode', 'extensions'),
-    path.join(os.homedir(), '.cursor', 'extensions'),
     path.join(process.cwd(), 'extensions'),
     path.resolve(__dirname, '..', 'extensions'),
     path.resolve(__dirname, '..', '..', 'extensions'),

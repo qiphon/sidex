@@ -6053,6 +6053,7 @@ dependencies = [
  "crossbeam",
  "dashmap",
  "dirs 5.0.1",
+ "dunce",
  "flate2",
  "glob",
  "globset",

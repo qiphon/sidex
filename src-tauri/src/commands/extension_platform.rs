@@ -517,9 +517,6 @@ pub fn extension_search_paths(app: &AppHandle) -> Vec<PathBuf> {
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("dist")
         .join("extensions");
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let vscode_user_ext = home.join(".vscode").join("extensions");
-    let cursor_user_ext = home.join(".cursor").join("extensions");
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     let rust_ext = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -533,8 +530,6 @@ pub fn extension_search_paths(app: &AppHandle) -> Vec<PathBuf> {
         cursor_app_ext.unwrap_or_default(),
         vscode_app_ext.unwrap_or_default(),
         dist_ext,
-        vscode_user_ext,
-        cursor_user_ext,
         cwd.join("extensions"),
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")

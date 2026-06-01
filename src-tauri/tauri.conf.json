@@ -23,7 +23,9 @@
         "shadow": true,
         "visible": false,
         "dragDropEnabled": false,
-        "useHttpsScheme": true
+        "useHttpsScheme": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -75,6 +77,12 @@
         "depends": [
           "libwebkit2gtk-4.1-0",
           "libgtk-3-0"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3"
         ]
       }
     }

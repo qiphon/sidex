@@ -4,14 +4,28 @@ use crate::commands::extension_platform::{
     user_extensions_dir, ExtensionHostInitData, ExtensionKind, ExtensionManifest, NodeRuntimeInfo,
 };
 use serde::{Deserialize, Serialize};
-use std::io::BufRead;
+use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
-use std::time::Instant;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+
+/// Strip the Windows `\\?\` prefix; Node's CJS resolver chokes on UNC paths.
+fn normalize_for_node(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        dunce::simplified(&path).to_path_buf()
+    }
+    #[cfg(not(windows))]
+    {
+        path
+    }
+}
 
 struct ExtHostSession {
     child: Child,
@@ -205,7 +219,7 @@ fn spawn_host_process(
     workspace_folders: &[String],
 ) -> Result<StartedSession, String> {
     let runtime = resolve_node_runtime(app)?;
-    let server_js = resolve_server_script(app);
+    let server_js = normalize_for_node(resolve_server_script(app));
 
     if !server_js.exists() {
         return Err(format!(
@@ -280,25 +294,54 @@ fn spawn_host_process(
         .take()
         .ok_or("failed to capture extension host stdout")?;
 
-    let port = {
-        let mut reader = std::io::BufReader::new(stdout);
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| format!("failed to read extension host port: {e}"))?;
-        let msg: PortMessage =
-            serde_json::from_str(line.trim()).map_err(|e| format!("bad port message: {e}"))?;
-        msg.port
-    };
-
+    let stderr_buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     if let Some(stderr) = child.stderr.take() {
-        std::thread::spawn(move || {
-            let reader = std::io::BufReader::new(stderr);
+        let buf = Arc::clone(&stderr_buf);
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
-                log::info!("{line}");
+                log::debug!("[ext-host stderr] {line}");
+                if let Ok(mut guard) = buf.lock() {
+                    if guard.len() < 200 {
+                        guard.push(line);
+                    }
+                }
             }
         });
     }
+
+    let recent_stderr = || -> String {
+        thread::sleep(Duration::from_millis(150));
+        match stderr_buf.lock() {
+            Ok(guard) if !guard.is_empty() => format!(" stderr: {}", guard.join(" | ")),
+            _ => String::new(),
+        }
+    };
+
+    let port = {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let bytes_read = reader.read_line(&mut line).map_err(|e| {
+            format!("failed to read extension host port: {e}{}", recent_stderr())
+        })?;
+        if bytes_read == 0 {
+            let _ = child.kill();
+            return Err(format!(
+                "extension host exited before sending port message (init_data_file={}).{}",
+                init_data_file.display(),
+                recent_stderr()
+            ));
+        }
+        let trimmed = line.trim();
+        let msg: PortMessage = serde_json::from_str(trimmed).map_err(|e| {
+            format!(
+                "bad port message: {e} (got {:?}).{}",
+                trimmed,
+                recent_stderr()
+            )
+        })?;
+        msg.port
+    };
 
     log::info!("extension host started on port {port} (session={session_id})");
 

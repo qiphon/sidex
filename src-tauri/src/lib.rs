@@ -456,7 +456,10 @@ pub fn run() {
 
             {
                 let settings_store = app.state::<Arc<SettingsStore>>();
-                let user_settings_path = app_data.join("UserData").join("User").join("settings.json");
+                let user_settings_path = commands::os::resolve_user_data_dir(app.handle())
+                    .expect("failed to resolve user data dir")
+                    .join("User")
+                    .join("settings.json");
                 if user_settings_path.exists() {
                     if let Err(e) = settings_store.load_user(&user_settings_path) {
                         log::warn!("failed to pre-load user settings: {e}");
@@ -634,6 +637,7 @@ pub fn run() {
             commands::storage_get,
             commands::storage_set,
             commands::storage_delete,
+            commands::storage_list,
             // sidex-db state persistence
             commands::db_get_recent_files,
             commands::db_get_recent_workspaces,

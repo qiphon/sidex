@@ -32,6 +32,10 @@ import {
 import { isUserDataProfile, IUserDataProfile } from '../../../../platform/userDataProfile/common/userDataProfile.js';
 import { IAnyWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 import { IUserDataProfileService } from '../../userDataProfile/common/userDataProfile.js';
+import { isTauri } from '../../../../sidex-bridge.js';
+import { TauriStorageDatabase } from './tauriStorageDatabase.js';
+
+const STORAGE_DATABASE_PREFIX = 'vscode-web-state-db-';
 
 export class BrowserStorageService extends AbstractStorageService {
 	private static BROWSER_DEFAULT_FLUSH_INTERVAL = 5 * 1000; // every 5s because async operations are not permitted on shutdown
@@ -84,8 +88,15 @@ export class BrowserStorageService extends AbstractStorageService {
 		]);
 	}
 
+	private async createStorageDatabase(id: string, broadcastChanges?: boolean): Promise<IIndexedDBStorageDatabase> {
+		if (isTauri()) {
+			return this._register(new TauriStorageDatabase(`${STORAGE_DATABASE_PREFIX}${id}/`));
+		}
+		return IndexedDBStorageDatabase.create({ id, broadcastChanges }, this.logService);
+	}
+
 	private async createApplicationStorage(): Promise<void> {
-		const applicationStorageIndexedDB = await IndexedDBStorageDatabase.createApplicationStorage(this.logService);
+		const applicationStorageIndexedDB = await this.createStorageDatabase('global', true);
 
 		this.applicationStorageDatabase = this._register(applicationStorageIndexedDB);
 		this.applicationStorage = this._register(new Storage(this.applicationStorageDatabase));
@@ -127,9 +138,9 @@ export class BrowserStorageService extends AbstractStorageService {
 				this.profileStorage.onDidChangeStorage(e => this.emitDidChangeValue(StorageScope.PROFILE, e))
 			);
 		} else {
-			const profileStorageIndexedDB = await IndexedDBStorageDatabase.createProfileStorage(
-				this.profileStorageProfile,
-				this.logService
+			const profileStorageIndexedDB = await this.createStorageDatabase(
+				`global-${this.profileStorageProfile.id}`,
+				true
 			);
 
 			this.profileStorageDatabase = this.profileStorageDisposables.add(profileStorageIndexedDB);
@@ -146,10 +157,7 @@ export class BrowserStorageService extends AbstractStorageService {
 	}
 
 	private async createWorkspaceStorage(): Promise<void> {
-		const workspaceStorageIndexedDB = await IndexedDBStorageDatabase.createWorkspaceStorage(
-			this.workspace.id,
-			this.logService
-		);
+		const workspaceStorageIndexedDB = await this.createStorageDatabase(this.workspace.id);
 
 		this.workspaceStorageDatabase = this._register(workspaceStorageIndexedDB);
 		this.workspaceStorage = this._register(new Storage(this.workspaceStorageDatabase));

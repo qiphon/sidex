@@ -166,6 +166,7 @@ jobs:
           mkdir -p dist-artifacts
           find target \( \
             -name "*.deb" \
+            -name "*.rpm" \
             -o -name "*.AppImage" \
             -o -name "*.AppImage.tar.gz" \
             -o -name "*.AppImage.tar.gz.sig" \

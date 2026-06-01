@@ -47,6 +47,44 @@ pub(crate) fn resolve_windows_shell() -> String {
     std::env::var("COMSPEC").unwrap_or_else(|_| "powershell.exe".to_string())
 }
 
+#[cfg(target_os = "windows")]
+fn is_git_bash_path(path: &std::path::Path) -> bool {
+    let normalized = path.to_string_lossy().replace('/', "\\").to_lowercase();
+    normalized.ends_with("\\git\\bin\\bash.exe") || normalized.ends_with("\\git\\usr\\bin\\bash.exe")
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_git_bash() -> Option<String> {
+    let mut candidates = Vec::new();
+
+    for key in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+        if let Some(root) = std::env::var_os(key) {
+            let root = std::path::PathBuf::from(root);
+            candidates.push(root.join("Git").join("bin").join("bash.exe"));
+            candidates.push(root.join("Git").join("usr").join("bin").join("bash.exe"));
+            candidates.push(root.join("Programs").join("Git").join("bin").join("bash.exe"));
+            candidates.push(
+                root.join("Programs")
+                    .join("Git")
+                    .join("usr")
+                    .join("bin")
+                    .join("bash.exe"),
+            );
+        }
+    }
+
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            candidates.push(dir.join("bash.exe"));
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|path| path.exists() && is_git_bash_path(path))
+        .map(|path| path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 #[allow(
     clippy::too_many_lines,
@@ -77,13 +115,25 @@ pub fn terminal_spawn(
         })
         .map_err(|e| format!("Failed to open PTY: {e}"))?;
 
-    let shell_path = shell.unwrap_or_else(|| {
+    let mut shell_path = shell.unwrap_or_else(|| {
         if cfg!(target_os = "windows") {
             resolve_windows_shell()
         } else {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
         }
     });
+
+    #[cfg(target_os = "windows")]
+    if std::path::Path::new(&shell_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("bash.exe"))
+        && !is_git_bash_path(std::path::Path::new(&shell_path))
+    {
+        if let Some(git_bash) = resolve_git_bash() {
+            shell_path = git_bash;
+        }
+    }
 
     if !cfg!(target_os = "windows") {
         let path = std::path::Path::new(&shell_path);
@@ -426,12 +476,21 @@ pub fn get_available_shells() -> Vec<ShellInfo> {
             ("PowerShell", "powershell.exe"),
             ("PowerShell Core", "pwsh.exe"),
             ("Command Prompt", "cmd.exe"),
-            ("Git Bash", "bash.exe"),
             ("WSL", "wsl.exe"),
         ];
         let default_shell = get_default_shell();
         let mut seen = std::collections::HashSet::new();
         let mut shells = Vec::new();
+
+        if let Some(resolved_path) = resolve_git_bash() {
+            seen.insert("Git Bash".to_string());
+            shells.push(ShellInfo {
+                name: "Git Bash".to_string(),
+                path: resolved_path.clone(),
+                is_default: resolved_path.eq_ignore_ascii_case(&default_shell),
+            });
+        }
+
         for (name, path) in candidates {
             if let Ok(resolved_path) = which::which(path) {
                 let resolved_path = resolved_path.to_string_lossy().to_string();

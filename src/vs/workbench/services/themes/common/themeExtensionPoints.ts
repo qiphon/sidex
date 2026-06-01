@@ -236,7 +236,8 @@ export class ThemeRegistry<T extends IThemeData> implements IDisposable {
 		private readonly themesExtPoint: IExtensionPoint<IThemeExtensionPoint[]>,
 		private create: (theme: IThemeExtensionPoint, themeLocation: URI, extensionData: ExtensionData) => T,
 		private idRequired = false,
-		private builtInTheme: T | undefined = undefined
+		private builtInTheme: T | undefined = undefined,
+		private readonly listedBuiltInThemes: readonly T[] = []
 	) {
 		this.extensionThemes = [];
 		this.initialize();
@@ -272,7 +273,7 @@ export class ThemeRegistry<T extends IThemeData> implements IDisposable {
 				}
 			}
 			const removed = Object.values(previousIds);
-			this.onDidChangeEmitter.fire({ themes: this.extensionThemes, added, removed });
+			this.onDidChangeEmitter.fire({ themes: this.getThemes(), added, removed });
 		});
 	}
 
@@ -334,6 +335,11 @@ export class ThemeRegistry<T extends IThemeData> implements IDisposable {
 		if (this.builtInTheme && this.builtInTheme.id === themeId) {
 			return this.builtInTheme;
 		}
+		for (const theme of this.listedBuiltInThemes) {
+			if (theme.id === themeId) {
+				return theme;
+			}
+		}
 		const allThemes = this.getThemes();
 		for (const t of allThemes) {
 			if (t.id === themeId) {
@@ -369,7 +375,7 @@ export class ThemeRegistry<T extends IThemeData> implements IDisposable {
 	}
 
 	public getThemes(): T[] {
-		return this.extensionThemes;
+		return [...this.listedBuiltInThemes, ...this.extensionThemes];
 	}
 
 	public getMarketplaceThemes(manifest: any, extensionLocation: URI, extensionData: ExtensionData): T[] {

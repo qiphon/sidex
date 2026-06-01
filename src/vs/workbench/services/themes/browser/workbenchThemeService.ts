@@ -85,6 +85,39 @@ const productIconThemeRulesClassName = 'contributedProductIconTheme';
 
 const themingRegistry = Registry.as<IThemingRegistry>(ThemingExtensions.ThemingContribution);
 
+function createBuiltInColorThemes(): ColorThemeData[] {
+	return [
+		ColorThemeData.createLoadedTheme(
+			`${ThemeTypeSelector.VS_DARK} sidex-builtin-dark-modern`,
+			'Dark Modern',
+			ThemeSettingDefaults.COLOR_THEME_DARK,
+			COLOR_THEME_DARK_INITIAL_COLORS,
+			nls.localize('darkModernDescription', 'Default dark theme')
+		),
+		ColorThemeData.createLoadedTheme(
+			`${ThemeTypeSelector.VS} sidex-builtin-light-modern`,
+			'Light Modern',
+			ThemeSettingDefaults.COLOR_THEME_LIGHT,
+			COLOR_THEME_LIGHT_INITIAL_COLORS,
+			nls.localize('lightModernDescription', 'Default light theme')
+		),
+		ColorThemeData.createLoadedTheme(
+			`${ThemeTypeSelector.HC_BLACK} sidex-builtin-hc-black`,
+			'Default High Contrast',
+			ThemeSettingDefaults.COLOR_THEME_HC_DARK,
+			undefined,
+			nls.localize('highContrastDescription', 'Default high contrast theme')
+		),
+		ColorThemeData.createLoadedTheme(
+			`${ThemeTypeSelector.HC_LIGHT} sidex-builtin-hc-light`,
+			'Default High Contrast Light',
+			ThemeSettingDefaults.COLOR_THEME_HC_LIGHT,
+			undefined,
+			nls.localize('highContrastLightDescription', 'Default high contrast light theme')
+		)
+	];
+}
+
 function validateThemeId(theme: string): string {
 	// migrations
 	switch (theme) {
@@ -150,7 +183,9 @@ export class WorkbenchThemeService extends Disposable implements IWorkbenchTheme
 		this.container = layoutService.mainContainer;
 		this.settings = new ThemeConfiguration(configurationService, hostColorService);
 
-		this.colorThemeRegistry = this._register(new ThemeRegistry(colorThemesExtPoint, ColorThemeData.fromExtensionTheme));
+		this.colorThemeRegistry = this._register(
+			new ThemeRegistry(colorThemesExtPoint, ColorThemeData.fromExtensionTheme, false, undefined, createBuiltInColorThemes())
+		);
 		this.colorThemeWatcher = this._register(
 			new ThemeFileWatcher(fileService, environmentService, this.reloadCurrentColorTheme.bind(this))
 		);
