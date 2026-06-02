@@ -71,13 +71,17 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }},wasm32-wasip2
 
+      - name: Build sidex-extension-sdk
+        run: cargo build --release -p sidex-extension-sdk
+
       - name: Build WASM extensions
+        working-directory: extensions-rust
         run: |
-          cargo build --release --manifest-path extensions-rust/Cargo.toml -p typescript-language-extension
-          cargo build --release --manifest-path extensions-rust/Cargo.toml -p rust-language-extension
-          cargo build --release --manifest-path extensions-rust/Cargo.toml -p go-language-extension
-          cargo build --release --manifest-path extensions-rust/Cargo.toml -p python-language-extension
-          cargo build --release --manifest-path extensions-rust/Cargo.toml -p cpp-language-extension
+          cargo build --release -p typescript-language-extension
+          cargo build --release -p rust-language-extension
+          cargo build --release -p go-language-extension
+          cargo build --release -p python-language-extension
+          cargo build --release -p cpp-language-extension
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
