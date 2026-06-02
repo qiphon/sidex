@@ -71,6 +71,9 @@ jobs:
         with:
           targets: ${{ matrix.rust_targets }},wasm32-wasip2
 
+      - name: Install wasm target
+        run: rustup target add wasm32-wasip2
+
       - name: Build sidex-extension-sdk
         run: cargo build --release -p sidex-extension-sdk
 
