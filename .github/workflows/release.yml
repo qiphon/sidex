@@ -77,11 +77,11 @@ jobs:
       - name: Build WASM extensions
         working-directory: extensions-rust
         run: |
-          cargo build --release -p typescript-language-extension
-          cargo build --release -p rust-language-extension
-          cargo build --release -p go-language-extension
-          cargo build --release -p python-language-extension
-          cargo build --release -p cpp-language-extension
+          cargo build --release --target wasm32-wasip2 -p typescript-language-extension
+          cargo build --release --target wasm32-wasip2 -p rust-language-extension
+          cargo build --release --target wasm32-wasip2 -p go-language-extension
+          cargo build --release --target wasm32-wasip2 -p python-language-extension
+          cargo build --release --target wasm32-wasip2 -p cpp-language-extension
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
