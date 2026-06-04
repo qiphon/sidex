@@ -1,5 +1,7 @@
 <h1 align="center">SideX</h1>
 
+> **上游源码**: [void](https://github.com/voideditor/void) (VSCode fork)
+
 <p align="center">
   <strong>VSCode's workbench, without Electron.</strong>
 </p>
