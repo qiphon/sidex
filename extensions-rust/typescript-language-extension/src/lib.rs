@@ -194,34 +194,117 @@ impl SidexExtension for TypeScriptLanguageExtension {
     }
 
     fn get_semantic_tokens_legend() -> Option<SemanticTokensLegend> {
-        None
+        Some(SemanticTokensLegend {
+            token_types: vec![
+                "comment".to_string(),
+                "keyword".to_string(),
+                "string".to_string(),
+                "number".to_string(),
+                "regexp".to_string(),
+                "operator".to_string(),
+                "namespace".to_string(),
+                "type".to_string(),
+                "class".to_string(),
+                "interface".to_string(),
+                "enum".to_string(),
+                "function".to_string(),
+                "variable".to_string(),
+                "parameter".to_string(),
+                "property".to_string(),
+                "label".to_string(),
+            ],
+            token_modifiers: vec![
+                "declaration".to_string(),
+                "definition".to_string(),
+                "readonly".to_string(),
+                "static".to_string(),
+                "deprecated".to_string(),
+                "abstract".to_string(),
+                "async".to_string(),
+                "modification".to_string(),
+            ],
+        })
     }
-    fn provide_type_definition(_: DocumentContext, _: Position) -> Vec<Location> {
-        vec![]
+    fn provide_type_definition(ctx: DocumentContext, pos: Position) -> Vec<Location> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        tsserver_request("typeDefinition", &ctx, Some(pos), None)
+            .and_then(|r| parse_ts_locations(&r))
+            .unwrap_or_default()
     }
-    fn provide_implementation(_: DocumentContext, _: Position) -> Vec<Location> {
-        vec![]
+    fn provide_implementation(ctx: DocumentContext, pos: Position) -> Vec<Location> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        tsserver_request("implementation", &ctx, Some(pos), None)
+            .and_then(|r| parse_ts_locations(&r))
+            .unwrap_or_default()
     }
-    fn provide_declaration(_: DocumentContext, _: Position) -> Vec<Location> {
-        vec![]
+    fn provide_declaration(ctx: DocumentContext, pos: Position) -> Vec<Location> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        tsserver_request("declaration", &ctx, Some(pos), None)
+            .and_then(|r| parse_ts_locations(&r))
+            .unwrap_or_default()
     }
-    fn provide_document_highlights(_: DocumentContext, _: Position) -> Vec<DocumentHighlight> {
-        vec![]
+    fn provide_document_highlights(ctx: DocumentContext, pos: Position) -> Vec<DocumentHighlight> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        tsserver_request("documentHighlights", &ctx, Some(pos), None)
+            .and_then(|r| parse_ts_document_highlights(&r))
+            .unwrap_or_default()
     }
     fn prepare_rename(_: DocumentContext, _: Position) -> Option<RenameLocation> {
         None
     }
-    fn provide_code_lenses(_: DocumentContext) -> Vec<CodeLens> {
-        vec![]
+    fn provide_code_lenses(ctx: DocumentContext) -> Vec<CodeLens> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        tsserver_request("navtree", &ctx, None, None)
+            .and_then(|r| parse_ts_code_lenses(&r))
+            .unwrap_or_default()
     }
-    fn provide_formatting(_: DocumentContext, _: u32, _: bool) -> Vec<TextEdit> {
-        vec![]
+    fn provide_formatting(ctx: DocumentContext, tab_size: u32, insert_spaces: bool) -> Vec<TextEdit> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        let extra = format!(
+            r#","options":{{"tabSize":{},"insertSpaces":{}}}"#,
+            tab_size,
+            if insert_spaces { "true" } else { "false" }
+        );
+        tsserver_request("format", &ctx, None, Some(&extra))
+            .and_then(|r| parse_ts_formatting(&r))
+            .unwrap_or_default()
     }
-    fn provide_range_formatting(_: DocumentContext, _: Range, _: u32, _: bool) -> Vec<TextEdit> {
-        vec![]
+    fn provide_range_formatting(ctx: DocumentContext, range: Range, tab_size: u32, insert_spaces: bool) -> Vec<TextEdit> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        let extra = format!(
+            r#","startLine":{},"startOffset":{},"endLine":{},"endOffset":{},"options":{{"tabSize":{},"insertSpaces":{}}}"#,
+            range.start.line + 1,
+            range.start.character + 1,
+            range.end.line + 1,
+            range.end.character + 1,
+            tab_size,
+            if insert_spaces { "true" } else { "false" }
+        );
+        tsserver_request("format", &ctx, None, Some(&extra))
+            .and_then(|r| parse_ts_formatting(&r))
+            .unwrap_or_default()
     }
-    fn provide_folding_ranges(_: DocumentContext) -> Vec<FoldingRange> {
-        vec![]
+    fn provide_folding_ranges(ctx: DocumentContext) -> Vec<FoldingRange> {
+        if !is_ts_js(&ctx.language_id) {
+            return vec![];
+        }
+        tsserver_request("getFoldingRanges", &ctx, None, None)
+            .and_then(|r| parse_ts_folding_ranges(&r))
+            .unwrap_or_default()
     }
     fn provide_document_links(_: DocumentContext) -> Vec<DocumentLink> {
         vec![]
@@ -229,14 +312,24 @@ impl SidexExtension for TypeScriptLanguageExtension {
     fn provide_selection_ranges(_: DocumentContext, _: Vec<Position>) -> Vec<SelectionRange> {
         vec![]
     }
-    fn provide_semantic_tokens(_: DocumentContext) -> Option<SemanticTokens> {
-        None
+    fn provide_semantic_tokens(ctx: DocumentContext) -> Option<SemanticTokens> {
+        if !is_ts_js(&ctx.language_id) {
+            return None;
+        }
+        tsserver_request("navtree", &ctx, None, None)
+            .and_then(|r| parse_semantic_tokens_from_navtree(&r))
     }
     fn provide_document_colors(_: DocumentContext) -> Vec<ColorInfo> {
         vec![]
     }
-    fn provide_workspace_symbols(_: String) -> Vec<DocumentSymbol> {
-        vec![]
+    fn provide_workspace_symbols(query: String) -> Vec<DocumentSymbol> {
+        let payload = format!(
+            r#"{{"command":"navto","arguments":{{"searchValue":"{}"}}}}"#,
+            query.replace('"', "\\\"")
+        );
+        host::execute_command("__sidex.tsserver", &payload)
+            .and_then(|r| parse_ts_workspace_symbols(&r))
+            .unwrap_or_default()
     }
     fn on_configuration_changed(_: String) {}
     fn get_tree_children(_: String, _: Option<String>) -> Vec<TreeItem> {
@@ -812,6 +905,388 @@ fn ts_kind_to_symbol_kind(kind: &str) -> u32 {
         "enum" => 9,
         "enum member" => 21,
         _ => 12,
+    }
+}
+
+fn parse_ts_formatting(json: &str) -> Option<Vec<TextEdit>> {
+    let mut edits = Vec::new();
+    let mut search = json;
+
+    while let Some(start_pos) = search.find("\"start\":") {
+        let start_line = extract_field_from_str(&search[start_pos..], "line")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+        let start_col = extract_field_from_str(&search[start_pos..], "offset")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+
+        let end_line = extract_field_from_str(&search[start_pos..], "endLine")
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(|l| l.saturating_sub(1))
+            .unwrap_or(start_line);
+        let end_col = extract_field_from_str(&search[start_pos..], "endOffset")
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(|c| c.saturating_sub(1))
+            .unwrap_or(start_col);
+
+        let new_text = extract_field_from_str(&search[start_pos..], "newText")
+            .unwrap_or_default();
+
+        edits.push(TextEdit {
+            range: Range {
+                start: Position {
+                    line: start_line,
+                    character: start_col,
+                },
+                end: Position {
+                    line: end_line,
+                    character: end_col,
+                },
+            },
+            new_text,
+        });
+
+        search = &search[start_pos + 7..];
+    }
+
+    if edits.is_empty() {
+        None
+    } else {
+        Some(edits)
+    }
+}
+
+fn parse_ts_folding_ranges(json: &str) -> Option<Vec<FoldingRange>> {
+    let mut ranges = Vec::new();
+    let mut search = json;
+
+    while let Some(start_pos) = search.find("\"startLine\":") {
+        let start_line = extract_field_from_str(&search[start_pos..], "startLine")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+        let end_line = extract_field_from_str(&search[start_pos..], "endLine")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+
+        let kind_str = extract_field_from_str(&search[start_pos..], "kind")
+            .unwrap_or_default();
+
+        let kind = match kind_str.as_str() {
+            "comment" => Some(1),
+            "import" | "imports" => Some(2),
+            "region" => Some(3),
+            "function" => Some(4),
+            "class" => Some(5),
+            _ => None,
+        };
+
+        ranges.push(FoldingRange {
+            start_line,
+            end_line,
+            kind,
+            ..Default::default()
+        });
+
+        search = &search[start_pos + 11..];
+    }
+
+    if ranges.is_empty() {
+        None
+    } else {
+        Some(ranges)
+    }
+}
+
+fn parse_ts_document_highlights(json: &str) -> Option<Vec<DocumentHighlight>> {
+    let mut highlights = Vec::new();
+    let mut search = json;
+
+    while let Some(file_pos) = search.find("\"file\":") {
+        let _file = extract_string_value(&search[file_pos + 7..])?;
+
+        let refs_pos = search[file_pos..].find("\"refs\":");
+        if refs_pos.is_none() {
+            search = &search[file_pos + 7..];
+            continue;
+        }
+
+        let refs_start = file_pos + refs_pos.unwrap();
+        let arr_start = search[refs_start..].find('[').map(|p| p + refs_start);
+
+        if let Some(arr_start) = arr_start {
+            let mut refs_search = &search[arr_start..];
+
+            while let Some(ref_pos) = refs_search.find("\"start\":") {
+                let start_line = extract_field_from_str(refs_search, "line")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(1)
+                    .saturating_sub(1);
+                let start_col = extract_field_from_str(refs_search, "offset")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(1)
+                    .saturating_sub(1);
+
+                let end_line = extract_field_from_str(refs_search, "endLine")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .map(|l| l.saturating_sub(1))
+                    .unwrap_or(start_line);
+                let end_col = extract_field_from_str(refs_search, "endOffset")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .map(|c| c.saturating_sub(1))
+                    .unwrap_or(start_col);
+
+                highlights.push(DocumentHighlight {
+                    range: Range {
+                        start: Position {
+                            line: start_line,
+                            character: start_col,
+                        },
+                        end: Position {
+                            line: end_line,
+                            character: end_col,
+                        },
+                    },
+                    kind: Some(0),
+                });
+
+                refs_search = &refs_search[ref_pos + 7..];
+            }
+        }
+
+        search = &search[file_pos + 7..];
+    }
+
+    if highlights.is_empty() {
+        None
+    } else {
+        Some(highlights)
+    }
+}
+
+fn parse_ts_workspace_symbols(json: &str) -> Option<Vec<DocumentSymbol>> {
+    let mut symbols = Vec::new();
+    let mut search = json;
+
+    while let Some(name_pos) = search.find("\"name\":") {
+        let name = extract_string_value(&search[name_pos + 6..])?;
+
+        let file = extract_field_from_str(&search[name_pos..], "file")
+            .unwrap_or_default();
+
+        let start_line = extract_field_from_str(&search[name_pos..], "line")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+        let start_col = extract_field_from_str(&search[name_pos..], "startOffset")
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(|c| c.saturating_sub(1))
+            .unwrap_or(0);
+        let end_col = extract_field_from_str(&search[name_pos..], "endOffset")
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(|c| c.saturating_sub(1))
+            .unwrap_or(start_col);
+
+        let kind_str = extract_field_from_str(&search[name_pos..], "kind")
+            .unwrap_or_default();
+
+        let detail = extract_field_from_str(&search[name_pos..], "containerName");
+
+        symbols.push(DocumentSymbol {
+            name,
+            detail,
+            kind: ts_kind_to_symbol_kind(&kind_str),
+            range: Range {
+                start: Position {
+                    line: start_line,
+                    character: start_col,
+                },
+                end: Position {
+                    line: start_line,
+                    character: end_col,
+                },
+            },
+            selection_range: Range {
+                start: Position {
+                    line: start_line,
+                    character: start_col,
+                },
+                end: Position {
+                    line: start_line,
+                    character: end_col,
+                },
+            },
+            children: vec![],
+            tags: vec![],
+            deprecated: None,
+            uri: if file.is_empty() {
+                None
+            } else {
+                Some(format!("file://{file}"))
+            },
+        });
+
+        search = &search[name_pos + 6..];
+    }
+
+    if symbols.is_empty() {
+        None
+    } else {
+        Some(symbols)
+    }
+}
+
+fn parse_semantic_tokens_from_navtree(json: &str) -> Option<SemanticTokens> {
+    let mut data: Vec<u32> = Vec::new();
+    let mut last_line = 0u32;
+    let mut last_start = 0u32;
+
+    fn extract_kind_recursive(
+        search: &str,
+        data: &mut Vec<u32>,
+        last_line: &mut u32,
+        last_start: &mut u32,
+    ) {
+        let mut current = search;
+
+        while let Some(name_pos) = current.find("\"name\":") {
+            let name = extract_string_value(&current[name_pos + 6..]);
+
+            if name.is_some() {
+                let start_line = extract_field_from_str(&current[name_pos..], "line")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0);
+
+                let start_col = extract_field_from_str(&current[name_pos..], "startOffset")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0);
+
+                let end_line = extract_field_from_str(&current[name_pos..], "endLine")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(start_line);
+
+                let end_col = extract_field_from_str(&current[name_pos..], "endOffset")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(start_col);
+
+                let kind_str = extract_field_from_str(&current[name_pos..], "kind")
+                    .unwrap_or_default();
+
+                let token_type = ts_kind_to_token_type(&kind_str);
+
+                let delta_line = start_line.saturating_sub(*last_line);
+                let delta_start = if delta_line == 0 {
+                    start_col.saturating_sub(*last_start)
+                } else {
+                    start_col
+                };
+
+                let length = if start_line == end_line {
+                    end_col.saturating_sub(start_col)
+                } else {
+                    0
+                };
+
+                data.push(delta_line);
+                data.push(delta_start);
+                data.push(length);
+                data.push(token_type);
+                data.push(0);
+
+                *last_line = start_line;
+                *last_start = start_col;
+            }
+
+            current = &current[name_pos + 6..];
+        }
+    }
+
+    extract_kind_recursive(json, &mut data, &mut last_line, &mut last_start);
+
+    if data.is_empty() {
+        None
+    } else {
+        Some(SemanticTokens {
+            result_id: None,
+            data,
+        })
+    }
+}
+
+fn ts_kind_to_token_type(kind: &str) -> u32 {
+    match kind {
+        "class" => 5,
+        "enum" => 13,
+        "interface" => 7,
+        "namespace" => 3,
+        "type alias" | "type" => 22,
+        "function" | "method" => 12,
+        "var" | "let" | "const" => 0,
+        "property" => 8,
+        "parameter" => 1,
+        "constructor" => 9,
+        _ => 0,
+    }
+}
+
+fn parse_ts_code_lenses(json: &str) -> Option<Vec<CodeLens>> {
+    let mut lenses = Vec::new();
+    let mut search = json;
+    let mut seen = std::collections::HashSet::new();
+
+    while let Some(name_pos) = search.find("\"name\":") {
+        let name = extract_string_value(&search[name_pos + 6..]);
+
+        if let Some(name) = name {
+            let start_line = extract_field_from_str(&search[name_pos..], "line")
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(1)
+                .saturating_sub(1);
+            let start_col = extract_field_from_str(&search[name_pos..], "startOffset")
+                .and_then(|s| s.parse::<u32>().ok())
+                .map(|c| c.saturating_sub(1))
+                .unwrap_or(0);
+            let end_col = extract_field_from_str(&search[name_pos..], "endOffset")
+                .and_then(|s| s.parse::<u32>().ok())
+                .map(|c| c.saturating_sub(1))
+                .unwrap_or(start_col);
+
+            let kind_str = extract_field_from_str(&search[name_pos..], "kind")
+                .unwrap_or_default();
+
+            if kind_str == "function" || kind_str == "method" || kind_str == "class" {
+                let key = format!("{}:{}", start_line, start_col);
+                if !seen.contains(&key) {
+                    seen.insert(key);
+
+                    lenses.push(CodeLens {
+                        range: Range {
+                            start: Position {
+                                line: start_line,
+                                character: start_col,
+                            },
+                            end: Position {
+                                line: start_line,
+                                character: end_col,
+                            },
+                        },
+                        command: None,
+                        data: Some(name),
+                    });
+                }
+            }
+        }
+
+        search = &search[name_pos + 6..];
+    }
+
+    if lenses.is_empty() {
+        None
+    } else {
+        Some(lenses)
     }
 }
 

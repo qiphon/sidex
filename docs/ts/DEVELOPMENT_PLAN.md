@@ -2,6 +2,12 @@
 
 基于 [docs/ts/README.md](./ts/README.md) 的功能分析，本文档制定 SideX TypeScript 语言服务的开发计划。
 
+## 参考文档
+
+- [TECHNICAL_SPEC.md](./implementation/TECHNICAL_SPEC.md) - 完整技术实现规格
+- [PARSER_REFERENCE.md](./implementation/PARSER_REFERENCE.md) - 解析函数参考实现
+- [TEST_STRATEGY.md](./implementation/TEST_STRATEGY.md) - 测试验证策略
+
 ## 现状概述
 
 | 类别 | 数量 |

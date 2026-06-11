@@ -23,33 +23,36 @@ SideX 使用自定义的 WASM 扩展实现：
 
 ### ✅ SideX 已实现的功能
 
-| 功能 | SideX 状态 | void 状态 |
-|------|-----------|----------|
-| Completion | ✅ 已实现 | ✅ |
-| Hover | ✅ 已实现 | ✅ |
-| Definition | ✅ 已实现 | ✅ |
-| References | ✅ 已实现 | ✅ |
-| Document Symbols | ✅ 已实现 | ✅ |
-| Signature Help | ✅ 已实现 | ✅ |
-| Code Actions | ✅ 已实现 | ✅ |
-| Rename | ✅ 已实现 | ✅ |
-| Inlay Hints | ✅ 已实现 | ✅ |
-| Diagnostics | ✅ 已实现 | ✅ |
+| 功能 | SideX 状态 | void 状态 | 代码位置 |
+|------|-----------|----------|----------|
+| Completion | ✅ 已实现 | ✅ | lib.rs:63 |
+| Hover | ✅ 已实现 | ✅ | lib.rs:77 |
+| Definition | ✅ 已实现 | ✅ | lib.rs:85 |
+| References | ✅ 已实现 | ✅ | lib.rs:94 |
+| Document Symbols | ✅ 已实现 | ✅ | lib.rs:103 |
+| Signature Help | ✅ 已实现 | ✅ | lib.rs:112 |
+| Code Actions | ✅ 已实现 | ✅ | lib.rs:120 |
+| Rename | ✅ 已实现 | ✅ | lib.rs:133 |
+| Inlay Hints | ✅ 已实现 | ✅ | lib.rs:153 |
+| Diagnostics | ✅ 已实现 | ✅ | lib.rs:167 |
+| **Type Definition** | ✅ 已实现 | ✅ | lib.rs:228 |
+| **Implementation** | ✅ 已实现 | ✅ | lib.rs:236 |
+| **Declaration** | ✅ 已实现 | ✅ | lib.rs:244 |
+| **Formatting** | ✅ 已实现 | ✅ | lib.rs:271 |
+| **Range Formatting** | ✅ 已实现 | ✅ | lib.rs:284 |
+| **Folding Ranges** | ✅ 已实现 | ✅ | lib.rs:301 |
+| **Document Highlights** | ✅ 已实现 | ✅ | lib.rs:252 |
+| **Code Lenses** | ✅ 已实现 | ✅ | lib.rs:263 |
+| **Semantic Tokens** | ✅ 已实现 | ✅ | lib.rs:315 |
+| **Workspace Symbols** | ✅ 已实现 | ✅ | lib.rs:325 |
 
-### ❌ SideX 未实现的功能
+### ❌ 待增强功能
 
-| 功能 | SideX 状态 | void 状态 | 优先级 |
-|------|-----------|----------|--------|
-| Type Definition | ❌ 返回空 | ✅ | 高 |
-| Implementation | ❌ 返回空 | ✅ | 高 |
-| Declaration | ❌ 返回空 | ✅ | 中 |
-| Formatting | ❌ 返回空 | ✅ | 高 |
-| Range Formatting | ❌ 返回空 | ✅ | 中 |
-| Folding Ranges | ❌ 返回空 | ✅ | 中 |
-| Document Highlights | ❌ 返回空 | ✅ | 低 |
-| Code Lenses | ❌ 返回空 | ✅ | 低 |
-| Semantic Tokens | ❌ 返回空 | ✅ | 中 |
-| Workspace Symbols | ❌ 返回空 | ✅ | 中 |
+| 功能 | 当前状态 | 说明 |
+|------|---------|------|
+| Formatting 参数验证 | ⚠️ 待验证 | tsserver 响应格式需实际测试 |
+| Folding Ranges 验证 | ⚠️ 待验证 | 响应格式需实际测试 |
+| Semantic Tokens | ⚠️ 简化实现 | 使用 navtree 转换，非完整语义标记 |
 
 ## 架构差异
 
@@ -84,6 +87,14 @@ SideX 使用自定义的 WASM 扩展实现：
 - SideX 扩展配置: `extensions-rust/typescript-language-extension/sidex.toml`
 - SideX CI 构建: `.github/workflows/release.yml`
 - void 源码: https://github.com/voideditor/void
+
+## 技术实现文档
+
+详细的技术实现规格请参考:
+
+- [TECHNICAL_SPEC.md](./implementation/TECHNICAL_SPEC.md) - 完整技术实现规格
+- [PARSER_REFERENCE.md](./implementation/PARSER_REFERENCE.md) - 解析函数参考实现
+- [TEST_STRATEGY.md](./implementation/TEST_STRATEGY.md) - 测试验证策略
 
 ## 构建说明
 
