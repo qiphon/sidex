@@ -24,7 +24,19 @@ npm run rust:test               # Rust tests
 npm run lint && npm run lint:fix
 npm run format && npm run format:check
 npm run rust:check && npm run rust:clippy && npm run rust:fmt
+
+# Git workflow (auto-push after task completion)
+git status --porcelain=v1 -b   # Check if local is ahead of remote
+git push                        # Push to remote when ahead
 ```
+
+## Auto Push Rules
+
+After completing any code modification task, **must push to remote**:
+- Use skill: `.ai-skills/auto-push-after-task/SKILL.md`
+- Check `git status --porcelain=v1 -b` - if ahead of remote, auto push
+- Push command: `git push` or `git push -u origin <branch>`
+- **DO NOT push workflow file changes** (`.github/workflows/`)
 
 ## Important Constraints
 
