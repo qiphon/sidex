@@ -785,6 +785,7 @@ pub fn run() {
             commands::wasm_provide_completion_all,
             commands::wasm_provide_hover_all,
             commands::wasm_provide_definition_all,
+            commands::wasm_provide_references_all,
             commands::wasm_provide_document_symbols_all,
             commands::wasm_provide_formatting_all,
             commands::wasm_provide_type_definition_all,
