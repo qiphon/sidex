@@ -72,3 +72,13 @@ Agent 在任务执行过程中发现的条目应遵循以下格式：
 - Instructions:
   - `src/vs/base/browser/` 下的基础模块可能在非浏览器上下文中被提前加载，顶层代码不能直接访问 `window` 或 `navigator`。
   - 需要通过 `globalThis`、`typeof window`、`typeof navigator` 等方式做安全兜底，避免模块加载阶段抛错。
+
+[Git 推送规则：推送到当前分支]
+- Date: 2026-06-12
+- Context: 用户要求从哪个分支拉取的最新代码就推送到哪个分支
+- Instructions:
+  - 推送代码前先检查当前所在分支 (`git branch --show-current`)
+  - 如果当前分支是远端存在的分支（通过 `git branch -r` 确认），直接推送到该远端分支
+  - 只有当当前分支是新创建的本地分支（远端不存在）时，才创建新的远端分支
+  - 避免在 detached HEAD 状态下创建新分支后直接推送，应该先切换回原分支或合并到原分支
+  - 推送命令：`git push origin <current-branch>` 或 `git push`（已设置 upstream 时）
