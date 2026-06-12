@@ -92,7 +92,9 @@ impl SidexExtension for TypeScriptLanguageExtension {
     }
 
     fn provide_references(ctx: DocumentContext, pos: Position) -> Vec<Location> {
+        log::info!("[references] language_id: {}, pos: line={}, char={}", ctx.language_id, pos.line, pos.character);
         if !is_ts_js(&ctx.language_id) {
+            log::info!("[references] not ts/js file, skipping");
             return vec![];
         }
         tsserver_request("references", &ctx, Some(pos), None)
@@ -504,7 +506,10 @@ fn tsserver_request(
         file.replace('"', "\\\"")
     );
 
-    host::execute_command("__sidex.tsserver", &payload).ok()
+    log::info!("[tsserver] {} request: {}", command, payload);
+    let result = host::execute_command("__sidex.tsserver", &payload);
+    log::info!("[tsserver] {} response: {:?}", command, result.as_ref().map(|s| &s[..s.len().min(500)]));
+    result.ok()
 }
 
 fn parse_ts_completions(json: &str) -> Option<CompletionList> {
@@ -568,11 +573,13 @@ fn parse_ts_quickinfo(json: &str) -> Option<HoverResult> {
 }
 
 fn parse_ts_locations(json: &str) -> Option<Vec<Location>> {
+    log::info!("[parse_ts_locations] input: {}", &json[..json.len().min(1000)]);
     let mut locs = Vec::new();
     let mut search = json;
     while let Some(file_pos) = search.find("\"file\":") {
         let after = &search[file_pos + 7..];
         let file = extract_string_value(after)?;
+        log::info!("[parse_ts_locations] found file: {}", file);
         let start_line = extract_field_from_str(&search[file_pos..], "line")
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(1)
@@ -596,6 +603,7 @@ fn parse_ts_locations(json: &str) -> Option<Vec<Location>> {
         });
         search = &search[file_pos + 7..];
     }
+    log::info!("[parse_ts_locations] parsed {} locations", locs.len());
     if locs.is_empty() {
         None
     } else {

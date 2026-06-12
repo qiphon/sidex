@@ -2389,20 +2389,24 @@ pub async fn wasm_provide_references_all(
     character: u32,
     state: State<'_, Arc<WasmExtensionRuntime>>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    log::info!("[references] uri={}, lang={}, line={}, char={}", uri, language_id, line, character);
     let mut guard = state.inner.lock().map_err(|e| e.to_string())?;
     let ctx = make_doc_ctx(&uri, &language_id, version);
     let pos = make_position(line, character);
 
     let mut all_locs = Vec::new();
     let ext_ids: Vec<String> = guard.extensions.keys().cloned().collect();
+    log::info!("[references] loaded extensions: {:?}", ext_ids);
     for ext_id in &ext_ids {
         if let Some(ext) = guard.extensions.get_mut(ext_id) {
+            log::info!("[references] calling provide_references for {}", ext_id);
             match ext
                 .bindings
                 .sidex_extension_extension_api()
                 .call_provide_references(&mut ext.store, &ctx, pos)
             {
                 Ok(locs) => {
+                    log::info!("[references] {} returned {} locations", ext_id, locs.len());
                     for l in &locs {
                         all_locs.push(serialize_location(l));
                     }
@@ -2413,6 +2417,7 @@ pub async fn wasm_provide_references_all(
             }
         }
     }
+    log::info!("[references] total locations: {}", all_locs.len());
     Ok(all_locs)
 }
 
