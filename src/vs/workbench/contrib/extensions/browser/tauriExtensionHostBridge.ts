@@ -18,6 +18,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 
 async function invokeWasmProvider<T>(command: string, uri: string, languageId: string, version: number, line: number, character: number): Promise<T | null> {
+	console.log('[invokeWasmProvider] command:', command, 'uri:', uri, 'lang:', languageId);
 	try {
 		const result = await invoke<T>(command, {
 			uri,
@@ -26,8 +27,10 @@ async function invokeWasmProvider<T>(command: string, uri: string, languageId: s
 			line,
 			character,
 		});
+		console.log('[invokeWasmProvider] result:', result);
 		return result;
-	} catch {
+	} catch (e) {
+		console.error('[invokeWasmProvider] error:', e);
 		return null;
 	}
 }
