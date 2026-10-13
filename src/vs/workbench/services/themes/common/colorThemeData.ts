@@ -722,6 +722,26 @@ export class ColorThemeData implements IWorkbenchColorTheme {
 		return themeData;
 	}
 
+	static createLoadedTheme(
+		id: string,
+		label: string,
+		settingsId: string,
+		colorMap?: { [id: string]: string },
+		description?: string
+	): ColorThemeData {
+		const themeData = new ColorThemeData(id, label, settingsId);
+		themeData.description = description;
+		themeData.isLoaded = true;
+		themeData.themeTokenColors = [];
+		themeData.watch = false;
+		if (colorMap) {
+			for (const colorId in colorMap) {
+				themeData.colorMap[colorId] = Color.fromHex(colorMap[colorId]);
+			}
+		}
+		return themeData;
+	}
+
 	static fromStorageData(storageService: IStorageService): ColorThemeData | undefined {
 		const input = storageService.get(ColorThemeData.STORAGE_KEY, StorageScope.PROFILE);
 		if (!input) {

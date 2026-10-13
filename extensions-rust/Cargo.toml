@@ -10,7 +10,7 @@ members = [
   "php-language-extension",
   "references-view-extension",
   "json-language-extension",
-  "emmet-extension",
+  # "emmet-extension",  # disabled: stub causes stack overflow on activation
   "npm-extension",
   "markdown-extension",
   "css-language-extension",

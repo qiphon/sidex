@@ -47,13 +47,7 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            libfuse2 \
-            libglib2.0-dev \
-            pkg-config \
-            build-essential \
-            cmake
+            libssl-dev
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

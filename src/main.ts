@@ -245,7 +245,12 @@ async function boot() {
 		}
 	};
 
-	create(document.body, options);
+	const workbenchContainer = document.getElementById('workbench');
+	if (workbenchContainer) {
+		create(workbenchContainer, options);
+	} else {
+		create(document.body, options);
+	}
 
 	setupTauriExternalOpener();
 	setupMenuActions();
@@ -382,6 +387,13 @@ function setupWindowStateSave() {
 		.catch(() => {});
 }
 
+const TITLEBAR_NO_DRAG_SELECTOR =
+	'a, button, input, select, textarea, [contenteditable="true"], [draggable="true"], ' +
+	'.action-item, .command-center, .window-controls-container, .window-icon, ' +
+	'.menubar, .monaco-menu, .monaco-action-bar, .window-title, .action-toolbar-container, ' +
+	'.center-adjacent-toolbar-container, .tabs-container, .tab, .monaco-list, .pane-header, ' +
+	'.composite.title, .split-view-view, .editor-group-container';
+
 function setupNativeWindowDragging() {
 	let appWindow: { startDragging(): Promise<void> } | null = null;
 	import('@tauri-apps/api/window')
@@ -390,28 +402,19 @@ function setupNativeWindowDragging() {
 		})
 		.catch(() => {});
 
-	document.addEventListener(
-		'mousedown',
-		(e: MouseEvent) => {
-			if (e.button !== 0 || !appWindow) {
-				return;
-			}
-			const target = e.target as HTMLElement | null;
-			if (!target?.closest('.part.titlebar')) {
-				return;
-			}
-			if (
-				target.closest('a, button, input, select, textarea, .action-item, .command-center, .window-controls-container')
-			) {
-				return;
-			}
-			if (target.closest('[draggable="true"]') || target.getAttribute('draggable') === 'true') {
-				return;
-			}
-			appWindow.startDragging().catch(() => {});
-		},
-		true
-	);
+	document.addEventListener('mousedown', (e: MouseEvent) => {
+		if (e.button !== 0 || e.defaultPrevented || !appWindow) {
+			return;
+		}
+		const target = e.target as HTMLElement | null;
+		if (!target?.closest('.part.titlebar')) {
+			return;
+		}
+		if (target.closest(TITLEBAR_NO_DRAG_SELECTOR)) {
+			return;
+		}
+		appWindow.startDragging().catch(() => {});
+	});
 }
 
 function setupMenuActions() {

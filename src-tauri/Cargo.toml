@@ -30,6 +30,7 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-deep-link = "2"
+jsonwebtoken = { version = "10.4", features = ["aws_lc_rs"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -52,6 +53,8 @@ reqwest = { version = "0.12", features = [
 # File system & path
 notify = { version = "7", features = ["macos_fsevent"] }
 walkdir = "2"
+ignore = { workspace = true }
+dunce = "1"
 pathdiff = "0.2"
 glob = "0.3"
 globset = "0.4"
@@ -65,6 +68,8 @@ base64 = "0.22"
 
 # Crypto
 sha2 = "0.10"
+hmac = "0.12"
+dotenvy = "0.15"
 md5 = "0.7"
 uuid = { version = "1", features = ["v4"] }
 rand = "0.8"
@@ -76,10 +81,14 @@ rayon = "1.10"
 regex = "1"
 memchr = "2"
 
-# Process & terminal
-crossbeam = "0.8"
+# Process & terminal management
 which = "6"
+crossbeam = "0.8"
 portable-pty = "0.8"
+
+# WebSocket for orchestration
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+futures-util = "0.3"
 
 # Clipboard & URL
 arboard = "3"
@@ -120,7 +129,7 @@ sidex-text = { path = "../crates/sidex-text" }
 sidex-syntax = { path = "../crates/sidex-syntax" }
 sidex-tasks = { path = "../crates/sidex-tasks" }
 sidex-extensions = { path = "../crates/sidex-extensions" }
-sidex-terminal = { path = "../crates/sidex-terminal" }
+sidex-agent = { path = "../crates/sidex-agent" }
 sidex-lsp = { path = "../crates/sidex-lsp" }
 sidex-keymap = { path = "../crates/sidex-keymap" }
 sidex-extension-api = { path = "../crates/sidex-extension-api" }
@@ -128,6 +137,7 @@ sidex-update = { path = "../crates/sidex-update" }
 sidex-profiles = { path = "../crates/sidex-profiles" }
 sidex-auth = { path = "../crates/sidex-auth" }
 sidex-textmate = { path = "../crates/sidex-textmate" }
+sidex-context = { path = "../crates/sidex-context" }
 
 # Unix-specific
 libc = "0.2"

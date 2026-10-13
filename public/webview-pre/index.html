@@ -7,12 +7,7 @@
 	<meta http-equiv="Content-Security-Policy"
 		content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; font-src * data:; img-src * data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval'; frame-src *;">
 
-	<!-- Enable document.write for webview content -->
-	<script>
-		document.addEventListener('securitypolicyviolation', function(e) {
-			console.warn('[Webview] CSP violation:', e.violatedDirective, e.blockedURI);
-		});
-	</script>
+	<!-- Disable pinch zooming -->
 	<meta name="viewport"
 		content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
 </head>
@@ -921,13 +916,22 @@
 				}
 			}
 
-			// Remove any CSP meta tags from extension content to avoid nonce conflicts
-			const cspMetaTags = newDocument.querySelectorAll('meta[http-equiv="Content-Security-Policy"]');
-			cspMetaTags.forEach(tag => {
-				console.log('[Webview] Removing extension CSP to avoid nonce conflicts');
-				tag.remove();
-			});
-			hostMessaging.postMessage('no-csp-found', undefined);
+			// Check for CSP
+			const csp = newDocument.querySelector('meta[http-equiv="Content-Security-Policy"]');
+			if (!csp) {
+				hostMessaging.postMessage('no-csp-found', undefined);
+			} else {
+				try {
+					// Attempt to rewrite CSPs that hardcode old-style resource endpoint
+					const cspContent = csp.getAttribute('content');
+					if (cspContent) {
+						const newCsp = cspContent.replace(/(vscode-webview-resource|vscode-resource):(?=(\s|;|$))/g, data.cspSource);
+						csp.setAttribute('content', newCsp);
+					}
+				} catch (e) {
+					console.error(`Could not rewrite csp: ${e}`);
+				}
+			}
 
 			// set DOCTYPE for newDocument explicitly as DOMParser.parseFromString strips it off
 			// and DOCTYPE is needed in the iframe to ensure that the user agent stylesheet is correctly overridden
@@ -1051,7 +1055,7 @@
 				const sandboxRules = new Set(['allow-same-origin', 'allow-pointer-lock', 'allow-scripts', 'allow-downloads', 'allow-forms']);
 				newFrame.setAttribute('sandbox', Array.from(sandboxRules).join(' '));
 
-				const allowRules = ['cross-origin-isolated;', 'autoplay;'];
+				const allowRules = ['cross-origin-isolated;', 'autoplay;', 'local-network-access;'];
 				if (!isFirefox && options.allowScripts) {
 					allowRules.push('clipboard-read;', 'clipboard-write;');
 				}
