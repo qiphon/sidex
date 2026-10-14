@@ -190,6 +190,13 @@ pub async fn proxy_request(
     };
 
     for (key, value) in &headers {
+        // `content-length` computed from JS string length mismatches the
+        // UTF-8 byte length for non-ASCII bodies; let reqwest derive it.
+        // `host` is set from the URL, `accept-encoding` from the client config.
+        let lowered = key.to_ascii_lowercase();
+        if lowered == "accept-encoding" || lowered == "content-length" || lowered == "host" {
+            continue;
+        }
         req = req.header(key.as_str(), value.as_str());
     }
 
@@ -197,10 +204,10 @@ pub async fn proxy_request(
         req = req.body(b);
     }
 
-    let response = req
-        .send()
-        .await
-        .map_err(|e| format!("proxy request failed: {e}"))?;
+    let response = req.send().await.map_err(|e| {
+        log::warn!("proxy {method} {url} failed: {e}");
+        format!("proxy request failed: {e}")
+    })?;
 
     let bytes = read_body_limited(response).await?;
     String::from_utf8(bytes).map_err(|e| format!("invalid UTF-8 in proxy response: {e}"))
@@ -240,7 +247,11 @@ pub async fn proxy_request_full(
     };
 
     for (key, value) in &headers {
-        if key.eq_ignore_ascii_case("accept-encoding") {
+        // `content-length` computed from JS string length mismatches the
+        // UTF-8 byte length for non-ASCII bodies; let reqwest derive it.
+        // `host` is set from the URL, `accept-encoding` from the client config.
+        let lowered = key.to_ascii_lowercase();
+        if lowered == "accept-encoding" || lowered == "content-length" || lowered == "host" {
             continue;
         }
         req = req.header(key.as_str(), value.as_str());
@@ -250,10 +261,10 @@ pub async fn proxy_request_full(
         req = req.body(b);
     }
 
-    let response = req
-        .send()
-        .await
-        .map_err(|e| format!("proxy request failed: {e}"))?;
+    let response = req.send().await.map_err(|e| {
+        log::warn!("proxy {method} {url} failed: {e}");
+        format!("proxy request failed: {e}")
+    })?;
 
     let status = response.status().as_u16();
     let mut resp_headers: HashMap<String, String> = HashMap::new();

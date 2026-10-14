@@ -394,7 +394,27 @@ pub fn resolve_node_runtime(app: &AppHandle) -> Result<ResolvedNode, String> {
         }
     }
 
-    Err("Node runtime not found. Bundle Node with SideX or install Node.js (>=18).".into())
+    // GUI-launched processes often miss version-manager shims (nvm, fnm,
+    // volta, asdf) from their PATH; probe their well-known locations.
+    for candidate in sidex_extensions::paths::discoverable_node_candidates() {
+        if let Some(path) = candidate.to_str() {
+            if candidate.exists() && is_usable_node(path) {
+                return Ok(ResolvedNode {
+                    path: path.to_string(),
+                    version: read_node_version(path),
+                    source: "discovered",
+                    bundled: false,
+                });
+            }
+        }
+    }
+
+    Err(
+        "Node runtime not found. Searched PATH and common install locations \
+         (nvm, fnm, volta, asdf, Homebrew). Set SIDEX_NODE_BINARY to a Node.js \
+         (>=18) executable, or install Node.js."
+            .into(),
+    )
 }
 
 fn extension_source(app: &AppHandle, path: &Path) -> (String, bool) {
@@ -514,6 +534,12 @@ pub fn extension_search_paths(app: &AppHandle) -> Vec<PathBuf> {
 
     let candidates = vec![
         user_extensions_dir(),
+        // Legacy layout (~/.sidex/extensions) from releases before the XDG
+        // migration; keep scanning it so pre-migration installs keep working
+        // even if the migration was skipped or partially failed.
+        dirs::home_dir()
+            .map(|h| h.join(".sidex").join("extensions"))
+            .unwrap_or_default(),
         builtin_ext,
         rust_ext,
         dist_ext,
@@ -569,6 +595,11 @@ pub fn scan_extensions(app: &AppHandle, paths: &[PathBuf]) -> Vec<ExtensionManif
     let mut by_id: HashMap<String, ExtensionManifest> = HashMap::new();
     for search_path in paths {
         let Ok(entries) = fs::read_dir(search_path) else {
+            if search_path.exists() {
+                log::warn!("extension search path unreadable: {}", search_path.display());
+            } else {
+                log::debug!("extension search path missing: {}", search_path.display());
+            }
             continue;
         };
 

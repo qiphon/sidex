@@ -148,7 +148,156 @@ pub fn resolve_node_runtime() -> Result<NodeRuntime, String> {
         }
     }
 
-    Err("Node runtime not found. Install Node.js (>=18) or set SIDEX_NODE_BINARY.".into())
+    // GUI-launched processes often miss version-manager shims from PATH.
+    for candidate in discoverable_node_candidates() {
+        if let Some(path) = candidate.to_str() {
+            if candidate.exists() && is_usable_node(path) {
+                return Ok(NodeRuntime {
+                    path: path.to_string(),
+                    version: read_node_version(path),
+                    source: "discovered",
+                    bundled: false,
+                });
+            }
+        }
+    }
+
+    Err(
+        "Node runtime not found. Searched PATH and common install locations \
+         (nvm, fnm, volta, asdf, Homebrew). Set SIDEX_NODE_BINARY to a Node.js \
+         (>=18) executable, or install Node.js."
+            .into(),
+    )
+}
+
+/// Well-known Node.js install locations that are frequently missing from the
+/// PATH of GUI-launched processes. Covers the popular version managers and
+/// user-local prefixes on every supported platform. For versioned directories
+/// (nvm, fnm, mise, nvm-windows) the newest version is preferred.
+pub fn discoverable_node_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+
+    let home = dirs::home_dir();
+    let exe = if cfg!(target_os = "windows") {
+        "node.exe"
+    } else {
+        "node"
+    };
+
+    if cfg!(target_os = "windows") {
+        // nvm-windows keeps versions in %APPDATA%\nvm\vX.Y.Z\node.exe.
+        if let Some(appdata) = dirs::data_dir() {
+            if let Some(best) = newest_child_dir(&appdata.join("nvm")) {
+                out.push(best.join(exe));
+            }
+            if let Some(best) = newest_child_dir(&appdata.join("fnm").join("node-versions")) {
+                out.push(best.join("installation").join(exe));
+            }
+        }
+        if let Some(local) = dirs::data_local_dir() {
+            out.push(local.join("Volta").join("bin").join(exe));
+        }
+        if let Some(prog) = std::env::var_os("ProgramFiles") {
+            out.push(PathBuf::from(prog).join("nodejs").join(exe));
+        }
+        if let Some(prog) = std::env::var_os("ProgramFiles(x86)") {
+            out.push(PathBuf::from(prog).join("nodejs").join(exe));
+        }
+        if let Some(home) = home {
+            out.push(home.join("scoop").join("apps").join("nodejs").join("current").join(exe));
+        }
+        return out;
+    }
+
+    let Some(home) = home else {
+        return out;
+    };
+
+    // nvm: $NVM_DIR/versions/node/<version>/bin/node
+    let nvm_dir = std::env::var("NVM_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| home.join(".nvm"));
+    if let Some(best) = newest_child_dir(&nvm_dir.join("versions").join("node")) {
+        out.push(best.join("bin").join(exe));
+    }
+
+    // fnm: $FNM_DIR (default ~/.local/share/fnm) and legacy ~/.fnm
+    let fnm_dirs = [
+        std::env::var("FNM_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| home.join(".local").join("share").join("fnm")),
+        home.join(".fnm"),
+    ];
+    for fnm_dir in fnm_dirs {
+        if let Some(best) = newest_child_dir(&fnm_dir.join("node-versions")) {
+            out.push(best.join("installation").join("bin").join(exe));
+        }
+    }
+
+    // mise: ~/.local/share/mise/installs/node/<version>/bin/node
+    if let Some(best) = newest_child_dir(
+        &home
+            .join(".local")
+            .join("share")
+            .join("mise")
+            .join("installs")
+            .join("node"),
+    ) {
+        out.push(best.join("bin").join(exe));
+    }
+
+    // Volta and asdf shims.
+    out.push(home.join(".volta").join("bin").join(exe));
+    out.push(home.join(".asdf").join("shims").join(exe));
+
+    // User-local prefixes and Linux package managers.
+    out.push(home.join(".local").join("bin").join(exe));
+    out.push(home.join("bin").join(exe));
+    out.push(PathBuf::from("/snap/bin/node"));
+    out.push(PathBuf::from("/usr/local/bin/node"));
+    out.push(PathBuf::from("/usr/bin/node"));
+    out.push(PathBuf::from("/opt/homebrew/bin/node"));
+    out.push(PathBuf::from("/opt/homebrew/opt/node/bin/node"));
+
+    out
+}
+
+/// Picks the child directory with the highest version-like name
+/// (`v20.11.0`, `20.11.0`, ...). Returns `None` when the directory does not
+/// exist or contains no version-like subdirectories.
+fn newest_child_dir(dir: &std::path::Path) -> Option<PathBuf> {
+    let mut best: Option<(Vec<(u64, String)>, PathBuf)> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let key = version_sort_key(name);
+        if best.as_ref().map_or(true, |(b, _)| key > *b) {
+            best = Some((key, path));
+        }
+    }
+    best.map(|(_, path)| path)
+}
+
+/// Comparison key for version-like directory names. Numeric segments compare
+/// numerically, anything else compares lexically after all numeric segments.
+fn version_sort_key(name: &str) -> Vec<(u64, String)> {
+    let trimmed = name.trim_start_matches(['v', 'V']);
+    trimmed
+        .split(['.', '-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+            match digits.parse::<u64>() {
+                Ok(n) if !digits.is_empty() => (n, String::new()),
+                _ => (u64::MAX, part.to_string()),
+            }
+        })
+        .collect()
 }
 
 /// Information about a resolved Node.js runtime.

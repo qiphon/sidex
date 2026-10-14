@@ -9,6 +9,7 @@ use commands::ext_host::ExtensionPlatformSupervisor;
 use commands::extension_diagnostics::ExtensionDiagnosticsStore;
 use commands::extension_wasm::WasmExtensionRuntime;
 use commands::index::IndexStore;
+use commands::logging::LoggerStore;
 use commands::lsp::LspState;
 use commands::orchestrate::OrchestrationStore;
 use commands::remote::RemoteManagerStore;
@@ -480,6 +481,8 @@ pub fn run() {
         .manage(Arc::new(
             WasmExtensionRuntime::new().expect("failed to initialize WASM runtime"),
         ))
+        .manage(Arc::new(commands::textmate::TextMateStore::new()))
+        .manage(Arc::new(LoggerStore::new()))
         .register_asynchronous_uri_scheme_protocol("sidex-asset", |_ctx, request, responder| {
             std::thread::spawn(move || {
                 let raw_path = request.uri().path();
@@ -891,6 +894,17 @@ pub fn run() {
             commands::extension_platform_init_data,
             commands::proxy_request,
             commands::proxy_request_full,
+            commands::textmate_load_grammar,
+            commands::textmate_update_theme,
+            commands::textmate_tokenize_line,
+            commands::textmate_tokenize_line_binary,
+            commands::textmate_tokenize_document,
+            commands::textmate_release_stack,
+            commands::log_create_logger,
+            commands::log_write,
+            commands::log_set_level,
+            commands::log_flush,
+            commands::log_drop,
             commands::clipboard_read_text,
             commands::clipboard_write_text,
             commands::open_external_url,

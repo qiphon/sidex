@@ -184,7 +184,7 @@ fn migrate_dot_sidex_into(new_dir: &std::path::Path) {
         }
     }
 
-    let dominated_dirs = ["extensions", "data"];
+    let dominated_dirs = ["data"];
     for dir_name in &dominated_dirs {
         let src = dot_sidex.join(dir_name);
         let dst = new_dir.join(dir_name);
@@ -194,6 +194,25 @@ fn migrate_dot_sidex_into(new_dir: &std::path::Path) {
                 log::warn!("Failed to migrate {}: {e}", src.display());
             } else {
                 log::info!("Migrated {} to {}", src.display(), dst.display());
+            }
+        }
+    }
+
+    // Extensions live in the XDG data directory on Linux
+    // (~/.local/share/SideX/extensions), which is where the extension
+    // scanner actually reads. Migrating them into the config dir would
+    // make them invisible.
+    let ext_src = dot_sidex.join("extensions");
+    if ext_src.is_dir() {
+        let ext_dst = sidex_extensions::paths::user_extensions_dir();
+        let dst_empty = std::fs::read_dir(&ext_dst)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(true);
+        if dst_empty {
+            if let Err(e) = copy_dir_recursive(&ext_src, &ext_dst) {
+                log::warn!("Failed to migrate {}: {e}", ext_src.display());
+            } else {
+                log::info!("Migrated {} to {}", ext_src.display(), ext_dst.display());
             }
         }
     }

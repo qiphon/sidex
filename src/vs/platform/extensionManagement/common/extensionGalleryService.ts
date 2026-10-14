@@ -1996,8 +1996,10 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 			...commonHeaders,
 			'Content-Type': 'application/json',
 			Accept: 'application/json;api-version=3.0-preview.1',
-			'Accept-Encoding': 'gzip',
-			'Content-Length': String(data.length)
+			// No Content-Length here: JS string length differs from the
+			// UTF-8 byte length for non-ASCII query bodies, and a mismatched
+			// header corrupts proxied requests. The transport sets it.
+			'Accept-Encoding': 'gzip'
 		};
 
 		const stopWatch = new StopWatch();
