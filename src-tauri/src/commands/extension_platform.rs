@@ -612,13 +612,16 @@ pub fn scan_extensions(app: &AppHandle, paths: &[PathBuf]) -> Vec<ExtensionManif
             }
 
             let ext_dir = entry.path();
-            let manifest = if ext_dir.join("sidex.toml").exists() {
+            let manifest = match if ext_dir.join("sidex.toml").exists() {
                 read_wasm_extension_manifest(app, &ext_dir)
             } else {
                 read_extension_manifest(app, &ext_dir)
-            };
-            let Ok(manifest) = manifest else {
-                continue;
+            } {
+                Ok(manifest) => manifest,
+                Err(reason) => {
+                    log::warn!("skipped extension {}: {reason}", ext_dir.display());
+                    continue;
+                }
             };
 
             if disable_ids.contains(&manifest.id)
