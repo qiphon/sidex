@@ -293,6 +293,10 @@ mod tests {
                 command: "lldb-dap".to_owned(),
                 args: Vec::new(),
                 runtime: None,
+                source: None,
+                extension_path: None,
+                label: None,
+                languages: Vec::new(),
             },
         );
 
@@ -340,6 +344,10 @@ mod tests {
             command: "test-adapter".to_owned(),
             args: vec!["--verbose".to_owned()],
             runtime: Some("node".to_owned()),
+            source: None,
+            extension_path: None,
+            label: None,
+            languages: Vec::new(),
         };
         let json = serde_json::to_string(&desc).unwrap();
         let back: DebugAdapterDescriptor = serde_json::from_str(&json).unwrap();

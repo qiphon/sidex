@@ -63,21 +63,14 @@ impl ExtensionRegistry {
     }
 
     /// Returns the default extension search paths.
+    ///
+    /// NOTE: we intentionally do NOT scan other editors' extension dirs
+    /// (`~/.vscode/extensions`, `~/.cursor/extensions`, or their app bundles).
+    /// Loading foreign user extensions pulls in incompatible/platform-native
+    /// extensions and can mutate the user's other-editor runtimes — matching
+    /// the policy in `src-tauri/src/commands/extension_platform.rs`.
     pub fn default_search_paths() -> Vec<PathBuf> {
         let mut candidates = vec![paths::user_extensions_dir()];
-
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        candidates.push(home.join(".vscode").join("extensions"));
-        candidates.push(home.join(".cursor").join("extensions"));
-
-        if cfg!(target_os = "macos") {
-            candidates.push(PathBuf::from(
-                "/Applications/Cursor.app/Contents/Resources/app/extensions",
-            ));
-            candidates.push(PathBuf::from(
-                "/Applications/Visual Studio Code.app/Contents/Resources/app/extensions",
-            ));
-        }
 
         if let Ok(cwd) = std::env::current_dir() {
             candidates.push(cwd.join("extensions"));

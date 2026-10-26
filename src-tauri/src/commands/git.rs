@@ -222,6 +222,53 @@ pub async fn git_is_repo(path: String) -> Result<bool, String> {
     Ok(sidex_git::is_git_repo(Path::new(&path)))
 }
 
+/// Find git repositories under `path` up to `max_depth` directory levels.
+/// Returns the absolute paths of directories containing a `.git` entry.
+#[tauri::command]
+pub async fn git_find_repos(path: String, max_depth: Option<u32>) -> Result<Vec<String>, String> {
+    validate_path(&path)?;
+    let root = Path::new(&path).to_path_buf();
+    if !root.exists() {
+        return Err(format!("path not found: {path}"));
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    let max_depth = max_depth.unwrap_or(5).clamp(1, 16);
+
+    fn walk(dir: &Path, depth: u32, max_depth: u32, out: &mut Vec<String>) {
+        // A repository root is not scanned further — nested repos inside a
+        // repo (submodules, vendored checkouts) are intentionally skipped.
+        if dir.join(".git").exists() {
+            out.push(dir.to_string_lossy().to_string());
+            return;
+        }
+        if depth >= max_depth {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
+            if !ft.is_dir() {
+                continue;
+            }
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            // Skip hidden dirs (`.git`, `.cache`, …) and dependency trees.
+            if name.starts_with('.') || name == "node_modules" {
+                continue;
+            }
+            walk(&entry.path(), depth + 1, max_depth, out);
+        }
+    }
+
+    let mut repos = Vec::new();
+    walk(&root, 0, max_depth, &mut repos);
+    Ok(repos)
+}
+
 #[tauri::command]
 pub async fn git_push(
     path: String,

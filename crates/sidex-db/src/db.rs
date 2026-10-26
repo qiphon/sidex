@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Current schema version. Bump when adding migrations.
-pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+pub const CURRENT_SCHEMA_VERSION: u32 = 5;
 
 /// Wraps a `SQLite` connection and ensures schema migrations run on open.
 pub struct Database {
@@ -102,6 +102,9 @@ impl Database {
         }
         if current < 4 {
             self.migration_v4()?;
+        }
+        if current < 5 {
+            self.migration_v5()?;
         }
 
         self.conn
@@ -350,6 +353,70 @@ impl Database {
             Err(e) => {
                 let _ = conn.execute_batch("ROLLBACK");
                 return Err(e).context("migration v4");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// V5: chat session/message persistence + workbench panel sizes on
+    /// `window_state`.
+    fn migration_v5(&self) -> Result<()> {
+        let conn = &self.conn;
+
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id            TEXT PRIMARY KEY,
+                title         TEXT NOT NULL,
+                created_at    INTEGER NOT NULL,
+                updated_at    INTEGER NOT NULL,
+                model         TEXT NOT NULL,
+                mode          TEXT NOT NULL,
+                workspace     TEXT NOT NULL,
+                message_count INTEGER NOT NULL DEFAULT 0,
+                pinned        INTEGER NOT NULL DEFAULT 0,
+                archived      INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id           TEXT PRIMARY KEY,
+                session_id   TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                role         TEXT NOT NULL,
+                content      TEXT NOT NULL,
+                tool_calls   TEXT,
+                tool_call_id TEXT,
+                created_at   INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_workspace
+                ON chat_sessions(workspace, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session
+                ON chat_messages(session_id, created_at);
+            ",
+        )
+        .context("migration v5: chat tables")?;
+
+        // `window_state` gains the sidebar/panel sizes and the active editor
+        // path. Existing installs are migrated with ALTER TABLE so persisted
+        // geometry is preserved.
+        for (column, decl) in [
+            ("sidebar_width", "REAL NOT NULL DEFAULT 260.0"),
+            ("panel_height", "REAL NOT NULL DEFAULT 200.0"),
+            ("active_editor", "TEXT"),
+        ] {
+            let has_column: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('window_state') WHERE name = ?1",
+                    [column],
+                    |row| row.get(0),
+                )
+                .context("migration v5: inspect window_state columns")?;
+            if has_column == 0 {
+                conn.execute_batch(&format!(
+                    "ALTER TABLE window_state ADD COLUMN {column} {decl};"
+                ))
+                .with_context(|| format!("migration v5: add {column}"))?;
             }
         }
 

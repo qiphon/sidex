@@ -162,6 +162,7 @@ pub async fn list_installed_extensions(app: AppHandle) -> Result<Vec<InstalledEx
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MarketplaceResult {
     pub id: String,
     pub name: String,
@@ -322,6 +323,7 @@ pub struct InstallMarketplaceResult {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DebuggerContributionInfo {
     pub debug_type: String,
     pub label: String,

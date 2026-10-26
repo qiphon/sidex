@@ -8,7 +8,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::encoding::decode_manifest_text;
-use crate::manifest::{parse_manifest, ExtensionManifest};
+use crate::manifest::{parse_manifest, sanitize_ext_id, ExtensionManifest};
 use crate::marketplace::MarketplaceClient;
 
 /// Installs an extension from a local `.vsix` file.
@@ -30,7 +30,11 @@ pub fn install_from_vsix(vsix_path: &Path, target_dir: &Path) -> Result<Extensio
 
     let manifest: ExtensionManifest =
         serde_json::from_str(&manifest_json).context("invalid package.json in .vsix")?;
-    let ext_dir = target_dir.join(manifest.canonical_id());
+    // Guard against path traversal via a crafted manifest id
+    // (e.g. "../../evil" or "C:\\temp") — canonical ids may only
+    // reference a directory directly under `target_dir`.
+    let safe_id = sanitize_ext_id(&manifest.canonical_id())?;
+    let ext_dir = target_dir.join(safe_id);
     std::fs::create_dir_all(&ext_dir)?;
 
     for i in 0..archive.len() {
@@ -82,7 +86,8 @@ pub async fn install_from_marketplace(id: &str, target_dir: &Path) -> Result<Ext
 
 /// Uninstalls an extension by removing its directory.
 pub fn uninstall(id: &str, extensions_dir: &Path) -> Result<()> {
-    let ext_dir = extensions_dir.join(id);
+    let safe_id = sanitize_ext_id(id)?;
+    let ext_dir = extensions_dir.join(safe_id);
     if ext_dir.exists() {
         std::fs::remove_dir_all(&ext_dir).context("failed to remove extension directory")?;
     }
@@ -97,6 +102,7 @@ pub async fn update(id: &str, extensions_dir: &Path) -> Result<ExtensionManifest
 
 /// Reads the manifest of an installed extension.
 pub fn read_installed_manifest(id: &str, extensions_dir: &Path) -> Result<ExtensionManifest> {
-    let pkg = extensions_dir.join(id).join("package.json");
+    let safe_id = sanitize_ext_id(id)?;
+    let pkg = extensions_dir.join(safe_id).join("package.json");
     parse_manifest(&pkg)
 }

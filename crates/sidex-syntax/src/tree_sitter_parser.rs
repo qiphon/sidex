@@ -363,7 +363,7 @@ mod tests {
             highlights: "(line_comment) @comment".into(),
             ..Default::default()
         };
-        mgr.register_language("rust", rust_language(), queries)
+        mgr.register_language("rust", &rust_language(), queries)
             .unwrap();
         assert!(mgr.has_language("rust"));
         assert_eq!(mgr.language_count(), 1);
@@ -375,7 +375,7 @@ mod tests {
     #[test]
     fn manager_incremental_parse() {
         let mut mgr = TreeSitterManager::new();
-        mgr.register_language("rust", rust_language(), TreeSitterQueries::default())
+        mgr.register_language("rust", &rust_language(), TreeSitterQueries::default())
             .unwrap();
         mgr.parse("rust", "fn main() { let x = 1; }").unwrap();
 
