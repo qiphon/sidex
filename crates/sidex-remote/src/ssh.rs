@@ -1090,8 +1090,15 @@ Host *.example.com
 
     #[test]
     fn known_host_unknown() {
+        // Build an ssh-ed25519 public key from its SSH wire-format blob:
+        // `string "ssh-ed25519"` followed by `string pk (32 bytes)`.
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&11u32.to_be_bytes());
+        blob.extend_from_slice(b"ssh-ed25519");
+        blob.extend_from_slice(&32u32.to_be_bytes());
+        blob.extend_from_slice(&[0u8; 32]);
         let fake_key =
-            key::PublicKey::Ed25519(russh_keys::key::ed25519::PublicKey::from_bytes(&[0u8; 32]));
+            key::PublicKey::parse(b"ssh-ed25519", &blob).expect("valid ssh-ed25519 key blob");
         let status = check_known_host("nonexistent.test", 22, &fake_key);
         matches!(status, KnownHostStatus::Unknown { .. });
     }

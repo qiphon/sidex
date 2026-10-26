@@ -258,7 +258,7 @@ mod tests {
                 alpha: 1.0,
             },
         };
-        let info = convert_color_info(lsp_info);
+        let info = convert_color_info(&lsp_info);
         assert_eq!(info.range.start.line, 5);
         assert!((info.color.red - 1.0).abs() < f32::EPSILON);
     }

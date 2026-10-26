@@ -1021,12 +1021,11 @@ pub fn run() {
             commands::keymap_resolve,
             commands::keymap_resolve_chord,
             commands::keymap_get_all,
-            commands::keymap_get_current_layout,
-            commands::keymap_get_physical_mapping,
             // Editor intelligence
             commands::editor_detect_colors,
             commands::editor_compute_bracket_pairs,
             commands::editor_compute_folding_ranges,
+            commands::open_file_preview,
             // Remote development
 		commands::remote_list_ssh_hosts,
             commands::remote_list_wsl_distros,

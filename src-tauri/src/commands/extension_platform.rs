@@ -612,6 +612,12 @@ pub fn scan_extensions(app: &AppHandle, paths: &[PathBuf]) -> Vec<ExtensionManif
             }
 
             let ext_dir = entry.path();
+            // Skip directories that are not extension roots at all —
+            // without this, every stray folder under a search path logs a
+            // "read package.json: No such file" warning.
+            if !ext_dir.join("sidex.toml").exists() && !ext_dir.join("package.json").exists() {
+                continue;
+            }
             let manifest = match if ext_dir.join("sidex.toml").exists() {
                 read_wasm_extension_manifest(app, &ext_dir)
             } else {
@@ -681,6 +687,50 @@ pub fn build_extension_descriptions(manifests: &[ExtensionManifest]) -> Vec<Exte
         .collect()
 }
 
+/// Device-scoped telemetry identifiers, persisted next to the user data so
+/// they stay stable across restarts (VS Code semantics: the machine id must
+/// not change every launch).
+fn stable_telemetry_ids() -> (String, String, String, String) {
+    let dir = user_data_dir();
+    let file = dir.join("telemetry.json");
+
+    if let Ok(raw) = fs::read_to_string(&file) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let get = |k: &str| {
+                val.get(k)
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            };
+            if let (Some(machine_id), Some(sqm_id), Some(dev_device_id), Some(first_session_date)) = (
+                get("machineId"),
+                get("sqmId"),
+                get("devDeviceId"),
+                get("firstSessionDate"),
+            ) {
+                return (machine_id, sqm_id, dev_device_id, first_session_date);
+            }
+        }
+    }
+
+    let machine_id = uuid::Uuid::new_v4().to_string();
+    let dev_device_id = machine_id.clone();
+    let sqm_id = uuid::Uuid::new_v4().to_string();
+    let first_session_date = chrono::Utc::now().to_rfc3339();
+    let _ = fs::create_dir_all(&dir);
+    let _ = fs::write(
+        &file,
+        serde_json::json!({
+            "machineId": machine_id,
+            "sqmId": sqm_id,
+            "devDeviceId": dev_device_id,
+            "firstSessionDate": first_session_date,
+        })
+        .to_string(),
+    );
+    (machine_id, sqm_id, dev_device_id, first_session_date)
+}
+
 /// Build the complete init data payload for the Node extension host process.
 pub fn build_init_data(
     extensions: &[ExtensionDescription],
@@ -688,6 +738,7 @@ pub fn build_init_data(
 ) -> ExtensionHostInitData {
     let global_storage = global_storage_dir();
     let data_dir = user_data_dir();
+    let (machine_id, sqm_id, dev_device_id, first_session_date) = stable_telemetry_ids();
 
     ExtensionHostInitData {
         version: "1.93.0".to_string(),
@@ -734,10 +785,10 @@ pub fn build_init_data(
         extensions: extensions.to_vec(),
         telemetry_info: InitDataTelemetry {
             session_id: uuid::Uuid::new_v4().to_string(),
-            machine_id: uuid::Uuid::new_v4().to_string(),
-            sqm_id: uuid::Uuid::new_v4().to_string(),
-            dev_device_id: uuid::Uuid::new_v4().to_string(),
-            first_session_date: chrono::Utc::now().to_rfc3339(),
+            machine_id,
+            sqm_id,
+            dev_device_id,
+            first_session_date,
             msft_internal: false,
         },
         log_level: 2,
@@ -829,7 +880,7 @@ pub async fn extension_platform_bootstrap(
 
     Ok(serde_json::json!({
         "transport": { "kind": "websocket", "endpoint": format!("ws://127.0.0.1:{port}/") },
-        "runtime": { "path": node.path, "version": node.version, "source": "system", "bundled": false },
+        "runtime": { "path": node.path, "version": node.version, "source": node.source, "bundled": node.bundled },
         "paths": {
             "serverScript": dunce::simplified(&resolve_server_script(&app)).to_string_lossy(),
             "builtinExtensionsDir": dunce::simplified(&resolve_builtin_extensions_dir(&app)).to_string_lossy(),

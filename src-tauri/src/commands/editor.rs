@@ -116,3 +116,12 @@ pub fn editor_compute_folding_ranges(
     ranges.sort_by_key(|r| r.start_line);
     Ok(ranges)
 }
+
+/// Ask the workbench to open a file (e.g. after a drag-and-drop from the OS).
+/// Emits `sidex-open-file-preview`, which the frontend forwards to `vscode.open`.
+#[tauri::command]
+pub fn open_file_preview(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri::Emitter;
+    app.emit("sidex-open-file-preview", path)
+        .map_err(|e| format!("emit: {e}"))
+}

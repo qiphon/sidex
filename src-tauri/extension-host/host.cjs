@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { pathToFileURL } = require('url');
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
@@ -20,6 +21,28 @@ function uriPathToFsPath(uriPath) {
     return uriPath.slice(1).replace(/\//g, '\\');
   }
   return uriPath;
+}
+
+// VS Code normalizes extension manifests: contributed commands, languages,
+// and views imply `onCommand:`/`onLanguage:`/`onView:` activation events.
+// Without this, extensions that rely on implicit activation would never run.
+function normalizeActivationEvents(manifest) {
+  const events = new Set(
+    Array.isArray(manifest.activationEvents) ? manifest.activationEvents : []
+  );
+  const contributes = manifest.contributes || {};
+  for (const cmd of contributes.commands || []) {
+    if (cmd && typeof cmd.command === 'string') events.add(`onCommand:${cmd.command}`);
+  }
+  for (const lang of contributes.languages || []) {
+    if (lang && typeof lang.id === 'string') events.add(`onLanguage:${lang.id}`);
+  }
+  for (const container of Object.values(contributes.views || {})) {
+    for (const view of container || []) {
+      if (view && typeof view.id === 'string') events.add(`onView:${view.id}`);
+    }
+  }
+  return [...events];
 }
 
 const VSCODE_RESOURCE_RE = /https:\/\/file\+[^.]*\.vscode-resource\.vscode-cdn\.net(\/[^"')\s]*)/g;
@@ -459,8 +482,13 @@ class ExtensionHost extends EventEmitter {
     const { command, args } = params;
     let handler = this._commands.get(command);
     if (!handler) {
-      this._checkActivationEvents(`onCommand:${command}`);
-      await new Promise((r) => setTimeout(r, 100));
+      // Trigger activation and wait for it to finish instead of guessing
+      // with a fixed timeout — extensions register their commands during
+      // activate(), so the handler is available as soon as activation ends.
+      const activations = this._checkActivationEvents(`onCommand:${command}`);
+      if (activations.length) {
+        await Promise.all(activations);
+      }
       handler = this._commands.get(command);
     }
     if (!handler) return { id, error: `unknown command: ${command}` };
@@ -1492,13 +1520,19 @@ class ExtensionHost extends EventEmitter {
   }
 
   _checkActivationEvents(event) {
+    const activations = [];
     for (const [extId, ext] of this._extensions) {
       if (ext.activated) continue;
       const events = ext.manifest.activationEvents || [];
-      if (events.includes(event) || events.includes('*') || events.includes('onStartupFinished')) {
-        this._activateExtension(extId).catch((e) => log(`activation error (${extId}): ${e.message}`));
+      // Exact match only — `onStartupFinished` is fired explicitly at
+      // startup, it must NOT be treated as a catch-all for every event.
+      if (events.includes(event) || events.includes('*')) {
+        activations.push(
+          this._activateExtension(extId).catch((e) => log(`activation error (${extId}): ${e.message}`))
+        );
       }
     }
+    return activations;
   }
 
   _readManifest(extensionPath) {
@@ -1512,7 +1546,7 @@ class ExtensionHost extends EventEmitter {
       name: raw.displayName || name,
       version: raw.version || '0.0.0',
       main: raw.main || raw.browser,
-      activationEvents: raw.activationEvents || [],
+      activationEvents: normalizeActivationEvents(raw),
       contributes: raw.contributes || {},
       extensionDependencies: raw.extensionDependencies || [],
       packageJSON: raw,
@@ -1584,11 +1618,26 @@ class ExtensionHost extends EventEmitter {
     }
   }
 
+  // Extension storage roots live under the SideX user data dir — never
+  // inside the extension directory, which is wiped on extension update.
+  _getStorageRoots() {
+    if (!this._storageRoots) {
+      const globalRoot = process.env.SIDEX_GLOBAL_STORAGE_DIR
+        || path.join(os.homedir(), '.sidex', 'globalStorage');
+      const workspaceRoot = process.env.SIDEX_WORKSPACE_STORAGE_DIR
+        || path.join(os.homedir(), '.sidex', 'workspaceStorage');
+      this._storageRoots = { globalRoot, workspaceRoot };
+    }
+    return this._storageRoots;
+  }
+
   _createExtensionContext(extensionId, ext) {
     const extensionPath = ext.extensionPath;
     const subscriptions = [];
-    const storagePath = path.join(extensionPath, '.storage');
-    const globalStoragePath = path.join(extensionPath, '.global-storage');
+    const { globalRoot, workspaceRoot } = this._getStorageRoots();
+    const safeDirName = String(extensionId).replace(/[^A-Za-z0-9.\-_]/g, '_');
+    const storagePath = path.join(workspaceRoot, safeDirName);
+    const globalStoragePath = path.join(globalRoot, safeDirName);
     try {
       fs.mkdirSync(storagePath, { recursive: true });
     } catch {}
@@ -5097,11 +5146,11 @@ if (process.env.SIDEX_EXTENSION_HOST === 'true' && process.send) {
           exports: null,
           activated: false,
         });
-        const activationEvents = manifest.activationEvents || [];
-        if (
-          activationEvents.includes('*') ||
-          activationEvents.length === 0
-        ) {
+        // Only `*` auto-activates at load time. Empty activation events no
+        // longer auto-activate: contributed commands/languages/views imply
+        // their activation events (see normalizeActivationEvents), so the
+        // extension activates when first used — matching VS Code.
+        if (manifest.activationEvents.includes('*')) {
           host._activateExtension(manifest.id).catch((e) => {
             log(`auto-activate failed ${manifest.id}: ${e.message}`);
           });
