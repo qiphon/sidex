@@ -65,7 +65,10 @@ fn to_installed(
 }
 
 #[tauri::command]
-pub async fn install_extension(vsix_path: String) -> Result<InstalledExtension, String> {
+pub async fn install_extension(
+    app: tauri::AppHandle,
+    vsix_path: String,
+) -> Result<InstalledExtension, String> {
     let vsix = Path::new(&vsix_path);
     if !vsix.exists() {
         return Err(format!("VSIX not found: {vsix_path}"));
@@ -78,6 +81,13 @@ pub async fn install_extension(vsix_path: String) -> Result<InstalledExtension, 
     let ext_dir = target_dir.join(&safe_id);
 
     log::info!("installed extension {safe_id} to {}", ext_dir.display());
+    // Let the workbench hot-load the freshly installed extension without a
+    // restart — mirrors `onDidInstallExtensions` for marketplace installs.
+    use tauri::Emitter;
+    let _ = app.emit(
+        "sidex-extension-installed",
+        serde_json::json!({ "id": installed.canonical_id(), "path": ext_dir.to_string_lossy() }),
+    );
     Ok(to_installed(&installed, &ext_dir))
 }
 

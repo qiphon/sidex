@@ -95,6 +95,11 @@ export class SideXExtensionService {
 		return invoke('install_extension_from_marketplace', { extensionId: id });
 	}
 
+	/** Install a local `.vsix` file by absolute filesystem path. */
+	async installVsix(vsixPath: string): Promise<unknown> {
+		return invoke('install_extension', { vsixPath });
+	}
+
 	async uninstall(id: string): Promise<void> {
 		return invoke('uninstall_extension', { extensionId: id });
 	}

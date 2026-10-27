@@ -87,6 +87,8 @@ import { ExtensionIdentifier } from '../../../../platform/extensions/common/exte
 import { IWebviewService } from '../../webview/browser/webview.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import type { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
+import { localize, localize2 } from '../../../../nls.js';
+import { Action2, MenuId, registerAction2, type ServicesAccessor } from '../../../../platform/actions/common/actions.js';
 
 
 
@@ -269,6 +271,7 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 	}
 
 	private _wssReadyUnlisten: (() => void) | null = null;
+	private _installedEventUnlisten: (() => void) | null = null;
 
 	private async _removeUninstalledExtension(event: DidUninstallExtensionEvent): Promise<void> {
 		const extId = event.identifier.id;
@@ -285,6 +288,27 @@ class TauriExtensionHostContribution extends Disposable implements IWorkbenchCon
 		this._bootstrapExtensions = bootstrap.extensions || [];
 
 		const wasmExtensions = this._bootstrapExtensions.filter(e => e.kind === 'wasm');
+
+		// A local VSIX install (`install_extension`) finishes on the Rust side;
+		// hot-load the extension directory without waiting for a restart.
+		if (!this._installedEventUnlisten) {
+			listen<{ id?: string; path?: string }>('sidex-extension-installed', (event) => {
+				const payload = event.payload ?? {};
+				if (!payload.path) {
+					return;
+				}
+				this.logService.info(`[ExtHost] Extension installed on disk: ${payload.id ?? payload.path}`);
+				this._hotLoadInstalledExtension({
+					identifier: { id: payload.id ?? '' },
+					local: { location: URI.file(payload.path) },
+				} as unknown as InstallExtensionResult);
+			}).then((unlisten) => {
+				this._installedEventUnlisten = unlisten;
+				this.logService.info('[ExtHost] installed-extension listener registered');
+			}).catch((e) => {
+				this.logService.warn('[ExtHost] Failed to register installed-extension listener:', e);
+			});
+		}
 
 		listen<number>('sidex-wasm-extensions-ready', () => {
 			this.logService.info('[ExtHost] WASM extensions ready');
@@ -3093,3 +3117,60 @@ registerWorkbenchContribution2(
 	TauriExtensionHostContribution,
 	WorkbenchPhase.AfterRestored,
 );
+
+/**
+ * Install a local `.vsix` through the Rust extension platform
+ * (`install_extension`), bypassing the web-only native management service.
+ * The Rust command emits `sidex-extension-installed`, which hot-loads the
+ * extension without a window reload.
+ */
+registerAction2(class InstallVSIXAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sidex.extensions.installVSIX',
+			title: localize2('sidexInstallFromVSIX', 'Install from VSIX...'),
+			category: localize2('extensionsCategory', 'Extensions'),
+			menu: [{ id: MenuId.CommandPalette }],
+		});
+	}
+
+	override async run(accessor: ServicesAccessor, vsixUri?: URI): Promise<void> {
+		const fileDialogService = accessor.get(IFileDialogService);
+		const notificationService = accessor.get(INotificationService);
+
+		let uris: URI[];
+		if (vsixUri) {
+			uris = [vsixUri];
+		} else {
+			const picked = await fileDialogService.showOpenDialog({
+				title: localize('sidexInstallFromVSIXTitle', "Install from VSIX"),
+				filters: [{ name: 'VSIX Extensions', extensions: ['vsix'] }],
+				canSelectFiles: true,
+				canSelectMany: true,
+			});
+			if (!picked?.length) {
+				return;
+			}
+			uris = picked;
+		}
+
+		const { invoke } = await import('@tauri-apps/api/core');
+		for (const uri of uris) {
+			const vsixPath = uri.scheme === 'file' ? uri.fsPath : (uri.path || uri.toString());
+			try {
+				const installed = await invoke<{ id: string; path: string }>('install_extension', { vsixPath });
+				notificationService.info(localize(
+					'sidexInstallFromVSIXDone',
+					"Extension '{0}' was installed. Its commands are available immediately.",
+					installed.id,
+				));
+			} catch (err) {
+				notificationService.error(localize(
+					'sidexInstallFromVSIXFailed',
+					"Installing extension from VSIX failed: {0}",
+					String((err as Error)?.message ?? err),
+				));
+			}
+		}
+	}
+});
